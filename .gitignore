@@ -4,6 +4,7 @@ Backend/.env
 Frontend/.env
 Backend/uploads/
 Backend/data/products.json
+Backend/data/members.json
 *.log
 dist/
 .DS_Store

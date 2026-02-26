@@ -53,6 +53,18 @@ function getAll(filters = {}) {
     }
   }
 
+  if (filters.minPrice !== undefined) {
+    const min = parseFloat(filters.minPrice);
+    if (!isNaN(min)) {
+      products = products.filter((p) => parseFloat(p.price) >= min);
+    }
+  }
+
+  if (filters.brand) {
+    const b = filters.brand.toLowerCase();
+    products = products.filter((p) => (p.brand || "").toLowerCase() === b);
+  }
+
   if (filters.search) {
     const q = filters.search.toLowerCase();
     products = products.filter(

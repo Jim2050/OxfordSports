@@ -1,9 +1,12 @@
 import { useState } from "react";
-import { Link, useLocation } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
+import { useAuth } from "../../context/AuthContext";
 
 export default function Header() {
   const [open, setOpen] = useState(false);
   const { pathname } = useLocation();
+  const navigate = useNavigate();
+  const { isAuthenticated, user, logout } = useAuth();
 
   const links = [
     { to: "/", label: "Home" },
@@ -14,6 +17,12 @@ export default function Header() {
     { to: "/products", label: "All Products" },
     { to: "/contact", label: "Contact" },
   ];
+
+  const handleLogout = () => {
+    logout();
+    setOpen(false);
+    navigate("/");
+  };
 
   return (
     <header className="header">
@@ -33,13 +42,23 @@ export default function Header() {
               {l.label}
             </Link>
           ))}
-          <Link
-            to="/register"
-            className="btn btn-primary btn-sm"
-            onClick={() => setOpen(false)}
-          >
-            Register / Sign In
-          </Link>
+          {isAuthenticated ? (
+            <button
+              className="btn btn-outline btn-sm"
+              onClick={handleLogout}
+              style={{ cursor: "pointer" }}
+            >
+              Sign Out
+            </button>
+          ) : (
+            <Link
+              to="/register"
+              className="btn btn-primary btn-sm"
+              onClick={() => setOpen(false)}
+            >
+              Register / Sign In
+            </Link>
+          )}
         </nav>
 
         <button

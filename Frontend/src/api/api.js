@@ -11,6 +11,9 @@ export const fetchProductsByCategory = (category) =>
 export const fetchUnderFive = () =>
   API.get("/products?maxPrice=5").then((r) => r.data);
 
+export const fetchBrands = () =>
+  API.get("/products/brands").then((r) => r.data);
+
 export const uploadExcel = (file, onProgress) => {
   const form = new FormData();
   form.append("file", file);
@@ -43,6 +46,17 @@ export const deleteAllProducts = () =>
 
 export const fetchCategories = () =>
   API.get("/admin/categories").then((r) => r.data);
+
+export const addProduct = (data) =>
+  API.post("/admin/products", data).then((r) => r.data);
+
+export const updateProduct = (sku, data) =>
+  API.put(`/admin/products/${encodeURIComponent(sku)}`, data).then(
+    (r) => r.data,
+  );
+
+export const exportProducts = () =>
+  API.get("/admin/export").then((r) => r.data);
 
 /**
  * Resolve image URLs: if relative (starts with /), prepend backend origin.

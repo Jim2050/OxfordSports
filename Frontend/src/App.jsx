@@ -1,5 +1,7 @@
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { Toaster } from "react-hot-toast";
+import { AuthProvider } from "./context/AuthContext";
+import ProtectedRoute from "./components/ProtectedRoute";
 import Header from "./components/layout/Header";
 import Footer from "./components/layout/Footer";
 import HomePage from "./pages/public/HomePage";
@@ -24,32 +26,86 @@ function Layout({ children }) {
 export default function App() {
   return (
     <BrowserRouter>
-      <Toaster position="top-right" />
-      <Routes>
-        {/* Admin — no header/footer */}
-        <Route path="/admin" element={<AdminPage />} />
+      <AuthProvider>
+        <Toaster position="top-right" />
+        <Routes>
+          {/* Admin — no header/footer */}
+          <Route path="/admin" element={<AdminPage />} />
 
-        {/* Public pages with layout */}
-        <Route
-          path="*"
-          element={
-            <Layout>
-              <Routes>
-                <Route path="/" element={<HomePage />} />
-                <Route path="/rugby-category" element={<CategoryPage />} />
-                <Route path="/football" element={<CategoryPage />} />
-                <Route path="/footwear" element={<CategoryPage />} />
-                <Route path="/under-5" element={<UnderFivePage />} />
-                <Route path="/products" element={<AllProductsPage />} />
-                <Route path="/product/:sku" element={<ProductPage />} />
-                <Route path="/contact" element={<ContactPage />} />
-                <Route path="/register" element={<RegisterPage />} />
-                <Route path="/:slug" element={<CategoryPage />} />
-              </Routes>
-            </Layout>
-          }
-        />
-      </Routes>
+          {/* Public + protected pages with layout */}
+          <Route
+            path="*"
+            element={
+              <Layout>
+                <Routes>
+                  {/* Public pages */}
+                  <Route path="/" element={<HomePage />} />
+                  <Route path="/contact" element={<ContactPage />} />
+                  <Route path="/register" element={<RegisterPage />} />
+
+                  {/* Member-gated pages */}
+                  <Route
+                    path="/rugby-category"
+                    element={
+                      <ProtectedRoute>
+                        <CategoryPage />
+                      </ProtectedRoute>
+                    }
+                  />
+                  <Route
+                    path="/football"
+                    element={
+                      <ProtectedRoute>
+                        <CategoryPage />
+                      </ProtectedRoute>
+                    }
+                  />
+                  <Route
+                    path="/footwear"
+                    element={
+                      <ProtectedRoute>
+                        <CategoryPage />
+                      </ProtectedRoute>
+                    }
+                  />
+                  <Route
+                    path="/under-5"
+                    element={
+                      <ProtectedRoute>
+                        <UnderFivePage />
+                      </ProtectedRoute>
+                    }
+                  />
+                  <Route
+                    path="/products"
+                    element={
+                      <ProtectedRoute>
+                        <AllProductsPage />
+                      </ProtectedRoute>
+                    }
+                  />
+                  <Route
+                    path="/product/:sku"
+                    element={
+                      <ProtectedRoute>
+                        <ProductPage />
+                      </ProtectedRoute>
+                    }
+                  />
+                  <Route
+                    path="/:slug"
+                    element={
+                      <ProtectedRoute>
+                        <CategoryPage />
+                      </ProtectedRoute>
+                    }
+                  />
+                </Routes>
+              </Layout>
+            }
+          />
+        </Routes>
+      </AuthProvider>
     </BrowserRouter>
   );
 }

@@ -11,6 +11,7 @@ const productRoutes = require("./routes/productRoutes");
 const uploadRoutes = require("./routes/uploadRoutes");
 const adminRoutes = require("./routes/adminRoutes");
 const contactRoutes = require("./routes/contactRoutes");
+const authRoutes = require("./routes/authRoutes");
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -27,6 +28,12 @@ if (!fs.existsSync(PRODUCTS_FILE)) {
   fs.writeFileSync(PRODUCTS_FILE, JSON.stringify([], null, 2));
 }
 
+// ── Initialise members.json if missing ──
+const MEMBERS_FILE = path.join(DATA_DIR, "members.json");
+if (!fs.existsSync(MEMBERS_FILE)) {
+  fs.writeFileSync(MEMBERS_FILE, JSON.stringify([], null, 2));
+}
+
 // ── Middleware ──
 app.use(helmet({ crossOriginResourcePolicy: { policy: "cross-origin" } }));
 app.use(cors({ origin: process.env.CLIENT_ORIGIN || "*", credentials: true }));
@@ -38,6 +45,7 @@ app.use(express.urlencoded({ extended: true }));
 app.use("/uploads", express.static(UPLOADS_DIR));
 
 // ── API Routes ──
+app.use("/api/auth", authRoutes);
 app.use("/api/products", productRoutes);
 app.use("/api/upload", uploadRoutes);
 app.use("/api/admin", adminRoutes);

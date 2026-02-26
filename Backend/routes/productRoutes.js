@@ -8,9 +8,31 @@ const productStore = require("../services/productStore");
  */
 router.get("/", (req, res) => {
   try {
-    const { category, maxPrice, search } = req.query;
-    const products = productStore.getAll({ category, maxPrice, search });
+    const { category, maxPrice, minPrice, brand, search } = req.query;
+    const products = productStore.getAll({
+      category,
+      maxPrice,
+      minPrice,
+      brand,
+      search,
+    });
     res.json({ products, total: products.length });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * GET /api/products/brands
+ * Get distinct brand names.
+ */
+router.get("/brands", (req, res) => {
+  try {
+    const products = productStore.readAll();
+    const brands = [
+      ...new Set(products.map((p) => p.brand).filter(Boolean)),
+    ].sort();
+    res.json({ brands });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

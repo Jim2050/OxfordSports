@@ -9,6 +9,9 @@ import {
   deleteProduct,
   deleteAllProducts,
   resolveImageUrl,
+  addProduct,
+  updateProduct,
+  exportProducts,
 } from "../../api/api";
 
 export default function AdminPage() {
@@ -20,6 +23,19 @@ export default function AdminPage() {
   const [progress, setProgress] = useState(0);
   const [tab, setTab] = useState("excel");
   const [searchQuery, setSearchQuery] = useState("");
+  const [editingSku, setEditingSku] = useState(null);
+  const [productForm, setProductForm] = useState({
+    sku: "",
+    name: "",
+    description: "",
+    category: "",
+    subcategory: "",
+    brand: "",
+    price: "",
+    sizes: "",
+    quantity: "",
+  });
+  const [formLoading, setFormLoading] = useState(false);
 
   useEffect(() => {
     if (authed) loadProducts();
@@ -139,6 +155,124 @@ export default function AdminPage() {
     }
   };
 
+  /* ── Add / Edit product form ── */
+  const resetForm = () => {
+    setProductForm({
+      sku: "",
+      name: "",
+      description: "",
+      category: "",
+      subcategory: "",
+      brand: "",
+      price: "",
+      sizes: "",
+      quantity: "",
+    });
+    setEditingSku(null);
+  };
+
+  const startEdit = (product) => {
+    setProductForm({
+      sku: product.sku || "",
+      name: product.name || "",
+      description: product.description || "",
+      category: product.category || "",
+      subcategory: product.subcategory || "",
+      brand: product.brand || "",
+      price: product.price || "",
+      sizes: product.sizes || "",
+      quantity: product.quantity || "",
+    });
+    setEditingSku(product.sku);
+    setTab("addproduct");
+  };
+
+  const handleFormChange = (e) =>
+    setProductForm({ ...productForm, [e.target.name]: e.target.value });
+
+  const handleFormSubmit = async (e) => {
+    e.preventDefault();
+    if (!productForm.name) {
+      toast.error("Product name is required.");
+      return;
+    }
+    if (!productForm.price) {
+      toast.error("Price is required.");
+      return;
+    }
+
+    setFormLoading(true);
+    try {
+      if (editingSku) {
+        await updateProduct(editingSku, productForm);
+        toast.success("Product updated.");
+      } else {
+        await addProduct(productForm);
+        toast.success("Product added.");
+      }
+      resetForm();
+      loadProducts();
+      setTab("products");
+    } catch (err) {
+      toast.error(err?.response?.data?.error || "Failed to save product.");
+    } finally {
+      setFormLoading(false);
+    }
+  };
+
+  /* ── Export products as CSV ── */
+  const handleExport = async () => {
+    try {
+      const data = await exportProducts();
+      const rows = data.products || [];
+      if (rows.length === 0) {
+        toast.error("No products to export.");
+        return;
+      }
+
+      const headers = [
+        "SKU",
+        "Name",
+        "Description",
+        "Category",
+        "Subcategory",
+        "Brand",
+        "Price",
+        "Sizes",
+        "Quantity",
+        "Image URL",
+      ];
+      const csvRows = [headers.join(",")];
+      rows.forEach((p) => {
+        csvRows.push(
+          [
+            `"${(p.sku || "").replace(/"/g, '""')}"`,
+            `"${(p.name || "").replace(/"/g, '""')}"`,
+            `"${(p.description || "").replace(/"/g, '""')}"`,
+            `"${(p.category || "").replace(/"/g, '""')}"`,
+            `"${(p.subcategory || "").replace(/"/g, '""')}"`,
+            `"${(p.brand || "").replace(/"/g, '""')}"`,
+            p.price || "",
+            `"${(p.sizes || "").replace(/"/g, '""')}"`,
+            p.quantity || "",
+            `"${(p.imageUrl || "").replace(/"/g, '""')}"`,
+          ].join(","),
+        );
+      });
+
+      const blob = new Blob([csvRows.join("\n")], { type: "text/csv" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `oxford-sports-products-${new Date().toISOString().slice(0, 10)}.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
+      toast.success(`Exported ${rows.length} products.`);
+    } catch {
+      toast.error("Export failed.");
+    }
+  };
+
   /* ── Filter products for table ── */
   const filteredProducts = searchQuery
     ? products.filter(
@@ -202,16 +336,29 @@ export default function AdminPage() {
           {[
             { key: "excel", icon: "📄", label: "Upload Excel" },
             { key: "images", icon: "🖼️", label: "Upload Images" },
+            {
+              key: "addproduct",
+              icon: "➕",
+              label: editingSku ? "Edit Product" : "Add Product",
+            },
             { key: "products", icon: "📋", label: "Product List" },
           ].map((t) => (
             <button
               key={t.key}
               className={`btn btn-sm ${tab === t.key ? "btn-primary" : "btn-outline"}`}
-              onClick={() => setTab(t.key)}
+              onClick={() => {
+                setTab(t.key);
+                if (t.key === "addproduct" && !editingSku) resetForm();
+              }}
             >
               {t.icon} {t.label}
             </button>
           ))}
+          {products.length > 0 && (
+            <button className="btn btn-sm btn-outline" onClick={handleExport}>
+              📥 Export CSV
+            </button>
+          )}
         </div>
 
         {/* ── Excel Tab ── */}
@@ -375,6 +522,145 @@ export default function AdminPage() {
           </div>
         )}
 
+        {/* ── Add/Edit Product Tab ── */}
+        {tab === "addproduct" && (
+          <div className="admin-card">
+            <h3>
+              {editingSku ? `Edit Product: ${editingSku}` : "Add New Product"}
+            </h3>
+            <form
+              onSubmit={handleFormSubmit}
+              style={{
+                display: "grid",
+                gridTemplateColumns: "1fr 1fr",
+                gap: "1rem",
+                marginTop: "1rem",
+              }}
+            >
+              <div className="form-field">
+                <label>SKU</label>
+                <input
+                  name="sku"
+                  value={productForm.sku}
+                  onChange={handleFormChange}
+                  placeholder="e.g. ADI-RM-001"
+                  disabled={!!editingSku}
+                />
+              </div>
+              <div className="form-field">
+                <label>Product Name *</label>
+                <input
+                  name="name"
+                  value={productForm.name}
+                  onChange={handleFormChange}
+                  placeholder="Product name"
+                  required
+                />
+              </div>
+              <div className="form-field" style={{ gridColumn: "1 / -1" }}>
+                <label>Description</label>
+                <textarea
+                  name="description"
+                  value={productForm.description}
+                  onChange={handleFormChange}
+                  placeholder="Product description"
+                  rows={3}
+                />
+              </div>
+              <div className="form-field">
+                <label>Category</label>
+                <input
+                  name="category"
+                  value={productForm.category}
+                  onChange={handleFormChange}
+                  placeholder="e.g. Football"
+                />
+              </div>
+              <div className="form-field">
+                <label>Subcategory</label>
+                <input
+                  name="subcategory"
+                  value={productForm.subcategory}
+                  onChange={handleFormChange}
+                  placeholder="e.g. Real Madrid"
+                />
+              </div>
+              <div className="form-field">
+                <label>Brand</label>
+                <input
+                  name="brand"
+                  value={productForm.brand}
+                  onChange={handleFormChange}
+                  placeholder="e.g. adidas"
+                />
+              </div>
+              <div className="form-field">
+                <label>Price (£) *</label>
+                <input
+                  name="price"
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  value={productForm.price}
+                  onChange={handleFormChange}
+                  placeholder="0.00"
+                  required
+                />
+              </div>
+              <div className="form-field">
+                <label>Sizes</label>
+                <input
+                  name="sizes"
+                  value={productForm.sizes}
+                  onChange={handleFormChange}
+                  placeholder="S, M, L, XL"
+                />
+              </div>
+              <div className="form-field">
+                <label>Quantity</label>
+                <input
+                  name="quantity"
+                  value={productForm.quantity}
+                  onChange={handleFormChange}
+                  placeholder="e.g. 100"
+                />
+              </div>
+              <div
+                style={{
+                  gridColumn: "1 / -1",
+                  display: "flex",
+                  gap: "1rem",
+                  marginTop: "0.5rem",
+                }}
+              >
+                <button
+                  type="submit"
+                  className="btn btn-primary"
+                  disabled={formLoading}
+                >
+                  {formLoading
+                    ? "Saving…"
+                    : editingSku
+                      ? "Update Product"
+                      : "Add Product"}
+                </button>
+                {editingSku && (
+                  <button
+                    type="button"
+                    className="btn btn-outline"
+                    onClick={() => {
+                      resetForm();
+                      setTab("products");
+                    }}
+                  >
+                    Cancel
+                  </button>
+                )}
+              </div>
+            </form>
+          </div>
+        )}
+
         {/* ── Products Tab ── */}
         {tab === "products" && (
           <div className="admin-card">
@@ -431,6 +717,7 @@ export default function AdminPage() {
                       <th>Price</th>
                       <th>Sizes</th>
                       <th style={{ width: 60, textAlign: "center" }}>Delete</th>
+                      <th style={{ width: 60, textAlign: "center" }}>Edit</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -475,6 +762,22 @@ export default function AdminPage() {
                             }}
                           >
                             🗑️
+                          </button>
+                        </td>
+                        <td style={{ textAlign: "center" }}>
+                          <button
+                            onClick={() => startEdit(p)}
+                            title="Edit product"
+                            style={{
+                              background: "none",
+                              border: "none",
+                              cursor: "pointer",
+                              fontSize: "1.1rem",
+                              color: "#1a1281",
+                              padding: "0.25rem",
+                            }}
+                          >
+                            ✏️
                           </button>
                         </td>
                       </tr>
