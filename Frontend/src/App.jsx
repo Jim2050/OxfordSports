@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Outlet } from "react-router-dom";
 import { Toaster } from "react-hot-toast";
 import { AuthProvider } from "./context/AuthContext";
 import ProtectedRoute from "./components/ProtectedRoute";
@@ -13,11 +13,13 @@ import ContactPage from "./pages/public/ContactPage";
 import RegisterPage from "./pages/public/RegisterPage";
 import AdminPage from "./pages/admin/AdminPage";
 
-function Layout({ children }) {
+function Layout() {
   return (
     <>
       <Header />
-      <main style={{ minHeight: "60vh" }}>{children}</main>
+      <main style={{ minHeight: "60vh" }}>
+        <Outlet />
+      </main>
       <Footer />
     </>
   );
@@ -32,78 +34,71 @@ export default function App() {
           {/* Admin — no header/footer */}
           <Route path="/admin" element={<AdminPage />} />
 
-          {/* Public + protected pages with layout */}
-          <Route
-            path="*"
-            element={
-              <Layout>
-                <Routes>
-                  {/* Public pages */}
-                  <Route path="/" element={<HomePage />} />
-                  <Route path="/contact" element={<ContactPage />} />
-                  <Route path="/register" element={<RegisterPage />} />
+          {/* All public + protected pages share the Layout */}
+          <Route element={<Layout />}>
+            {/* Public pages */}
+            <Route path="/" element={<HomePage />} />
+            <Route path="/contact" element={<ContactPage />} />
+            <Route path="/register" element={<RegisterPage />} />
 
-                  {/* Member-gated pages */}
-                  <Route
-                    path="/rugby-category"
-                    element={
-                      <ProtectedRoute>
-                        <CategoryPage />
-                      </ProtectedRoute>
-                    }
-                  />
-                  <Route
-                    path="/football"
-                    element={
-                      <ProtectedRoute>
-                        <CategoryPage />
-                      </ProtectedRoute>
-                    }
-                  />
-                  <Route
-                    path="/footwear"
-                    element={
-                      <ProtectedRoute>
-                        <CategoryPage />
-                      </ProtectedRoute>
-                    }
-                  />
-                  <Route
-                    path="/under-5"
-                    element={
-                      <ProtectedRoute>
-                        <UnderFivePage />
-                      </ProtectedRoute>
-                    }
-                  />
-                  <Route
-                    path="/products"
-                    element={
-                      <ProtectedRoute>
-                        <AllProductsPage />
-                      </ProtectedRoute>
-                    }
-                  />
-                  <Route
-                    path="/product/:sku"
-                    element={
-                      <ProtectedRoute>
-                        <ProductPage />
-                      </ProtectedRoute>
-                    }
-                  />
-                  <Route
-                    path="/:slug"
-                    element={
-                      <ProtectedRoute>
-                        <CategoryPage />
-                      </ProtectedRoute>
-                    }
-                  />
-                </Routes>
-              </Layout>
-            }
-          />
+            {/* Member-gated pages */}
+            <Route
+              path="/rugby-category"
+              element={
+                <ProtectedRoute>
+                  <CategoryPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/football"
+              element={
+                <ProtectedRoute>
+                  <CategoryPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/footwear"
+              element={
+                <ProtectedRoute>
+                  <CategoryPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/under-5"
+              element={
+                <ProtectedRoute>
+                  <UnderFivePage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/products"
+              element={
+                <ProtectedRoute>
+                  <AllProductsPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/product/:sku"
+              element={
+                <ProtectedRoute>
+                  <ProductPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/:slug"
+              element={
+                <ProtectedRoute>
+                  <CategoryPage />
+                </ProtectedRoute>
+              }
+            />
+          </Route>
         </Routes>
       </AuthProvider>
     </BrowserRouter>

@@ -2,6 +2,7 @@ import { useState } from "react";
 import { adminLogin } from "../../api/api";
 
 export default function AdminLogin({ onAuth }) {
+  const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
@@ -11,15 +12,15 @@ export default function AdminLogin({ onAuth }) {
     setError("");
     setLoading(true);
     try {
-      const res = await adminLogin(password);
-      if (res.success) {
-        sessionStorage.setItem("adminToken", res.token || "authed");
+      const res = await adminLogin(email, password);
+      if (res.success && res.token) {
+        sessionStorage.setItem("adminToken", res.token);
         onAuth(true);
       } else {
-        setError("Incorrect password.");
+        setError("Login failed. Check your credentials.");
       }
-    } catch {
-      setError("Incorrect password.");
+    } catch (err) {
+      setError(err?.response?.data?.error || "Incorrect email or password.");
     } finally {
       setLoading(false);
     }
@@ -28,14 +29,23 @@ export default function AdminLogin({ onAuth }) {
   return (
     <div className="login-box">
       <h2>Admin Login</h2>
-      <p>Enter the admin password to manage products.</p>
+      <p>Sign in to manage products and import data.</p>
       <form onSubmit={submit}>
+        <input
+          type="email"
+          placeholder="Admin email"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          autoFocus
+          required
+          style={{ marginBottom: "0.75rem" }}
+        />
         <input
           type="password"
           placeholder="Password"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
-          autoFocus
+          required
         />
         {error && (
           <p
@@ -54,7 +64,7 @@ export default function AdminLogin({ onAuth }) {
           style={{ width: "100%" }}
           disabled={loading}
         >
-          {loading ? "Checking…" : "Sign In"}
+          {loading ? "Signing in…" : "Sign In"}
         </button>
       </form>
     </div>

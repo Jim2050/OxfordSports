@@ -1,45 +1,47 @@
-require("dotenv").config();
+const path = require("path");
+require("dotenv").config({ path: path.join(__dirname, ".env") });
 
 const express = require("express");
 const cors = require("cors");
 const helmet = require("helmet");
 const morgan = require("morgan");
-const path = require("path");
+const rateLimit = require("express-rate-limit");
 const fs = require("fs");
 
+const connectDB = require("./config/db");
+const User = require("./models/User");
+
 const productRoutes = require("./routes/productRoutes");
-const uploadRoutes = require("./routes/uploadRoutes");
 const adminRoutes = require("./routes/adminRoutes");
 const contactRoutes = require("./routes/contactRoutes");
 const authRoutes = require("./routes/authRoutes");
+const { notFound, errorHandler } = require("./middleware/errorMiddleware");
 
 const app = express();
 const PORT = process.env.PORT || 5000;
 
-// ── Ensure data directories exist ──
-const DATA_DIR = path.join(__dirname, "data");
+// ── Ensure upload directories exist ──
 const UPLOADS_DIR = path.join(__dirname, "uploads");
-if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
 if (!fs.existsSync(UPLOADS_DIR)) fs.mkdirSync(UPLOADS_DIR, { recursive: true });
-
-// ── Initialise products.json if missing ──
-const PRODUCTS_FILE = path.join(DATA_DIR, "products.json");
-if (!fs.existsSync(PRODUCTS_FILE)) {
-  fs.writeFileSync(PRODUCTS_FILE, JSON.stringify([], null, 2));
-}
-
-// ── Initialise members.json if missing ──
-const MEMBERS_FILE = path.join(DATA_DIR, "members.json");
-if (!fs.existsSync(MEMBERS_FILE)) {
-  fs.writeFileSync(MEMBERS_FILE, JSON.stringify([], null, 2));
-}
+const TEMP_DIR = path.join(UPLOADS_DIR, "temp");
+if (!fs.existsSync(TEMP_DIR)) fs.mkdirSync(TEMP_DIR, { recursive: true });
 
 // ── Middleware ──
 app.use(helmet({ crossOriginResourcePolicy: { policy: "cross-origin" } }));
 app.use(cors({ origin: process.env.CLIENT_ORIGIN || "*", credentials: true }));
 app.use(morgan("dev"));
-app.use(express.json());
+app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true }));
+
+// ── Rate limiter — 200 requests per minute per IP ──
+const limiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 200,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "Too many requests. Please try again in a minute." },
+});
+app.use("/api", limiter);
 
 // ── Serve uploaded images statically ──
 app.use("/uploads", express.static(UPLOADS_DIR));
@@ -47,16 +49,14 @@ app.use("/uploads", express.static(UPLOADS_DIR));
 // ── API Routes ──
 app.use("/api/auth", authRoutes);
 app.use("/api/products", productRoutes);
-app.use("/api/upload", uploadRoutes);
 app.use("/api/admin", adminRoutes);
 app.use("/api/contact", contactRoutes);
 
 // ── Health check ──
-app.get("/api/health", (_req, res) => {
-  res.json({
-    status: "ok",
-    products: require("./services/productStore").count(),
-  });
+app.get("/api/health", async (_req, res) => {
+  const Product = require("./models/Product");
+  const count = await Product.countDocuments().catch(() => 0);
+  res.json({ status: "ok", products: count, db: "mongodb" });
 });
 
 // ── Serve frontend (production) ──
@@ -70,14 +70,36 @@ if (fs.existsSync(FRONTEND_DIST)) {
   });
 }
 
-// ── Global error handler ──
-app.use((err, _req, res, _next) => {
-  console.error("Server Error:", err);
-  res.status(err.status || 500).json({
-    error: err.message || "Internal server error",
-  });
-});
+// ── Error middleware ──
+app.use(notFound);
+app.use(errorHandler);
 
-app.listen(PORT, () => {
-  console.log(`\n🚀  Oxford Sports API running on http://localhost:${PORT}\n`);
-});
+// ── Seed default admin user ──
+async function seedAdmin() {
+  try {
+    const existing = await User.findOne({ role: "admin" });
+    if (!existing) {
+      await User.create({
+        name: "Admin",
+        email: process.env.ADMIN_EMAIL || "admin@oxfordsports.net",
+        password: process.env.ADMIN_PASSWORD || "Godaddy1971turbs*",
+        role: "admin",
+      });
+      console.log("✅ Default admin user seeded");
+    }
+  } catch (err) {
+    console.error("Admin seed error:", err.message);
+  }
+}
+
+// ── Start server ──
+async function start() {
+  await connectDB();
+  await seedAdmin();
+  app.listen(PORT, () => {
+    console.log(`\n🚀  Oxford Sports API running on http://localhost:${PORT}`);
+    console.log(`📦  Database: MongoDB Atlas\n`);
+  });
+}
+
+start();

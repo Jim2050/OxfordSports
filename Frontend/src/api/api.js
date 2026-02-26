@@ -1,5 +1,15 @@
 import API from "./axiosInstance";
 
+// ── Helper: get admin auth header ──
+function adminHeaders() {
+  const token = sessionStorage.getItem("adminToken");
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
+
+// ══════════════════════════════════════════
+//  Public Product API
+// ══════════════════════════════════════════
+
 export const fetchProducts = (params) =>
   API.get("/products", { params }).then((r) => r.data);
 
@@ -14,11 +24,58 @@ export const fetchUnderFive = () =>
 export const fetchBrands = () =>
   API.get("/products/brands").then((r) => r.data);
 
+// ══════════════════════════════════════════
+//  Contact
+// ══════════════════════════════════════════
+
+export const sendContact = (data) =>
+  API.post("/contact", data).then((r) => r.data);
+
+// ══════════════════════════════════════════
+//  Admin Auth + CRUD
+// ══════════════════════════════════════════
+
+export const adminLogin = (email, password) =>
+  API.post("/admin/login", { email, password }).then((r) => r.data);
+
+export const deleteProduct = (sku) =>
+  API.delete(`/admin/products/${encodeURIComponent(sku)}`, {
+    headers: adminHeaders(),
+  }).then((r) => r.data);
+
+export const deleteAllProducts = () =>
+  API.delete("/admin/products", { headers: adminHeaders() }).then(
+    (r) => r.data,
+  );
+
+export const fetchCategories = () =>
+  API.get("/admin/categories", { headers: adminHeaders() }).then((r) => r.data);
+
+export const addProduct = (data) =>
+  API.post("/admin/products", data, { headers: adminHeaders() }).then(
+    (r) => r.data,
+  );
+
+export const updateProduct = (sku, data) =>
+  API.put(`/admin/products/${encodeURIComponent(sku)}`, data, {
+    headers: adminHeaders(),
+  }).then((r) => r.data);
+
+export const exportProducts = () =>
+  API.get("/admin/export", { headers: adminHeaders() }).then((r) => r.data);
+
+export const fetchAdminStats = () =>
+  API.get("/admin/stats", { headers: adminHeaders() }).then((r) => r.data);
+
+// ══════════════════════════════════════════
+//  Admin Import / Upload
+// ══════════════════════════════════════════
+
 export const uploadExcel = (file, onProgress) => {
   const form = new FormData();
   form.append("file", file);
-  return API.post("/upload/excel", form, {
-    headers: { "Content-Type": "multipart/form-data" },
+  return API.post("/admin/import-products", form, {
+    headers: { "Content-Type": "multipart/form-data", ...adminHeaders() },
     onUploadProgress: onProgress,
   }).then((r) => r.data);
 };
@@ -26,37 +83,15 @@ export const uploadExcel = (file, onProgress) => {
 export const uploadImages = (file, onProgress) => {
   const form = new FormData();
   form.append("file", file);
-  return API.post("/upload/images", form, {
-    headers: { "Content-Type": "multipart/form-data" },
+  return API.post("/admin/upload-images", form, {
+    headers: { "Content-Type": "multipart/form-data", ...adminHeaders() },
     onUploadProgress: onProgress,
   }).then((r) => r.data);
 };
 
-export const sendContact = (data) =>
-  API.post("/contact", data).then((r) => r.data);
-
-export const adminLogin = (password) =>
-  API.post("/admin/login", { password }).then((r) => r.data);
-
-export const deleteProduct = (sku) =>
-  API.delete(`/admin/products/${encodeURIComponent(sku)}`).then((r) => r.data);
-
-export const deleteAllProducts = () =>
-  API.delete("/admin/products").then((r) => r.data);
-
-export const fetchCategories = () =>
-  API.get("/admin/categories").then((r) => r.data);
-
-export const addProduct = (data) =>
-  API.post("/admin/products", data).then((r) => r.data);
-
-export const updateProduct = (sku, data) =>
-  API.put(`/admin/products/${encodeURIComponent(sku)}`, data).then(
-    (r) => r.data,
-  );
-
-export const exportProducts = () =>
-  API.get("/admin/export").then((r) => r.data);
+// ══════════════════════════════════════════
+//  Image URL resolver
+// ══════════════════════════════════════════
 
 /**
  * Resolve image URLs: if relative (starts with /), prepend backend origin.
