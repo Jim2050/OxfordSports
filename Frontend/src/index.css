@@ -661,6 +661,76 @@ ol {
   font-size: 2.5rem;
   margin-bottom: 0.75rem;
 }
+.dropzone-hint {
+  display: block;
+  font-size: 0.8rem;
+  color: #9ca3af;
+  margin-top: 0.4rem;
+}
+
+/* Admin Tabs */
+.admin-tabs {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 1.5rem;
+  flex-wrap: wrap;
+}
+
+/* Admin Card Header */
+.admin-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 1rem;
+}
+.admin-card-header h3 {
+  margin-bottom: 0;
+}
+
+/* Admin Hint text */
+.admin-hint {
+  color: #6b7280;
+  font-size: 0.9rem;
+  margin-bottom: 1rem;
+}
+
+/* Import stats row */
+.import-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  margin-top: 0.5rem;
+  font-size: 0.9rem;
+}
+.stat-green {
+  color: #065f46;
+}
+.stat-blue {
+  color: #1e40af;
+}
+.stat-red {
+  color: #991b1b;
+}
+.stat-total {
+  color: #374151;
+}
+
+.import-result.warning {
+  background: #fffbeb;
+  border: 1px solid #fcd34d;
+  color: #92400e;
+}
+
+/* Mapping list */
+.mapping-list {
+  margin-top: 0.5rem;
+  font-size: 0.85rem;
+  columns: 2;
+  column-gap: 2rem;
+}
+.mapping-list li {
+  margin-bottom: 0.25rem;
+}
 
 /* Stats */
 .stats-row {
@@ -798,6 +868,30 @@ ol {
   padding: 4rem 0;
 }
 
+/* ========== Search Bar ========== */
+.search-bar {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 1.5rem;
+  max-width: 500px;
+}
+
+.search-bar input {
+  flex: 1;
+  padding: 0.6rem 0.9rem;
+  border: 1.5px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-family: inherit;
+  font-size: 0.95rem;
+  outline: none;
+  transition: var(--transition);
+}
+
+.search-bar input:focus {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px rgba(26, 18, 129, 0.08);
+}
+
 /* ========== Empty State ========== */
 .empty-state {
   text-align: center;
@@ -825,6 +919,25 @@ ol {
   background: var(--primary);
   border-radius: 4px;
   transition: width 0.3s ease;
+}
+
+/* ========== Product Detail ========== */
+.product-detail {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 3rem;
+  align-items: start;
+}
+
+.product-detail-img img {
+  width: 100%;
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  background: var(--bg-section);
+}
+
+.product-detail-info {
+  padding-top: 1rem;
 }
 
 /* ========== Responsive ========== */
@@ -862,6 +975,11 @@ ol {
 
   .contact-grid {
     grid-template-columns: 1fr;
+  }
+
+  .product-detail {
+    grid-template-columns: 1fr;
+    gap: 1.5rem;
   }
 
   .footer-grid {

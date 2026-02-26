@@ -51,6 +51,17 @@ app.get("/api/health", (_req, res) => {
   });
 });
 
+// ── Serve frontend (production) ──
+const FRONTEND_DIST = path.join(__dirname, "..", "Frontend", "dist");
+if (fs.existsSync(FRONTEND_DIST)) {
+  app.use(express.static(FRONTEND_DIST));
+  // SPA fallback — serve index.html for any non-API route
+  app.get("/{*splat}", (req, res) => {
+    if (req.path.startsWith("/api") || req.path.startsWith("/uploads")) return;
+    res.sendFile(path.join(FRONTEND_DIST, "index.html"));
+  });
+}
+
 // ── Global error handler ──
 app.use((err, _req, res, _next) => {
   console.error("Server Error:", err);

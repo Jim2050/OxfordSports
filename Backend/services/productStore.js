@@ -28,10 +28,22 @@ function getAll(filters = {}) {
 
   if (filters.category) {
     const cat = filters.category.toLowerCase();
-    products = products.filter(
-      (p) =>
-        (p.category || "").toLowerCase() === cat || slugify(p.category) === cat,
-    );
+    // Keyword map: front-end slugs → words that should match in product category field
+    const CATEGORY_KEYWORDS = {
+      "rugby-category": ["rugby"],
+      rugby: ["rugby"],
+      football: ["football", "soccer"],
+      footwear: ["footwear", "shoes", "boots", "trainers"],
+    };
+    const keywords = CATEGORY_KEYWORDS[cat] || [cat.replace(/-/g, " ")];
+    products = products.filter((p) => {
+      const pCat = (p.category || "").toLowerCase();
+      const pSlug = slugify(p.category);
+      // Exact match
+      if (pCat === cat || pSlug === cat) return true;
+      // Keyword match
+      return keywords.some((kw) => pCat.includes(kw) || pSlug.includes(kw));
+    });
   }
 
   if (filters.maxPrice !== undefined) {
@@ -183,4 +195,48 @@ function slugify(str) {
     .replace(/^-|-$/g, "");
 }
 
-module.exports = { getAll, getBySku, count, bulkUpsert, setImage, readAll };
+/**
+ * Delete a single product by SKU.
+ */
+function deleteBySku(sku) {
+  const products = readAll();
+  const idx = products.findIndex(
+    (p) => (p.sku || "").toUpperCase() === sku.toUpperCase(),
+  );
+  if (idx === -1) return false;
+  products.splice(idx, 1);
+  writeAll(products);
+  return true;
+}
+
+/**
+ * Delete ALL products (clear catalogue).
+ */
+function deleteAll() {
+  writeAll([]);
+  return true;
+}
+
+/**
+ * Get distinct categories from the product catalog.
+ */
+function getCategories() {
+  const products = readAll();
+  const cats = new Set();
+  products.forEach((p) => {
+    if (p.category) cats.add(p.category);
+  });
+  return [...cats];
+}
+
+module.exports = {
+  getAll,
+  getBySku,
+  count,
+  bulkUpsert,
+  setImage,
+  readAll,
+  deleteBySku,
+  deleteAll,
+  getCategories,
+};

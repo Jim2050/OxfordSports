@@ -1,0 +1,20 @@
+# Render blueprint for one-click deployment
+services:
+  - type: web
+    name: oxford-sports
+    runtime: node
+    rootDir: Backend
+    plan: free
+    buildCommand: cd ../Frontend && npm install && npm run build
+    startCommand: node server.js
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: ADMIN_PASSWORD
+        value: Godaddy1971turbs*
+      - key: ORDER_EMAIL
+        value: sales@oxfordsports.net
+    disk:
+      name: data
+      mountPath: /opt/render/project/src/data
+      sizeGB: 1

@@ -5,6 +5,8 @@ import Footer from "./components/layout/Footer";
 import HomePage from "./pages/public/HomePage";
 import CategoryPage from "./pages/public/CategoryPage";
 import UnderFivePage from "./pages/public/UnderFivePage";
+import AllProductsPage from "./pages/public/AllProductsPage";
+import ProductPage from "./pages/public/ProductPage";
 import ContactPage from "./pages/public/ContactPage";
 import RegisterPage from "./pages/public/RegisterPage";
 import AdminPage from "./pages/admin/AdminPage";
@@ -38,6 +40,8 @@ export default function App() {
                 <Route path="/football" element={<CategoryPage />} />
                 <Route path="/footwear" element={<CategoryPage />} />
                 <Route path="/under-5" element={<UnderFivePage />} />
+                <Route path="/products" element={<AllProductsPage />} />
+                <Route path="/product/:sku" element={<ProductPage />} />
                 <Route path="/contact" element={<ContactPage />} />
                 <Route path="/register" element={<RegisterPage />} />
                 <Route path="/:slug" element={<CategoryPage />} />

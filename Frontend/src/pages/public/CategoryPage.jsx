@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import { useParams, useLocation } from "react-router-dom";
 import ProductGrid from "../../components/products/ProductGrid";
-import { fetchProductsByCategory } from "../../api/api";
+import SearchBar from "../../components/products/SearchBar";
+import { fetchProducts } from "../../api/api";
 
 const CATEGORY_META = {
   "rugby-category": {
@@ -24,22 +25,27 @@ const CATEGORY_META = {
 export default function CategoryPage() {
   const params = useParams();
   const location = useLocation();
-  // Extract slug from params or from pathname
   const slug = params.slug || location.pathname.replace(/^\//, "");
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState("");
 
-  const meta = CATEGORY_META[slug] || { title: slug, subtitle: "" };
+  const meta = CATEGORY_META[slug] || {
+    title: slug.replace(/-/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()),
+    subtitle: "",
+  };
 
   useEffect(() => {
     setLoading(true);
-    fetchProductsByCategory(slug)
+    const params = { category: slug };
+    if (search) params.search = search;
+    fetchProducts(params)
       .then((data) =>
         setProducts(Array.isArray(data) ? data : data.products || []),
       )
       .catch(() => setProducts([]))
       .finally(() => setLoading(false));
-  }, [slug]);
+  }, [slug, search]);
 
   return (
     <>
@@ -52,6 +58,10 @@ export default function CategoryPage() {
 
       <section className="section">
         <div className="container">
+          <SearchBar
+            onSearch={setSearch}
+            placeholder={`Search ${meta.title}…`}
+          />
           {loading ? (
             <div className="loading-center">
               <div className="spinner" />

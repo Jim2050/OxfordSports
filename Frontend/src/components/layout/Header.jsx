@@ -11,6 +11,7 @@ export default function Header() {
     { to: "/football", label: "Football" },
     { to: "/footwear", label: "Footwear" },
     { to: "/under-5", label: "Under £5" },
+    { to: "/products", label: "All Products" },
     { to: "/contact", label: "Contact" },
   ];
 
