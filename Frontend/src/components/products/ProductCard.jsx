@@ -1,12 +1,15 @@
 import { Link } from "react-router-dom";
 import { buildMailto } from "../../utils/buildMailto";
-import { resolveImageUrl } from "../../api/api";
+import { resolveImageUrl, getDisplayPrice } from "../../api/api";
 
 const PLACEHOLDER = "https://placehold.co/400x400/e2e8f0/64748b?text=No+Image";
 
 export default function ProductCard({ product }) {
   const img = resolveImageUrl(product.imageUrl || product.image) || PLACEHOLDER;
-  const isUnder5 = Number(product.price) <= 5;
+  const finalPrice = getDisplayPrice(product);
+  const rrp = Number(product.rrp) || 0;
+  const showRrp = rrp > 0 && rrp > finalPrice;
+  const isUnder5 = finalPrice > 0 && finalPrice <= 5;
   const detailUrl = product.sku
     ? `/product/${encodeURIComponent(product.sku)}`
     : "#";
@@ -53,7 +56,20 @@ export default function ProductCard({ product }) {
           )}
         <div className="product-card-footer">
           <span className="price">
-            £{Number(product.price).toFixed(2)}
+            £{finalPrice.toFixed(2)}
+            {showRrp && (
+              <span
+                style={{
+                  textDecoration: "line-through",
+                  color: "#9ca3af",
+                  fontSize: "0.8rem",
+                  marginLeft: "0.5rem",
+                  fontWeight: "normal",
+                }}
+              >
+                £{rrp.toFixed(2)}
+              </span>
+            )}
             {isUnder5 && <span className="price-under5">UNDER £5</span>}
           </span>
           <a href={buildMailto(product)} className="btn btn-accent btn-sm">

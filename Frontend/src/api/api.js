@@ -105,19 +105,86 @@ export const uploadImages = (file, onProgress) => {
   }).then((r) => r.data);
 };
 
+export const resolveImages = (limit = 100) =>
+  API.post(
+    `/admin/resolve-images?limit=${limit}`,
+    {},
+    {
+      headers: adminHeaders(),
+    },
+  ).then((r) => r.data);
+
+export const fixPrices = () =>
+  API.post("/admin/fix-prices", {}, { headers: adminHeaders() }).then(
+    (r) => r.data,
+  );
+
 // ══════════════════════════════════════════
-//  Image URL resolver
+//  Image URL resolver & helpers
 // ══════════════════════════════════════════
 
+/** Known image file extensions */
+const IMG_EXTENSIONS = /\.(jpe?g|png|webp|gif|svg|bmp|avif)(\?.*)?$/i;
+
 /**
- * Resolve image URLs: if relative (starts with /), prepend backend origin.
- * In dev, the Vite proxy handles /api but NOT /uploads, so we need the full backend URL.
+ * Check whether a URL points to an actual image resource.
+ * Rejects Google search URLs, landing pages, etc.
+ */
+export function isDirectImageUrl(url) {
+  if (!url) return false;
+  const s = String(url).trim().toLowerCase();
+  if (s.length < 10) return false;
+  // Reject known non-image domains / patterns
+  if (
+    s.includes("google.com/search") ||
+    s.includes("bing.com/images") ||
+    s.includes("tbm=isch") ||
+    s === "google images" ||
+    s === "google image"
+  )
+    return false;
+  if (!s.startsWith("http://") && !s.startsWith("https://")) return false;
+  // Accept if extension matches a known image type
+  if (IMG_EXTENSIONS.test(s)) return true;
+  // Accept known CDN domains that serve images without file extension
+  if (
+    s.includes("cloudinary.com") ||
+    s.includes("res.cloudinary.com") ||
+    s.includes("imgur.com") ||
+    s.includes("images.unsplash.com") ||
+    s.includes("cdn.shopify.com")
+  )
+    return true;
+  // Reject everything else (landing pages, search results, etc.)
+  return false;
+}
+
+/**
+ * Resolve image URLs: validates the URL is a direct image, prepends
+ * backend origin for relative paths.  Returns null for non-image URLs.
  */
 export function resolveImageUrl(url) {
   if (!url) return null;
-  if (url.startsWith("http")) return url;
-  // In dev, images are served from the backend directly
-  const backendBase =
-    import.meta.env.VITE_BACKEND_URL || "http://localhost:5000";
-  return `${backendBase}${url}`;
+  const trimmed = String(url).trim();
+  // Relative path → prepend backend base
+  if (trimmed.startsWith("/")) {
+    const backendBase =
+      import.meta.env.VITE_BACKEND_URL || "http://localhost:5000";
+    return `${backendBase}${trimmed}`;
+  }
+  // Absolute URL → validate it points to an actual image
+  if (isDirectImageUrl(trimmed)) return trimmed;
+  // Not a usable image URL
+  return null;
+}
+
+/**
+ * Determine the display price for a product.
+ * product.price (SALE price) is the single source of truth.
+ * Returns a numeric value (never NaN).
+ */
+export function getDisplayPrice(product) {
+  const price = Number(product?.price);
+  if (!isNaN(price) && price >= 0) return price;
+  return 0;
 }

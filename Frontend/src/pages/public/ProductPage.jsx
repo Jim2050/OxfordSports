@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useParams, Link } from "react-router-dom";
 import { buildMailto } from "../../utils/buildMailto";
-import { resolveImageUrl } from "../../api/api";
+import { resolveImageUrl, getDisplayPrice } from "../../api/api";
 import API from "../../api/axiosInstance";
 
 const PLACEHOLDER = "https://placehold.co/600x600/e2e8f0/64748b?text=No+Image";
@@ -50,7 +50,10 @@ export default function ProductPage() {
   }
 
   const img = resolveImageUrl(product.imageUrl || product.image) || PLACEHOLDER;
-  const isUnder5 = Number(product.price) <= 5;
+  const finalPrice = getDisplayPrice(product);
+  const rrp = Number(product.rrp) || 0;
+  const showRrp = rrp > 0 && rrp > finalPrice;
+  const isUnder5 = finalPrice > 0 && finalPrice <= 5;
 
   return (
     <>
@@ -93,18 +96,21 @@ export default function ProductPage() {
               className="price"
               style={{ fontSize: "1.8rem", marginBottom: "0.5rem" }}
             >
-              £{Number(product.price).toFixed(2)}
+              £{finalPrice.toFixed(2)}
               {isUnder5 && <span className="price-under5">UNDER £5</span>}
             </div>
-            {product.rrp > 0 && (
+            {showRrp && (
               <p
                 style={{
-                  color: "#6b7280",
+                  color: "#9ca3af",
                   marginBottom: "1rem",
                   fontSize: "0.95rem",
                 }}
               >
-                RRP: £{Number(product.rrp).toFixed(2)}
+                RRP:{" "}
+                <span style={{ textDecoration: "line-through" }}>
+                  £{rrp.toFixed(2)}
+                </span>
               </p>
             )}
             {product.description && (

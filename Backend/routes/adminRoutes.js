@@ -25,6 +25,8 @@ const {
   importProducts,
   uploadImages: uploadImagesCtrl,
   getImportBatches,
+  resolveImages,
+  fixPrices,
 } = require("../controllers/importController");
 
 // ── Public ──
@@ -54,5 +56,7 @@ router.get("/export", exportProducts);
 // One-time migration utilities
 router.post("/fix-subcategories", fixSubcategories);
 router.post("/fix-brands", fixBrands);
+router.post("/fix-prices", fixPrices);
+router.post("/resolve-images", resolveImages);
 
 module.exports = router;

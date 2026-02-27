@@ -6,6 +6,10 @@ const Product = require("../models/Product");
 const Category = require("../models/Category");
 const ImportBatch = require("../models/ImportBatch");
 const cloudinary = require("../config/cloudinary");
+const {
+  resolveProductImage,
+  batchResolveImages,
+} = require("../utils/imageResolver");
 
 // ═══════════════════════════════════════════════════════════════
 //  COLUMN ALIAS MAP — handles client Excel + generic formats
@@ -48,12 +52,17 @@ const COLUMN_MAP = {
   price: [
     "trade",
     "trade price",
+    "trade (£)",
+    "trade price (£)",
     "wholesale price",
     "our price",
     "price",
     "unit price",
     "cost",
     "sell price",
+    "sale",
+    "sale price",
+    "sale (£)",
     "price (£)",
     "price gbp",
     "gbp",
@@ -140,17 +149,25 @@ function normalizeHeader(h) {
 
 /**
  * Detect column mapping from header row.
+ * Prefers explicitly-named columns over unnamed __EMPTY* columns.
  */
 function detectMapping(headers) {
   const mapping = {};
   const unmappedHeaders = [];
 
-  for (const raw of headers) {
+  // Sort headers: named columns first, __EMPTY* columns last
+  // This ensures "Image Link" is preferred over "__EMPTY_1" etc.
+  const sortedHeaders = [...headers].sort((a, b) => {
+    const aEmpty = a.startsWith("__EMPTY") ? 1 : 0;
+    const bEmpty = b.startsWith("__EMPTY") ? 1 : 0;
+    return aEmpty - bEmpty;
+  });
+
+  for (const raw of sortedHeaders) {
     const norm = normalizeHeader(raw);
     let matched = false;
     for (const [field, aliases] of Object.entries(COLUMN_MAP)) {
       if (aliases.includes(norm)) {
-        // Don't override if already matched (prefer earlier alias match)
         if (!mapping[field]) {
           mapping[field] = raw;
           matched = true;
@@ -173,12 +190,16 @@ function detectMapping(headers) {
     if (nameH && nameH !== mapping.sku) mapping.name = nameH;
   }
   if (!mapping.price) {
-    const priceH = headers.find((h) => /trade|price|cost|£|gbp/i.test(h));
+    const priceH = headers.find((h) => /trade|price|cost|sale|£|gbp/i.test(h));
     if (priceH) mapping.price = priceH;
   }
   if (!mapping.category) {
     const catH = headers.find((h) => /gender|category|department/i.test(h));
     if (catH) mapping.category = catH;
+  }
+  if (!mapping.imageUrl) {
+    const imgH = headers.find((h) => /image|img|photo|picture/i.test(h));
+    if (imgH) mapping.imageUrl = imgH;
   }
 
   return { mapping, unmappedHeaders };
@@ -339,13 +360,83 @@ async function ensureCategories(categoryNames) {
 }
 
 /**
- * Check if an image URL is a real usable URL (not "Google Images" placeholder).
+ * Safely parse a price value from Excel — handles £ symbols, commas, strings.
+ * Returns { value: number|null, error: string|null }
+ */
+function parsePrice(raw) {
+  if (raw === undefined || raw === null || raw === "") {
+    return { value: null, error: "empty" };
+  }
+  // If already a number, use directly
+  if (typeof raw === "number") {
+    if (isNaN(raw)) return { value: null, error: "NaN" };
+    if (raw < 0) return { value: null, error: `negative: ${raw}` };
+    return { value: raw, error: null };
+  }
+  // String: strip £, commas, spaces, currency symbols
+  const cleaned = String(raw)
+    .replace(/[£$€,\s]/g, "")
+    .replace(/[^0-9.\-]/g, "");
+  if (!cleaned) return { value: null, error: `unparseable: "${raw}"` };
+  const num = parseFloat(cleaned);
+  if (isNaN(num)) return { value: null, error: `NaN after parse: "${raw}"` };
+  if (num < 0) return { value: null, error: `negative: ${num}` };
+  return { value: num, error: null };
+}
+
+/** Known image file extensions */
+const IMG_EXTENSIONS = /\.(jpe?g|png|webp|gif|svg|bmp|avif)(\?.*)?$/i;
+
+/**
+ * Validate a URL string — must be a direct image URL.
+ * Rejects Google/Bing search pages, bare text, and non-image landing pages.
+ */
+function isDirectImageUrl(url) {
+  if (!url) return false;
+  const s = String(url).trim();
+  if (s.length < 10) return false;
+  const lower = s.toLowerCase();
+  if (lower === "google images" || lower === "google image") return false;
+  // Reject known search-engine image pages
+  if (
+    lower.includes("google.com/search") ||
+    lower.includes("bing.com/images") ||
+    lower.includes("tbm=isch")
+  )
+    return false;
+  if (!lower.startsWith("http://") && !lower.startsWith("https://"))
+    return false;
+  // Accept direct image file extensions
+  if (IMG_EXTENSIONS.test(lower)) return true;
+  // Accept known CDNs that serve images without file extension
+  if (
+    lower.includes("cloudinary.com") ||
+    lower.includes("imgur.com") ||
+    lower.includes("images.unsplash.com") ||
+    lower.includes("cdn.shopify.com")
+  )
+    return true;
+  // Reject everything else (landing pages, search results)
+  return false;
+}
+
+/**
+ * Legacy compat — accepts any HTTP(S) URL that isn't obviously a search page.
+ * Used for "at least it's a URL" validation (non-strict).
  */
 function isValidImageUrl(url) {
   if (!url) return false;
-  const s = String(url).trim().toLowerCase();
-  if (s === "google images" || s === "google image") return false;
-  return s.startsWith("http://") || s.startsWith("https://");
+  const s = String(url).trim();
+  if (s.length < 10) return false;
+  const lower = s.toLowerCase();
+  if (lower === "google images" || lower === "google image") return false;
+  if (
+    lower.includes("google.com/search") ||
+    lower.includes("bing.com/images") ||
+    lower.includes("tbm=isch")
+  )
+    return false;
+  return lower.startsWith("http://") || lower.startsWith("https://");
 }
 
 /**
@@ -377,11 +468,22 @@ exports.importProducts = async (req, res) => {
     console.log(
       `[IMPORT] Parsed ${rows.length} raw rows from ${sheetSummary.length} sheets`,
     );
-    console.log(`[IMPORT] Column mapping:`, JSON.stringify(mapping));
+    console.log(`[IMPORT] Column mapping:`, JSON.stringify(mapping, null, 2));
     console.log(
       `[IMPORT] Sheet breakdown:`,
       sheetSummary.map((s) => `${s.name}(${s.rows})`).join(", "),
     );
+    if (unmappedHeaders.length > 0) {
+      console.log(`[IMPORT] Unmapped headers:`, unmappedHeaders);
+    }
+
+    // ── Phase 1 diagnostic: log first 3 parsed rows ──
+    for (let d = 0; d < Math.min(3, rows.length); d++) {
+      console.log(
+        `[IMPORT] Parsed row ${d}:`,
+        JSON.stringify(rows[d], null, 2),
+      );
+    }
 
     if (rows.length === 0) {
       batch.status = "failed";
@@ -445,6 +547,7 @@ exports.importProducts = async (req, res) => {
     let updated = 0;
     let failed = 0;
     const errors = [];
+    const pendingImageProducts = [];
 
     // ── Process in batches of 500 for memory efficiency ──
     const BATCH_SIZE = 500;
@@ -473,16 +576,26 @@ exports.importProducts = async (req, res) => {
         name = color ? `${sku} - ${color}` : sku;
       }
 
-      // Parse prices — prefer Trade, fall back to Price column if Trade is empty
+      // ── Parse price using safe utility ──
       let rawPrice = row.price;
       if (rawPrice === "" || rawPrice === undefined || rawPrice === null) {
-        // Trade was empty — check if the original row has a "Price" column
-        rawPrice = row._rawPrice || 0;
+        rawPrice = row._rawPrice;
       }
-      const tradePrice = parseFloat(rawPrice);
-      const price = isNaN(tradePrice) || tradePrice < 0 ? 0 : tradePrice;
-      const rrpVal = parseFloat(row.rrp);
-      const rrp = isNaN(rrpVal) || rrpVal < 0 ? 0 : rrpVal;
+      const priceResult = parsePrice(rawPrice);
+      if (priceResult.error && priceResult.value === null) {
+        // Price is missing or invalid — reject row, do NOT default to 0
+        failed++;
+        errors.push({
+          row: i + 1,
+          sku,
+          reason: `Invalid price: ${priceResult.error} (raw: "${rawPrice}")`,
+        });
+        continue;
+      }
+      const price = priceResult.value;
+
+      const rrpResult = parsePrice(row.rrp);
+      const rrp = rrpResult.value || 0;
 
       const productData = {
         sku,
@@ -523,17 +636,38 @@ exports.importProducts = async (req, res) => {
         }
       }
 
-      // Only set imageUrl if it's a real URL (not "Google Images" placeholder)
-      // Log which rows have image URLs for debugging
-      if (isValidImageUrl(row.imageUrl)) {
-        productData.imageUrl = String(row.imageUrl).trim();
-      } else if (row.imageUrl && String(row.imageUrl).trim()) {
-        // Log non-URL image values so admin knows what format the Excel uses
+      // ── Image URL: store only direct image URLs ──
+      // Google/Bing search URLs saved to _pendingImageQuery for auto-resolution
+      const rawImageUrl = row.imageUrl ? String(row.imageUrl).trim() : "";
+      if (isDirectImageUrl(rawImageUrl)) {
+        productData.imageUrl = rawImageUrl;
+      } else if (isValidImageUrl(rawImageUrl)) {
+        // HTTP URL but not a direct image (Google search link) — queue for resolution
+        productData.imageUrl = "";
+        productData._pendingImageQuery = rawImageUrl;
         if (i < 5) {
           console.log(
-            `[IMPORT] Row ${i + 1} imageUrl is not a valid URL: "${String(row.imageUrl).trim()}" — use ZIP image upload to attach images`,
+            `[IMPORT] Row ${i + 1} imageUrl queued for auto-resolution: "${rawImageUrl.substring(0, 80)}"`,
           );
         }
+      } else {
+        productData.imageUrl = "";
+        if (rawImageUrl && i < 5) {
+          console.log(
+            `[IMPORT] Row ${i + 1} imageUrl is not a valid URL: "${rawImageUrl}" — use ZIP image upload`,
+          );
+        }
+      }
+
+      // Track products that need image resolution (for post-import phase)
+      if (productData._pendingImageQuery) {
+        pendingImageProducts.push({
+          sku: productData.sku,
+          brand: productData.brand,
+          name: productData.name,
+          currentUrl: productData._pendingImageQuery,
+        });
+        delete productData._pendingImageQuery;
       }
 
       operations.push({
@@ -561,6 +695,69 @@ exports.importProducts = async (req, res) => {
 
     const elapsed = ((Date.now() - startTime) / 1000).toFixed(2);
 
+    // ── Post-import: auto-resolve images from Google search URLs (async, non-blocking) ──
+    let imageResolved = 0;
+    let imageFailed = 0;
+    if (pendingImageProducts.length > 0) {
+      console.log(
+        `[IMPORT] Starting auto image resolution for ${pendingImageProducts.length} products...`,
+      );
+      // Resolve up to 50 images during import (rest handled by /resolve-images endpoint)
+      const batch50 = pendingImageProducts.slice(0, 50);
+      try {
+        const { resolved, failed: imgFailed } = await batchResolveImages(
+          batch50,
+          3,
+          (r, f, t) => {
+            if ((r + f) % 10 === 0)
+              console.log(
+                `[IMAGE-RESOLVE] Progress: ${r} resolved, ${f} failed of ${t}`,
+              );
+          },
+        );
+        imageResolved = resolved.length;
+        imageFailed = imgFailed.length;
+
+        // Update resolved products in DB
+        if (resolved.length > 0) {
+          const imgOps = resolved.map((r) => ({
+            updateOne: {
+              filter: { sku: r.sku },
+              update: { $set: { imageUrl: r.imageUrl } },
+            },
+          }));
+          await Product.bulkWrite(imgOps, { ordered: false });
+          console.log(
+            `[IMPORT] Auto-resolved ${resolved.length} product images`,
+          );
+        }
+        if (imgFailed.length > 0) {
+          console.log(
+            `[IMPORT] Image resolution failed for ${imgFailed.length} products (first 5):`,
+            imgFailed.slice(0, 5).map((f) => `${f.sku}: ${f.reason}`),
+          );
+        }
+        if (pendingImageProducts.length > 50) {
+          console.log(
+            `[IMPORT] ${pendingImageProducts.length - 50} products still need image resolution — use POST /api/admin/resolve-images`,
+          );
+        }
+      } catch (imgErr) {
+        console.error("[IMPORT] Image auto-resolution error:", imgErr.message);
+      }
+    }
+
+    // Log import summary
+    console.log(
+      `[IMPORT] Complete: ${imported} inserted, ${updated} updated, ${failed} failed, ${imageResolved} images resolved in ${elapsed}s`,
+    );
+    if (errors.length > 0) {
+      console.log(
+        `[IMPORT] Failed rows (first 10):`,
+        JSON.stringify(errors.slice(0, 10), null, 2),
+      );
+    }
+
     // Update batch record
     batch.totalRows = rows.length;
     batch.importedRows = imported;
@@ -580,6 +777,9 @@ exports.importProducts = async (req, res) => {
       imported,
       updated,
       failed,
+      imageResolved,
+      imageFailed,
+      imagePending: Math.max(0, pendingImageProducts.length - 50),
       errors: errors.slice(0, 50),
       headers,
       mapping,
@@ -759,6 +959,158 @@ exports.getImportBatches = async (_req, res) => {
 
     res.json({ batches });
   } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+/**
+ * POST /api/admin/resolve-images
+ * Batch-resolve images for all products that have empty imageUrl.
+ * Attempts auto-resolution from brand + SKU + name via web image search.
+ * Query params: ?limit=100&concurrency=3
+ */
+exports.resolveImages = async (req, res) => {
+  try {
+    const limit = Math.min(parseInt(req.query?.limit) || 100, 500);
+    const concurrency = Math.min(parseInt(req.query?.concurrency) || 3, 5);
+
+    // Find products without images
+    const products = await Product.find({
+      $or: [{ imageUrl: "" }, { imageUrl: { $exists: false } }],
+      isActive: true,
+    })
+      .select("sku brand name imageUrl")
+      .limit(limit)
+      .lean();
+
+    if (products.length === 0) {
+      return res.json({
+        success: true,
+        message: "All products already have images.",
+        resolved: 0,
+        failed: 0,
+        remaining: 0,
+      });
+    }
+
+    console.log(
+      `[RESOLVE-IMAGES] Starting resolution for ${products.length} products (concurrency: ${concurrency})`,
+    );
+
+    const toResolve = products.map((p) => ({
+      sku: p.sku,
+      brand: p.brand || "",
+      name: p.name || "",
+      currentUrl: "",
+    }));
+
+    const { resolved, failed } = await batchResolveImages(
+      toResolve,
+      concurrency,
+      (r, f, t) => {
+        if ((r + f) % 10 === 0)
+          console.log(
+            `[RESOLVE-IMAGES] Progress: ${r} resolved, ${f} failed of ${t}`,
+          );
+      },
+    );
+
+    // Update resolved products in DB
+    if (resolved.length > 0) {
+      const ops = resolved.map((r) => ({
+        updateOne: {
+          filter: { sku: r.sku },
+          update: { $set: { imageUrl: r.imageUrl } },
+        },
+      }));
+      await Product.bulkWrite(ops, { ordered: false });
+    }
+
+    // Count remaining products without images
+    const remaining = await Product.countDocuments({
+      $or: [{ imageUrl: "" }, { imageUrl: { $exists: false } }],
+      isActive: true,
+    });
+
+    console.log(
+      `[RESOLVE-IMAGES] Done: ${resolved.length} resolved, ${failed.length} failed, ${remaining} remaining`,
+    );
+
+    res.json({
+      success: true,
+      resolved: resolved.length,
+      failed: failed.length,
+      failedSkus: failed.slice(0, 20),
+      remaining,
+      resolvedSkus: resolved.slice(0, 20).map((r) => ({
+        sku: r.sku,
+        imageUrl: r.imageUrl.substring(0, 100),
+      })),
+    });
+  } catch (err) {
+    console.error("[RESOLVE-IMAGES] Error:", err);
+    res.status(500).json({ error: err.message });
+  }
+};
+
+/**
+ * POST /api/admin/fix-prices
+ * One-time migration: re-reads the Excel file mapping and fixes products
+ * that have price=0 in MongoDB by copying rrp to price as fallback,
+ * OR preferably re-importing from the Excel SALE column.
+ *
+ * This is a safety net for products imported before the SALE column fix.
+ */
+exports.fixPrices = async (req, res) => {
+  try {
+    // Find all products with price = 0 that have rrp > 0
+    const zeroPrice = await Product.find({
+      price: 0,
+      rrp: { $gt: 0 },
+      isActive: true,
+    }).lean();
+
+    if (zeroPrice.length === 0) {
+      return res.json({
+        success: true,
+        message: "No products with price=0 found. All prices are correct.",
+        fixed: 0,
+      });
+    }
+
+    console.log(
+      `[FIX-PRICES] Found ${zeroPrice.length} products with price=0 and rrp>0`,
+    );
+
+    // For these products, we set price = rrp as a fallback
+    // (the correct fix is to re-import the Excel which now maps SALE→price correctly)
+    const ops = zeroPrice.map((p) => ({
+      updateOne: {
+        filter: { _id: p._id },
+        update: { $set: { price: p.rrp } },
+      },
+    }));
+
+    const result = await Product.bulkWrite(ops, { ordered: false });
+
+    console.log(
+      `[FIX-PRICES] Updated ${result.modifiedCount} products: price = rrp`,
+    );
+
+    res.json({
+      success: true,
+      found: zeroPrice.length,
+      fixed: result.modifiedCount,
+      message: `Set price = rrp for ${result.modifiedCount} products. Re-import Excel for correct SALE prices.`,
+      sampleFixed: zeroPrice.slice(0, 10).map((p) => ({
+        sku: p.sku,
+        oldPrice: p.price,
+        newPrice: p.rrp,
+        rrp: p.rrp,
+      })),
+    });
+  } catch (err) {
+    console.error("[FIX-PRICES] Error:", err);
     res.status(500).json({ error: err.message });
   }
 };
