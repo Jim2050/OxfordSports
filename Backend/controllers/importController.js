@@ -221,6 +221,16 @@ function parseExcelFile(filePath) {
       for (const [field, col] of Object.entries(currentMapping)) {
         row[field] = raw[col] !== undefined ? raw[col] : "";
       }
+
+      // Fallback: if Trade mapped to price but was empty, try raw "Price" column
+      if (
+        (row.price === "" || row.price === undefined || row.price === null) &&
+        raw.Price !== undefined &&
+        raw.Price !== ""
+      ) {
+        row._rawPrice = raw.Price;
+      }
+
       allRows.push(row);
       rowCount++;
     }
@@ -355,6 +365,15 @@ exports.importProducts = async (req, res) => {
     const { rows, headers, mapping, unmappedHeaders, sheetSummary } =
       parseExcelFile(filePath);
 
+    console.log(
+      `[IMPORT] Parsed ${rows.length} raw rows from ${sheetSummary.length} sheets`,
+    );
+    console.log(`[IMPORT] Column mapping:`, JSON.stringify(mapping));
+    console.log(
+      `[IMPORT] Sheet breakdown:`,
+      sheetSummary.map((s) => `${s.name}(${s.rows})`).join(", "),
+    );
+
     if (rows.length === 0) {
       batch.status = "failed";
       batch.errorLog.push({
@@ -371,6 +390,19 @@ exports.importProducts = async (req, res) => {
 
     // ── Consolidate same-SKU rows (size merging) ──
     const consolidated = consolidateBySku(rows);
+    console.log(
+      `[IMPORT] Consolidated ${rows.length} rows → ${consolidated.length} unique products`,
+    );
+
+    // Log price fallback usage
+    const priceFallbackCount = consolidated.filter(
+      (r) => r._rawPrice !== undefined,
+    ).length;
+    if (priceFallbackCount > 0) {
+      console.log(
+        `[IMPORT] ${priceFallbackCount} products using Price column fallback (Trade was empty)`,
+      );
+    }
 
     // ── Collect distinct categories and auto-create them ──
     const distinctCategories = [
@@ -414,8 +446,13 @@ exports.importProducts = async (req, res) => {
         name = color ? `${sku} - ${color}` : sku;
       }
 
-      // Parse prices
-      const tradePrice = parseFloat(row.price);
+      // Parse prices — prefer Trade, fall back to Price column if Trade is empty
+      let rawPrice = row.price;
+      if (rawPrice === "" || rawPrice === undefined || rawPrice === null) {
+        // Trade was empty — check if the original row has a "Price" column
+        rawPrice = row._rawPrice || 0;
+      }
+      const tradePrice = parseFloat(rawPrice);
       const price = isNaN(tradePrice) || tradePrice < 0 ? 0 : tradePrice;
       const rrpVal = parseFloat(row.rrp);
       const rrp = isNaN(rrpVal) || rrpVal < 0 ? 0 : rrpVal;
@@ -437,9 +474,39 @@ exports.importProducts = async (req, res) => {
         isActive: true,
       };
 
-      // Only set imageUrl if it's a real URL
+      // ── Auto-detect sport from product name → populate subcategory ──
+      // This allows Rugby/Football/Footwear pages to filter correctly
+      // even when Excel only has Gender (Mens/Womens) in the category column.
+      if (!productData.subcategory) {
+        const lowerName = (name + " " + productData.description).toLowerCase();
+        if (/rugby/.test(lowerName)) {
+          productData.subcategory = "Rugby";
+        } else if (
+          /\bfootball\b|soccer|\bfc\b|\bf\.c\.|premier league|champions league/.test(
+            lowerName,
+          )
+        ) {
+          productData.subcategory = "Football";
+        } else if (
+          /\bboot\b|\bboots\b|\btrainer\b|\btrainers\b|\bshoe\b|\bshoes\b|footwear|sneaker|running/.test(
+            lowerName,
+          )
+        ) {
+          productData.subcategory = "Footwear";
+        }
+      }
+
+      // Only set imageUrl if it's a real URL (not "Google Images" placeholder)
+      // Log which rows have image URLs for debugging
       if (isValidImageUrl(row.imageUrl)) {
         productData.imageUrl = String(row.imageUrl).trim();
+      } else if (row.imageUrl && String(row.imageUrl).trim()) {
+        // Log non-URL image values so admin knows what format the Excel uses
+        if (i < 5) {
+          console.log(
+            `[IMPORT] Row ${i + 1} imageUrl is not a valid URL: "${String(row.imageUrl).trim()}" — use ZIP image upload to attach images`,
+          );
+        }
       }
 
       operations.push({
@@ -452,11 +519,17 @@ exports.importProducts = async (req, res) => {
     }
 
     // ── Execute in bulk batches ──
+    console.log(
+      `[IMPORT] Executing ${operations.length} operations in batches of ${BATCH_SIZE}`,
+    );
     for (let i = 0; i < operations.length; i += BATCH_SIZE) {
       const chunk = operations.slice(i, i + BATCH_SIZE);
       const result = await Product.bulkWrite(chunk, { ordered: false });
       imported += result.upsertedCount || 0;
       updated += result.modifiedCount || 0;
+      console.log(
+        `[IMPORT] Batch ${Math.floor(i / BATCH_SIZE) + 1}: upserted=${result.upsertedCount || 0}, modified=${result.modifiedCount || 0}`,
+      );
     }
 
     const elapsed = ((Date.now() - startTime) / 1000).toFixed(2);
@@ -619,6 +692,9 @@ exports.uploadImages = async (req, res) => {
         if (imagePublicId) product.imagePublicId = imagePublicId;
         await product.save();
         matched++;
+        console.log(
+          `[IMAGE] Matched ${img.filename} → ${product.sku} | URL: ${imageUrl.substring(0, 80)}...`,
+        );
       } catch (imgErr) {
         errors.push(`${img.filename}: ${imgErr.message}`);
       }

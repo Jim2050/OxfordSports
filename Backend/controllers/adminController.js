@@ -228,9 +228,80 @@ exports.getCategories = async (_req, res) => {
 };
 
 /**
- * GET /api/admin/export
- * Export all products as JSON. Frontend converts to CSV.
+ * POST /api/admin/fix-subcategories
+ * One-time migration: scan all products lacking a subcategory,
+ * auto-detect Rugby / Football / Footwear from their name,
+ * and write the result back to MongoDB.
+ * Safe to call multiple times — only updates products with empty subcategory.
  */
+exports.fixSubcategories = async (_req, res) => {
+  try {
+    const RUGBY_RE = /rugby/i;
+    const FOOTBALL_RE =
+      /\bfootball\b|soccer|\bfc\b|\bf\.c\.|premier league|champions league/i;
+    const FOOTWEAR_RE =
+      /\bboot\b|\bboots\b|\btrainer\b|\btrainers\b|\bshoe\b|\bshoes\b|footwear|sneaker|running/i;
+
+    // Fetch all products with empty/missing subcategory in batches
+    let updated = 0;
+    const BATCH = 500;
+    let skip = 0;
+    let hasMore = true;
+
+    while (hasMore) {
+      const products = await Product.find(
+        { subcategory: { $in: ["", null] } },
+        { _id: 1, name: 1, description: 1 },
+      )
+        .skip(skip)
+        .limit(BATCH)
+        .lean();
+
+      if (products.length === 0) {
+        hasMore = false;
+        break;
+      }
+
+      const bulkOps = [];
+      for (const p of products) {
+        const haystack = (
+          (p.name || "") +
+          " " +
+          (p.description || "")
+        ).toLowerCase();
+        let sub = "";
+        if (RUGBY_RE.test(haystack)) sub = "Rugby";
+        else if (FOOTBALL_RE.test(haystack)) sub = "Football";
+        else if (FOOTWEAR_RE.test(haystack)) sub = "Footwear";
+
+        if (sub) {
+          bulkOps.push({
+            updateOne: {
+              filter: { _id: p._id },
+              update: { $set: { subcategory: sub } },
+            },
+          });
+        }
+      }
+
+      if (bulkOps.length > 0) {
+        const r = await Product.bulkWrite(bulkOps, { ordered: false });
+        updated += r.modifiedCount || 0;
+      }
+
+      skip += BATCH;
+      if (products.length < BATCH) hasMore = false;
+    }
+
+    res.json({
+      success: true,
+      updated,
+      message: `Subcategory fix applied to ${updated} products.`,
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
 exports.exportProducts = async (_req, res) => {
   try {
     const products = await Product.find({}).lean();

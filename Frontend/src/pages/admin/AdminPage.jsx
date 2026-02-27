@@ -12,11 +12,14 @@ import {
   addProduct,
   updateProduct,
   exportProducts,
+  fetchAdminStats,
+  fixSubcategories,
 } from "../../api/api";
 
 export default function AdminPage() {
   const [authed, setAuthed] = useState(!!sessionStorage.getItem("adminToken"));
   const [products, setProducts] = useState([]);
+  const [stats, setStats] = useState(null);
   const [excelResult, setExcelResult] = useState(null);
   const [imageResult, setImageResult] = useState(null);
   const [uploading, setUploading] = useState(false);
@@ -41,11 +44,22 @@ export default function AdminPage() {
   const [formLoading, setFormLoading] = useState(false);
 
   useEffect(() => {
-    if (authed) loadProducts();
+    if (authed) {
+      loadProducts();
+      loadStats();
+    }
   }, [authed]);
 
+  const loadStats = () => {
+    fetchAdminStats()
+      .then(setStats)
+      .catch(() => {});
+  };
+
   const loadProducts = () => {
-    fetchProducts()
+    // Fetch up to 500 products for the product list table;
+    // the real total count comes from the stats endpoint.
+    fetchProducts({ limit: 500 })
       .then((data) =>
         setProducts(Array.isArray(data) ? data : data.products || []),
       )
@@ -73,6 +87,7 @@ export default function AdminPage() {
         `Import complete: ${res.imported ?? 0} added, ${res.updated ?? 0} updated.`,
       );
       loadProducts();
+      loadStats();
     } catch (err) {
       const msg =
         err?.response?.data?.error || "Upload failed. Check file format.";
@@ -110,6 +125,7 @@ export default function AdminPage() {
       setImageResult(res);
       toast.success(`${res.matched ?? 0} images matched to products.`);
       loadProducts();
+      loadStats();
     } catch (err) {
       const msg = err?.response?.data?.error || "Image upload failed.";
       toast.error(msg);
@@ -145,7 +161,7 @@ export default function AdminPage() {
   const handleClearAll = async () => {
     if (
       !window.confirm(
-        `Are you sure you want to delete ALL ${products.length} products? This cannot be undone.`,
+        `Are you sure you want to delete ALL ${(stats?.total ?? products.length).toLocaleString()} products? This cannot be undone.`,
       )
     )
       return;
@@ -153,6 +169,7 @@ export default function AdminPage() {
       await deleteAllProducts();
       toast.success("All products cleared.");
       setProducts([]);
+      loadStats();
     } catch {
       toast.error("Failed to clear products.");
     }
@@ -223,6 +240,7 @@ export default function AdminPage() {
       }
       resetForm();
       loadProducts();
+      loadStats();
       setTab("products");
     } catch (err) {
       toast.error(err?.response?.data?.error || "Failed to save product.");
@@ -331,24 +349,28 @@ export default function AdminPage() {
         {/* Stats */}
         <div className="stats-row">
           <div className="stat-card">
-            <div className="number">{products.length}</div>
+            {/* Use the stats endpoint total — not products.length which is capped at 500 */}
+            <div className="number">{stats?.total ?? products.length}</div>
             <div className="label">Total Products</div>
           </div>
           <div className="stat-card">
             <div className="number">
-              {products.filter((p) => Number(p.price) <= 5).length}
+              {stats?.underFive ??
+                products.filter((p) => Number(p.price) <= 5).length}
             </div>
             <div className="label">Under £5</div>
           </div>
           <div className="stat-card">
             <div className="number">
-              {products.filter((p) => p.imageUrl || p.image).length}
+              {stats?.withImages ??
+                products.filter((p) => p.imageUrl || p.image).length}
             </div>
             <div className="label">With Images</div>
           </div>
           <div className="stat-card">
             <div className="number">
-              {new Set(products.map((p) => p.category).filter(Boolean)).size}
+              {stats?.categoryCount ??
+                new Set(products.map((p) => p.category).filter(Boolean)).size}
             </div>
             <div className="label">Categories</div>
           </div>
@@ -382,6 +404,27 @@ export default function AdminPage() {
               📥 Export CSV
             </button>
           )}
+          <button
+            className="btn btn-sm btn-outline"
+            title="One-time migration: auto-detect Rugby/Football/Footwear subcategories from product names"
+            onClick={async () => {
+              if (
+                !window.confirm(
+                  "Scan all products and auto-assign subcategories (Rugby / Football / Footwear) from product names? Safe to run multiple times.",
+                )
+              )
+                return;
+              try {
+                const r = await fixSubcategories();
+                toast.success(r.message || `Fixed ${r.updated} products.`);
+                loadStats();
+              } catch {
+                toast.error("Subcategory fix failed.");
+              }
+            }}
+          >
+            🔧 Fix Subcategories
+          </button>
         </div>
 
         {/* ── Excel Tab ── */}
@@ -757,7 +800,12 @@ export default function AdminPage() {
         {tab === "products" && (
           <div className="admin-card">
             <div className="admin-card-header">
-              <h3>Product List ({products.length})</h3>
+              <h3>
+                Product List — showing {products.length}
+                {stats?.total && stats.total > products.length
+                  ? ` of ${stats.total.toLocaleString()}`
+                  : ""}
+              </h3>
               {products.length > 0 && (
                 <button
                   className="btn btn-sm"
@@ -815,7 +863,7 @@ export default function AdminPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {filteredProducts.slice(0, 200).map((p, i) => (
+                    {filteredProducts.slice(0, 500).map((p, i) => (
                       <tr key={p.sku || i}>
                         <td>
                           {p.imageUrl || p.image ? (
@@ -884,10 +932,11 @@ export default function AdminPage() {
                     ))}
                   </tbody>
                 </table>
-                {filteredProducts.length > 200 && (
+                {filteredProducts.length > 500 && (
                   <p className="admin-hint" style={{ marginTop: "0.75rem" }}>
-                    Showing first 200 of {filteredProducts.length} products
-                    {searchQuery && " (filtered)"}.
+                    Showing first 500 of {filteredProducts.length} products
+                    {searchQuery && " (filtered)"}. Use search to narrow
+                    results.
                   </p>
                 )}
                 {searchQuery && filteredProducts.length === 0 && (

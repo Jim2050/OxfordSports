@@ -2,15 +2,26 @@ const Product = require("../models/Product");
 const Category = require("../models/Category");
 
 // ── Category keyword mapping for front-end slugs → DB values ──
+// These keywords are searched in BOTH category AND name/subcategory fields
+// for sport-specific slugs so products remain findable even when Excel stores
+// "Mens/Womens" in the category column (with sport info only in the name).
 const CATEGORY_KEYWORDS = {
   mens: ["^mens$"],
   womens: ["^womens$", "^women$", "^female$", "^ladies$"],
   junior: ["^junior$", "^juniors$", "^kids$", "^youth$", "^boys$", "^girls$"],
   "rugby-category": ["rugby"],
   rugby: ["rugby"],
-  football: ["football", "soccer"],
-  footwear: ["footwear", "shoes", "boots", "trainers"],
+  football: ["football", "soccer", "fc ", "f\\.c\\."],
+  footwear: ["footwear", "shoe", "boot", "trainer", "sneaker", "running"],
 };
+
+// Slugs where we must search name + subcategory in addition to category
+const SPORT_SLUGS = new Set([
+  "rugby-category",
+  "rugby",
+  "football",
+  "footwear",
+]);
 
 /**
  * GET /api/products
@@ -28,7 +39,7 @@ exports.getProducts = async (req, res) => {
       brand,
       search,
       page = 1,
-      limit = 200,
+      limit = 500,
       sort,
     } = req.query;
 
@@ -38,11 +49,25 @@ exports.getProducts = async (req, res) => {
     if (category) {
       const cat = category.toLowerCase();
       const keywords = CATEGORY_KEYWORDS[cat] || [cat.replace(/-/g, " ")];
-      conditions.push({
-        $or: keywords.map((kw) => ({
-          category: { $regex: kw, $options: "i" },
-        })),
-      });
+
+      if (SPORT_SLUGS.has(cat)) {
+        // Sport pages: search across category, name AND subcategory fields
+        // so products with "Mens" category but "Argentina Rugby Jersey" name are found
+        conditions.push({
+          $or: keywords.flatMap((kw) => [
+            { category: { $regex: kw, $options: "i" } },
+            { name: { $regex: kw, $options: "i" } },
+            { subcategory: { $regex: kw, $options: "i" } },
+            { description: { $regex: kw, $options: "i" } },
+          ]),
+        });
+      } else {
+        conditions.push({
+          $or: keywords.map((kw) => ({
+            category: { $regex: kw, $options: "i" },
+          })),
+        });
+      }
     }
 
     // Subcategory filter
