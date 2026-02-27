@@ -77,7 +77,15 @@ const COLUMN_MAP = {
     "brand line",
     "collection",
   ],
-  brand: ["brand", "manufacturer", "make", "label"],
+  brand: [
+    "brand",
+    "manufacturer",
+    "make",
+    "label",
+    "empty", // unnamed first column in adidas Master sheet (__EMPTY → 'empty')
+    "supplier",
+    "vendor",
+  ],
   color: [
     "colour desc",
     "colour description",
@@ -114,6 +122,7 @@ const COLUMN_MAP = {
     "picture",
     "image file",
     "filename",
+    "empty1", // unnamed second column in adidas Master sheet (__EMPTY_1 → 'empty1')
   ],
 };
 
@@ -394,6 +403,24 @@ exports.importProducts = async (req, res) => {
       `[IMPORT] Consolidated ${rows.length} rows → ${consolidated.length} unique products`,
     );
 
+    // ── Detect workbook-wide brand default ──
+    // In the adidas Master sheet, the brand ("adidas") is in the unnamed first
+    // column (__EMPTY → mapped to brand). FIREBIRD sheet has no brand column,
+    // so we fall back to the most common non-empty brand across all rows.
+    const brandFreq = {};
+    for (const r of consolidated) {
+      const b = r.brand ? String(r.brand).trim() : "";
+      if (b) brandFreq[b] = (brandFreq[b] || 0) + 1;
+    }
+    const brandDefault =
+      Object.keys(brandFreq).sort((a, b) => brandFreq[b] - brandFreq[a])[0] ||
+      "";
+    if (brandDefault) {
+      console.log(
+        `[IMPORT] Brand default detected: "${brandDefault}" (${brandFreq[brandDefault]} products) — applied to rows with no brand`,
+      );
+    }
+
     // Log price fallback usage
     const priceFallbackCount = consolidated.filter(
       (r) => r._rawPrice !== undefined,
@@ -463,7 +490,7 @@ exports.importProducts = async (req, res) => {
         description: row.description ? String(row.description).trim() : "",
         category: row.category ? String(row.category).trim() : "",
         subcategory: row.subcategory ? String(row.subcategory).trim() : "",
-        brand: row.brand ? String(row.brand).trim() : "",
+        brand: row.brand ? String(row.brand).trim() : brandDefault, // fallback to workbook-wide brand (e.g. "adidas")
         color: row.color ? String(row.color).trim() : "",
         barcode: (row.barcodes || []).join(", "),
         price,

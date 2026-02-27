@@ -302,6 +302,34 @@ exports.fixSubcategories = async (_req, res) => {
     res.status(500).json({ error: err.message });
   }
 };
+
+/**
+ * POST /api/admin/fix-brands
+ * One-time migration: set brand = "adidas" on all products that have an empty brand.
+ * Safe to call multiple times — only touches products where brand is currently empty.
+ * Accepts optional body: { brand: "adidas" } to override the default.
+ */
+exports.fixBrands = async (req, res) => {
+  try {
+    const brandValue = (req.body?.brand || "adidas").trim();
+    const result = await Product.updateMany(
+      { brand: { $in: ["", null, undefined] } },
+      { $set: { brand: brandValue } },
+    );
+    res.json({
+      success: true,
+      updated: result.modifiedCount,
+      message: `Brand set to "${brandValue}" on ${result.modifiedCount} products.`,
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+/**
+ * GET /api/admin/export
+ * Export all products as JSON. Frontend converts to CSV.
+ */
 exports.exportProducts = async (_req, res) => {
   try {
     const products = await Product.find({}).lean();
@@ -323,6 +351,7 @@ exports.getStats = async (_req, res) => {
       withImages,
       categories,
       subcategories,
+      brands,
       colors,
       recentBatches,
     ] = await Promise.all([
@@ -331,6 +360,7 @@ exports.getStats = async (_req, res) => {
       Product.countDocuments({ imageUrl: { $ne: "" } }),
       Product.distinct("category", { category: { $ne: "" } }),
       Product.distinct("subcategory", { subcategory: { $ne: "" } }),
+      Product.distinct("brand", { brand: { $ne: "" } }),
       Product.distinct("color", { color: { $ne: "" } }),
       require("../models/ImportBatch")
         .find({})
@@ -347,6 +377,8 @@ exports.getStats = async (_req, res) => {
       categories,
       subcategoryCount: subcategories.length,
       subcategories,
+      brandCount: brands.length,
+      brands,
       colorCount: colors.length,
       recentBatches,
     });

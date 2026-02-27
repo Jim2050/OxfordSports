@@ -1,6 +1,32 @@
 const path = require("path");
 require("dotenv").config({ path: path.join(__dirname, ".env") });
 
+// ── Validate required environment variables ──
+const REQUIRED_ENV = ["MONGO_URI", "JWT_SECRET"];
+const missingEnv = REQUIRED_ENV.filter((k) => !process.env[k]);
+if (missingEnv.length > 0) {
+  console.error(
+    `\n❌  Missing required environment variables: ${missingEnv.join(", ")}\n` +
+      `   Copy .env.example to .env and fill in the values.\n`,
+  );
+  process.exit(1);
+}
+
+// Warn about optional but important vars
+if (
+  !process.env.CLOUDINARY_CLOUD_NAME ||
+  process.env.CLOUDINARY_CLOUD_NAME === "your_cloud_name"
+) {
+  console.warn(
+    "⚠️   CLOUDINARY_CLOUD_NAME not set — images will be stored locally in /uploads/products/",
+  );
+}
+if (!process.env.CLIENT_ORIGIN) {
+  console.warn(
+    "⚠️   CLIENT_ORIGIN not set — CORS will allow all origins (dev only)",
+  );
+}
+
 const express = require("express");
 const cors = require("cors");
 const helmet = require("helmet");

@@ -78,6 +78,11 @@ export const fixSubcategories = () =>
     (r) => r.data,
   );
 
+export const fixBrands = (brand = "adidas") =>
+  API.post("/admin/fix-brands", { brand }, { headers: adminHeaders() }).then(
+    (r) => r.data,
+  );
+
 // ══════════════════════════════════════════
 //  Admin Import / Upload
 // ══════════════════════════════════════════

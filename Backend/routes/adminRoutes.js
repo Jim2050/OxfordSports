@@ -18,6 +18,7 @@ const {
   exportProducts,
   getStats,
   fixSubcategories,
+  fixBrands,
 } = require("../controllers/adminController");
 
 const {
@@ -52,5 +53,6 @@ router.get("/export", exportProducts);
 
 // One-time migration utilities
 router.post("/fix-subcategories", fixSubcategories);
+router.post("/fix-brands", fixBrands);
 
 module.exports = router;

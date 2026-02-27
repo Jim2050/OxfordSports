@@ -2,6 +2,7 @@ import { useState, useCallback, useEffect } from "react";
 import { useDropzone } from "react-dropzone";
 import toast, { Toaster } from "react-hot-toast";
 import AdminLogin from "./AdminLogin";
+import { isTokenValid } from "../../api/axiosInstance";
 import {
   uploadExcel,
   uploadImages,
@@ -14,10 +15,19 @@ import {
   exportProducts,
   fetchAdminStats,
   fixSubcategories,
+  fixBrands,
 } from "../../api/api";
 
 export default function AdminPage() {
-  const [authed, setAuthed] = useState(!!sessionStorage.getItem("adminToken"));
+  // Check token validity on mount (catches expired tokens before any API call)
+  const savedToken = sessionStorage.getItem("adminToken");
+  const [authed, setAuthed] = useState(
+    !!savedToken && isTokenValid(savedToken),
+  );
+  // If an expired/invalid token was found, clear it immediately
+  if (savedToken && !isTokenValid(savedToken)) {
+    sessionStorage.removeItem("adminToken");
+  }
   const [products, setProducts] = useState([]);
   const [stats, setStats] = useState(null);
   const [excelResult, setExcelResult] = useState(null);
@@ -48,6 +58,14 @@ export default function AdminPage() {
       loadProducts();
       loadStats();
     }
+
+    // Listen for 401-triggered auto-logout from the axios interceptor
+    const handleLogout = () => {
+      setAuthed(false);
+      toast.error("Session expired — please log in again.");
+    };
+    window.addEventListener("admin:logout", handleLogout);
+    return () => window.removeEventListener("admin:logout", handleLogout);
   }, [authed]);
 
   const loadStats = () => {
@@ -374,6 +392,10 @@ export default function AdminPage() {
             </div>
             <div className="label">Categories</div>
           </div>
+          <div className="stat-card">
+            <div className="number">{stats?.brandCount ?? "—"}</div>
+            <div className="label">Brands</div>
+          </div>
         </div>
 
         {/* Tabs */}
@@ -404,6 +426,27 @@ export default function AdminPage() {
               📥 Export CSV
             </button>
           )}
+          <button
+            className="btn btn-sm btn-outline"
+            title="Set brand = adidas on all products with empty brand"
+            onClick={async () => {
+              if (
+                !window.confirm(
+                  'Set brand to "adidas" on all products with an empty brand field?',
+                )
+              )
+                return;
+              try {
+                const r = await fixBrands();
+                toast.success(r.message || `Fixed ${r.updated} products.`);
+                loadStats();
+              } catch {
+                toast.error("Brand fix failed.");
+              }
+            }}
+          >
+            🏷️ Fix Brands
+          </button>
           <button
             className="btn btn-sm btn-outline"
             title="One-time migration: auto-detect Rugby/Football/Footwear subcategories from product names"
