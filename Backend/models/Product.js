@@ -15,11 +15,15 @@ const productSchema = new mongoose.Schema(
     category: { type: String, default: "", index: true },
     subcategory: { type: String, default: "" },
     brand: { type: String, default: "", index: true },
+    color: { type: String, default: "" },
+    barcode: { type: String, default: "" },
     price: { type: Number, required: true, min: 0, index: true },
-    sizes: { type: String, default: "" },
+    rrp: { type: Number, default: 0, min: 0 },
+    sizes: { type: [String], default: [] },
     quantity: { type: Number, default: 0 },
     imageUrl: { type: String, default: "" },
     imagePublicId: { type: String, default: "" },
+    sheetName: { type: String, default: "" },
     isActive: { type: Boolean, default: true, index: true },
   },
   { timestamps: true },
@@ -27,8 +31,17 @@ const productSchema = new mongoose.Schema(
 
 // ── Text index for full-text search ──
 productSchema.index(
-  { name: "text", description: "text", brand: "text", sku: "text" },
-  { weights: { name: 10, sku: 8, brand: 5, description: 2 } },
+  {
+    name: "text",
+    description: "text",
+    brand: "text",
+    sku: "text",
+    color: "text",
+  },
+  { weights: { name: 10, sku: 8, brand: 5, color: 3, description: 2 } },
 );
+
+// ── Compound index for category + subcategory browsing ──
+productSchema.index({ category: 1, subcategory: 1 });
 
 module.exports = mongoose.model("Product", productSchema);

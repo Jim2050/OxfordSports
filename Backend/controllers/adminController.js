@@ -1,5 +1,6 @@
 const User = require("../models/User");
 const Product = require("../models/Product");
+const Category = require("../models/Category");
 const generateToken = require("../utils/generateToken");
 
 /**
@@ -60,7 +61,10 @@ exports.addProduct = async (req, res) => {
       category,
       subcategory,
       brand,
+      color,
+      barcode,
       price,
+      rrp,
       sizes,
       quantity,
     } = req.body;
@@ -78,8 +82,11 @@ exports.addProduct = async (req, res) => {
       category: category || "",
       subcategory: subcategory || "",
       brand: brand || "",
+      color: color || "",
+      barcode: barcode || "",
       price: parseFloat(price),
-      sizes: sizes || "",
+      rrp: rrp ? parseFloat(rrp) : 0,
+      sizes: Array.isArray(sizes) ? sizes : sizes ? [sizes] : [],
       quantity: quantity ? parseInt(quantity) : 0,
     };
 
@@ -127,14 +134,27 @@ exports.updateProduct = async (req, res) => {
       "category",
       "subcategory",
       "brand",
+      "color",
+      "barcode",
       "price",
+      "rrp",
       "sizes",
       "quantity",
       "imageUrl",
     ];
     fields.forEach((f) => {
       if (req.body[f] !== undefined) {
-        product[f] = f === "price" ? parseFloat(req.body[f]) : req.body[f];
+        if (f === "price" || f === "rrp") {
+          product[f] = parseFloat(req.body[f]);
+        } else if (f === "sizes") {
+          product[f] = Array.isArray(req.body[f])
+            ? req.body[f]
+            : req.body[f]
+              ? [req.body[f]]
+              : [];
+        } else {
+          product[f] = req.body[f];
+        }
       }
     });
 
@@ -184,14 +204,24 @@ exports.deleteAllProducts = async (_req, res) => {
 
 /**
  * GET /api/admin/categories
- * Get distinct category values from products.
+ * Get categories from Category collection + distinct product categories.
  */
 exports.getCategories = async (_req, res) => {
   try {
-    const categories = await Product.distinct("category", {
-      category: { $ne: "" },
+    const [dbCategories, productCategories, productSubcategories] =
+      await Promise.all([
+        Category.find({ isActive: true })
+          .sort({ displayOrder: 1, name: 1 })
+          .lean(),
+        Product.distinct("category", { category: { $ne: "" } }),
+        Product.distinct("subcategory", { subcategory: { $ne: "" } }),
+      ]);
+
+    res.json({
+      categories: dbCategories,
+      productCategories: productCategories.sort(),
+      subcategories: productSubcategories.sort(),
     });
-    res.json({ categories: categories.sort() });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -216,18 +246,27 @@ exports.exportProducts = async (_req, res) => {
  */
 exports.getStats = async (_req, res) => {
   try {
-    const [total, underFive, withImages, categories, recentBatches] =
-      await Promise.all([
-        Product.countDocuments({}),
-        Product.countDocuments({ price: { $lte: 5 } }),
-        Product.countDocuments({ imageUrl: { $ne: "" } }),
-        Product.distinct("category", { category: { $ne: "" } }),
-        require("../models/ImportBatch")
-          .find({})
-          .sort({ createdAt: -1 })
-          .limit(5)
-          .lean(),
-      ]);
+    const [
+      total,
+      underFive,
+      withImages,
+      categories,
+      subcategories,
+      colors,
+      recentBatches,
+    ] = await Promise.all([
+      Product.countDocuments({}),
+      Product.countDocuments({ price: { $lte: 5 } }),
+      Product.countDocuments({ imageUrl: { $ne: "" } }),
+      Product.distinct("category", { category: { $ne: "" } }),
+      Product.distinct("subcategory", { subcategory: { $ne: "" } }),
+      Product.distinct("color", { color: { $ne: "" } }),
+      require("../models/ImportBatch")
+        .find({})
+        .sort({ createdAt: -1 })
+        .limit(5)
+        .lean(),
+    ]);
 
     res.json({
       total,
@@ -235,6 +274,9 @@ exports.getStats = async (_req, res) => {
       withImages,
       categoryCount: categories.length,
       categories,
+      subcategoryCount: subcategories.length,
+      subcategories,
+      colorCount: colors.length,
       recentBatches,
     });
   } catch (err) {

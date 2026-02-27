@@ -24,6 +24,12 @@ export const fetchUnderFive = () =>
 export const fetchBrands = () =>
   API.get("/products/brands").then((r) => r.data);
 
+export const fetchPublicCategories = () =>
+  API.get("/products/categories").then((r) => r.data);
+
+export const fetchColors = () =>
+  API.get("/products/colors").then((r) => r.data);
+
 // ══════════════════════════════════════════
 //  Contact
 // ══════════════════════════════════════════

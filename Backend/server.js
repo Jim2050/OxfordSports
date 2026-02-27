@@ -43,6 +43,16 @@ const limiter = rateLimit({
 });
 app.use("/api", limiter);
 
+// ── Longer timeout for import routes (5 minutes) ──
+app.use("/api/admin/import-products", (_req, res, next) => {
+  res.setTimeout(300000);
+  next();
+});
+app.use("/api/admin/upload-images", (_req, res, next) => {
+  res.setTimeout(300000);
+  next();
+});
+
 // ── Serve uploaded images statically ──
 app.use("/uploads", express.static(UPLOADS_DIR));
 

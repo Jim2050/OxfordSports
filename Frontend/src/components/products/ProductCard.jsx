@@ -33,9 +33,24 @@ export default function ProductCard({ product }) {
           <h3>{product.name}</h3>
         </Link>
         {product.sku && <p className="sku">SKU: {product.sku}</p>}
-        {product.description && (
-          <p className="description">{product.description}</p>
+        {product.color && (
+          <p className="sku" style={{ color: "#6b7280" }}>
+            {product.color}
+          </p>
         )}
+        {product.sizes &&
+          (Array.isArray(product.sizes)
+            ? product.sizes.length > 0
+            : product.sizes) && (
+            <p
+              className="sku"
+              style={{ fontSize: "0.75rem", color: "#9ca3af" }}
+            >
+              {Array.isArray(product.sizes)
+                ? product.sizes.join(", ")
+                : product.sizes}
+            </p>
+          )}
         <div className="product-card-footer">
           <span className="price">
             £{Number(product.price).toFixed(2)}

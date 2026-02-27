@@ -3,26 +3,31 @@ const path = require("path");
 const XLSX = require("xlsx");
 const AdmZip = require("adm-zip");
 const Product = require("../models/Product");
+const Category = require("../models/Category");
 const ImportBatch = require("../models/ImportBatch");
 const cloudinary = require("../config/cloudinary");
 
 // ═══════════════════════════════════════════════════════════════
-//  COLUMN ALIAS MAP — handles Adidas, Puma, generic price lists
+//  COLUMN ALIAS MAP — handles client Excel + generic formats
+//  Client sheets: Master (Code, Image Link, Gender, Style, Colour Desc, UK Size, Barcode, RRP, Trade)
+//  FIREBIRD sheet: Code, Image, Gender, Style Desc, Colour Desc, UK Size, Barcode, RRP, Trade, Price, Qty
 // ═══════════════════════════════════════════════════════════════
 const COLUMN_MAP = {
   sku: [
+    "code",
     "sku",
     "product code",
     "item code",
-    "code",
     "article",
     "article number",
-    "style",
     "style code",
     "ref",
     "reference",
   ],
   name: [
+    "style",
+    "style desc",
+    "style description",
     "product name",
     "name",
     "title",
@@ -41,19 +46,28 @@ const COLUMN_MAP = {
     "notes",
   ],
   price: [
+    "trade",
+    "trade price",
+    "wholesale price",
+    "our price",
     "price",
-    "rrp",
     "unit price",
     "cost",
     "sell price",
-    "wholesale price",
-    "trade price",
-    "our price",
     "price (£)",
     "price gbp",
     "gbp",
   ],
-  category: ["category", "cat", "department", "type", "product type", "group"],
+  rrp: ["rrp", "retail price", "recommended retail price", "srp", "msrp"],
+  category: [
+    "gender",
+    "category",
+    "cat",
+    "department",
+    "type",
+    "product type",
+    "group",
+  ],
   subcategory: [
     "subcategory",
     "sub category",
@@ -64,10 +78,27 @@ const COLUMN_MAP = {
     "collection",
   ],
   brand: ["brand", "manufacturer", "make", "label"],
-  sizes: ["sizes", "size", "size range", "available sizes", "sizes available"],
+  color: [
+    "colour desc",
+    "colour description",
+    "color desc",
+    "color description",
+    "colour",
+    "color",
+    "col",
+  ],
+  sizes: [
+    "uk size",
+    "size",
+    "sizes",
+    "size range",
+    "available sizes",
+    "sizes available",
+  ],
+  barcode: ["barcode", "ean", "upc", "ean13", "gtin", "bar code"],
   quantity: [
-    "quantity",
     "qty",
+    "quantity",
     "stock",
     "stock qty",
     "available",
@@ -75,9 +106,9 @@ const COLUMN_MAP = {
     "pcs",
   ],
   imageUrl: [
-    "image",
-    "image url",
     "image link",
+    "image url",
+    "image",
     "img",
     "photo",
     "picture",
@@ -110,65 +141,203 @@ function detectMapping(headers) {
     let matched = false;
     for (const [field, aliases] of Object.entries(COLUMN_MAP)) {
       if (aliases.includes(norm)) {
-        mapping[field] = raw;
-        matched = true;
-        break;
+        // Don't override if already matched (prefer earlier alias match)
+        if (!mapping[field]) {
+          mapping[field] = raw;
+          matched = true;
+          break;
+        }
       }
     }
-    if (!matched) unmappedHeaders.push(raw);
+    if (!matched && !Object.values(mapping).includes(raw)) {
+      unmappedHeaders.push(raw);
+    }
   }
 
-  // Fallback heuristics for critical fields
+  // ── Fallback heuristics for critical fields ──
   if (!mapping.sku) {
-    const skuH = headers.find((h) => /sku|code|article|style|ref/i.test(h));
+    const skuH = headers.find((h) => /\bcode\b|sku|article|ref\b/i.test(h));
     if (skuH) mapping.sku = skuH;
   }
   if (!mapping.name) {
-    const nameH = headers.find((h) => /name|title|product|item/i.test(h));
+    const nameH = headers.find((h) => /style|name|title|product/i.test(h));
     if (nameH && nameH !== mapping.sku) mapping.name = nameH;
   }
   if (!mapping.price) {
-    const priceH = headers.find((h) => /price|cost|£|gbp/i.test(h));
+    const priceH = headers.find((h) => /trade|price|cost|£|gbp/i.test(h));
     if (priceH) mapping.price = priceH;
+  }
+  if (!mapping.category) {
+    const catH = headers.find((h) => /gender|category|department/i.test(h));
+    if (catH) mapping.category = catH;
   }
 
   return { mapping, unmappedHeaders };
 }
 
 /**
- * Parse an Excel file into mapped row objects.
+ * Parse ALL sheets in an Excel workbook into mapped row objects.
+ * Returns combined rows from all sheets.
  */
 function parseExcelFile(filePath) {
   const workbook = XLSX.readFile(filePath);
-  const sheetName = workbook.SheetNames[0];
-  const sheet = workbook.Sheets[sheetName];
-  const rawData = XLSX.utils.sheet_to_json(sheet, { defval: "" });
+  const allRows = [];
+  let allHeaders = [];
+  let mainMapping = {};
+  let allUnmapped = [];
+  const sheetSummary = [];
 
-  if (rawData.length === 0)
-    return { rows: [], headers: [], mapping: {}, unmappedHeaders: [] };
+  for (const sheetName of workbook.SheetNames) {
+    const sheet = workbook.Sheets[sheetName];
+    const rawData = XLSX.utils.sheet_to_json(sheet, { defval: "" });
 
-  const headers = Object.keys(rawData[0]);
-  const { mapping, unmappedHeaders } = detectMapping(headers);
-
-  const rows = rawData.map((raw) => {
-    const row = {};
-    for (const [field, col] of Object.entries(mapping)) {
-      row[field] = raw[col] !== undefined ? raw[col] : "";
+    if (rawData.length === 0) {
+      sheetSummary.push({ name: sheetName, rows: 0 });
+      continue;
     }
-    return row;
-  });
 
-  return { rows, headers, mapping, unmappedHeaders };
+    const headers = Object.keys(rawData[0]);
+    const { mapping, unmappedHeaders } = detectMapping(headers);
+
+    // Use the first sheet's mapping as the reference
+    if (Object.keys(mainMapping).length === 0) {
+      mainMapping = mapping;
+      allHeaders = headers;
+      allUnmapped = unmappedHeaders;
+    }
+
+    const currentMapping =
+      Object.keys(mapping).length > 0 ? mapping : mainMapping;
+
+    let rowCount = 0;
+    for (const raw of rawData) {
+      // Skip completely empty rows
+      const values = Object.values(raw).filter(
+        (v) => v !== "" && v !== null && v !== undefined,
+      );
+      if (values.length === 0) continue;
+
+      const row = { _sheetName: sheetName };
+      for (const [field, col] of Object.entries(currentMapping)) {
+        row[field] = raw[col] !== undefined ? raw[col] : "";
+      }
+      allRows.push(row);
+      rowCount++;
+    }
+
+    sheetSummary.push({
+      name: sheetName,
+      rows: rowCount,
+      mapping: Object.keys(currentMapping),
+    });
+  }
+
+  return {
+    rows: allRows,
+    headers: allHeaders,
+    mapping: mainMapping,
+    unmappedHeaders: allUnmapped,
+    sheetSummary,
+  };
+}
+
+/**
+ * Consolidate rows by SKU — merges size variants into a single product.
+ * Same SKU with different sizes becomes one product with sizes array.
+ */
+function consolidateBySku(rows) {
+  const skuMap = new Map();
+
+  for (const row of rows) {
+    const sku = row.sku ? String(row.sku).trim().toUpperCase() : "";
+    if (!sku) continue;
+
+    if (skuMap.has(sku)) {
+      const existing = skuMap.get(sku);
+      // Merge size
+      const newSize = row.sizes ? String(row.sizes).trim() : "";
+      if (newSize && !existing.sizes.includes(newSize)) {
+        existing.sizes.push(newSize);
+      }
+      // Merge barcode
+      const newBarcode = row.barcode ? String(row.barcode).trim() : "";
+      if (newBarcode && !existing.barcodes.includes(newBarcode)) {
+        existing.barcodes.push(newBarcode);
+      }
+      // Sum quantity
+      const qty = parseInt(row.quantity) || 0;
+      existing.quantity += qty;
+    } else {
+      const size = row.sizes ? String(row.sizes).trim() : "";
+      const barcode = row.barcode ? String(row.barcode).trim() : "";
+      skuMap.set(sku, {
+        ...row,
+        sku,
+        sizes: size ? [size] : [],
+        barcodes: barcode ? [barcode] : [],
+        quantity: parseInt(row.quantity) || 0,
+      });
+    }
+  }
+
+  return Array.from(skuMap.values());
+}
+
+/**
+ * Create a URL-friendly slug from a string.
+ */
+function slugify(str) {
+  return (str || "")
+    .toString()
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
+/**
+ * Auto-create Category documents from the distinct gender/category values.
+ */
+async function ensureCategories(categoryNames) {
+  const created = [];
+  for (const name of categoryNames) {
+    const trimmed = name.trim();
+    if (!trimmed) continue;
+    const slug = slugify(trimmed);
+    try {
+      await Category.findOneAndUpdate(
+        { slug },
+        { $setOnInsert: { name: trimmed, slug, isActive: true } },
+        { upsert: true },
+      );
+      created.push(trimmed);
+    } catch (err) {
+      // Ignore duplicate key errors
+      if (err.code !== 11000) throw err;
+    }
+  }
+  return created;
+}
+
+/**
+ * Check if an image URL is a real usable URL (not "Google Images" placeholder).
+ */
+function isValidImageUrl(url) {
+  if (!url) return false;
+  const s = String(url).trim().toLowerCase();
+  if (s === "google images" || s === "google image") return false;
+  return s.startsWith("http://") || s.startsWith("https://");
 }
 
 /**
  * POST /api/admin/import-products
- * Accept .xlsx → parse → upsert into MongoDB.
+ * Accept .xlsx → parse ALL sheets → consolidate size variants → upsert into MongoDB.
  * Handles 5000+ rows with batch processing.
  */
 exports.importProducts = async (req, res) => {
   let batch;
   const filePath = req.file?.path;
+  const startTime = Date.now();
 
   try {
     if (!req.file) {
@@ -182,8 +351,8 @@ exports.importProducts = async (req, res) => {
       status: "processing",
     });
 
-    // Parse the Excel file
-    const { rows, headers, mapping, unmappedHeaders } =
+    // Parse ALL sheets in the workbook
+    const { rows, headers, mapping, unmappedHeaders, sheetSummary } =
       parseExcelFile(filePath);
 
     if (rows.length === 0) {
@@ -200,6 +369,19 @@ exports.importProducts = async (req, res) => {
         .json({ error: "Excel file is empty or could not be parsed." });
     }
 
+    // ── Consolidate same-SKU rows (size merging) ──
+    const consolidated = consolidateBySku(rows);
+
+    // ── Collect distinct categories and auto-create them ──
+    const distinctCategories = [
+      ...new Set(
+        consolidated
+          .map((r) => (r.category ? String(r.category).trim() : ""))
+          .filter(Boolean),
+      ),
+    ];
+    const createdCategories = await ensureCategories(distinctCategories);
+
     let imported = 0;
     let updated = 0;
     let failed = 0;
@@ -209,59 +391,56 @@ exports.importProducts = async (req, res) => {
     const BATCH_SIZE = 500;
     const operations = [];
 
-    for (let i = 0; i < rows.length; i++) {
-      const row = rows[i];
+    for (let i = 0; i < consolidated.length; i++) {
+      const row = consolidated[i];
+      const sku = row.sku;
 
-      // Validate name
-      if (!row.name || String(row.name).trim() === "") {
-        // If no name mapped, try to use the first non-empty text field
-        if (!row.name) {
-          failed++;
-          errors.push({
-            row: i + 2,
-            sku: row.sku || null,
-            reason: "Missing product name",
-          });
-          continue;
-        }
+      // Validate: must have SKU
+      if (!sku) {
+        failed++;
+        errors.push({
+          row: i + 1,
+          sku: "",
+          reason: "Missing SKU/Code",
+        });
+        continue;
       }
 
-      // Validate / parse price
-      const price = parseFloat(row.price);
-      if (isNaN(price) || price < 0) {
-        if (row.price === "" || row.price === undefined) {
-          // Allow zero price for clearance items
-        } else {
-          failed++;
-          errors.push({
-            row: i + 2,
-            sku: row.sku || null,
-            reason: `Invalid price: ${row.price}`,
-          });
-          continue;
-        }
+      // Name: use style/style desc, fall back to SKU
+      let name = row.name ? String(row.name).trim() : "";
+      if (!name) {
+        // Use SKU + color as fallback name
+        const color = row.color ? String(row.color).trim() : "";
+        name = color ? `${sku} - ${color}` : sku;
       }
 
-      // Generate SKU if missing
-      const sku = row.sku
-        ? String(row.sku).trim().toUpperCase()
-        : `AUTO-${Date.now()}-${i}`;
+      // Parse prices
+      const tradePrice = parseFloat(row.price);
+      const price = isNaN(tradePrice) || tradePrice < 0 ? 0 : tradePrice;
+      const rrpVal = parseFloat(row.rrp);
+      const rrp = isNaN(rrpVal) || rrpVal < 0 ? 0 : rrpVal;
 
       const productData = {
         sku,
-        name: String(row.name).trim(),
+        name,
         description: row.description ? String(row.description).trim() : "",
         category: row.category ? String(row.category).trim() : "",
         subcategory: row.subcategory ? String(row.subcategory).trim() : "",
         brand: row.brand ? String(row.brand).trim() : "",
-        price: isNaN(price) ? 0 : price,
-        sizes: row.sizes ? String(row.sizes).trim() : "",
-        quantity: row.quantity ? parseInt(row.quantity) || 0 : 0,
+        color: row.color ? String(row.color).trim() : "",
+        barcode: (row.barcodes || []).join(", "),
+        price,
+        rrp,
+        sizes: row.sizes || [],
+        quantity: row.quantity || 0,
+        sheetName: row._sheetName || "",
         isActive: true,
       };
 
-      // If row has imageUrl, keep it
-      if (row.imageUrl) productData.imageUrl = String(row.imageUrl).trim();
+      // Only set imageUrl if it's a real URL
+      if (isValidImageUrl(row.imageUrl)) {
+        productData.imageUrl = String(row.imageUrl).trim();
+      }
 
       operations.push({
         updateOne: {
@@ -280,6 +459,8 @@ exports.importProducts = async (req, res) => {
       updated += result.modifiedCount || 0;
     }
 
+    const elapsed = ((Date.now() - startTime) / 1000).toFixed(2);
+
     // Update batch record
     batch.totalRows = rows.length;
     batch.importedRows = imported;
@@ -294,14 +475,18 @@ exports.importProducts = async (req, res) => {
     res.json({
       success: true,
       batchId: batch._id,
-      total: rows.length,
+      totalRawRows: rows.length,
+      consolidatedProducts: consolidated.length,
       imported,
       updated,
       failed,
-      errors,
+      errors: errors.slice(0, 50),
       headers,
       mapping,
       unmappedHeaders,
+      sheetSummary,
+      categoriesCreated: createdCategories,
+      executionTime: `${elapsed}s`,
     });
   } catch (err) {
     console.error("Import error:", err);
@@ -376,8 +561,14 @@ exports.uploadImages = async (req, res) => {
 
     for (const img of imagesToProcess) {
       try {
-        // Find product by SKU
-        const product = await Product.findOne({ sku: img.stem });
+        // Find product by SKU (exact or partial match)
+        let product = await Product.findOne({ sku: img.stem });
+
+        // Try partial match: filename might be "KC0689-BLK" → try stripping suffix
+        if (!product && img.stem.includes("-")) {
+          const baseSku = img.stem.split("-")[0];
+          product = await Product.findOne({ sku: baseSku });
+        }
 
         if (!product) {
           unmatched++;
@@ -403,7 +594,7 @@ exports.uploadImages = async (req, res) => {
 
           const upload = await cloudinary.uploader.upload(img.path, {
             folder: "oxford-sports/products",
-            public_id: img.stem,
+            public_id: product.sku,
             overwrite: true,
             transformation: [
               { width: 800, crop: "limit" },
@@ -417,7 +608,7 @@ exports.uploadImages = async (req, res) => {
           // ── Fallback: save to local /uploads/products/ ──
           const uploadsDir = path.join(__dirname, "..", "uploads", "products");
           fs.mkdirSync(uploadsDir, { recursive: true });
-          const destFilename = `${img.stem}${path.extname(img.filename)}`;
+          const destFilename = `${product.sku}${path.extname(img.filename)}`;
           const destPath = path.join(uploadsDir, destFilename);
           fs.copyFileSync(img.path, destPath);
           imageUrl = `/uploads/products/${destFilename}`;

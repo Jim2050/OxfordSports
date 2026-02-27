@@ -31,7 +31,10 @@ export default function AdminPage() {
     category: "",
     subcategory: "",
     brand: "",
+    color: "",
+    barcode: "",
     price: "",
+    rrp: "",
     sizes: "",
     quantity: "",
   });
@@ -164,7 +167,10 @@ export default function AdminPage() {
       category: "",
       subcategory: "",
       brand: "",
+      color: "",
+      barcode: "",
       price: "",
+      rrp: "",
       sizes: "",
       quantity: "",
     });
@@ -179,8 +185,13 @@ export default function AdminPage() {
       category: product.category || "",
       subcategory: product.subcategory || "",
       brand: product.brand || "",
+      color: product.color || "",
+      barcode: product.barcode || "",
       price: product.price || "",
-      sizes: product.sizes || "",
+      rrp: product.rrp || "",
+      sizes: Array.isArray(product.sizes)
+        ? product.sizes.join(", ")
+        : product.sizes || "",
       quantity: product.quantity || "",
     });
     setEditingSku(product.sku);
@@ -237,13 +248,19 @@ export default function AdminPage() {
         "Category",
         "Subcategory",
         "Brand",
-        "Price",
+        "Color",
+        "Barcode",
+        "Trade Price",
+        "RRP",
         "Sizes",
         "Quantity",
         "Image URL",
       ];
       const csvRows = [headers.join(",")];
       rows.forEach((p) => {
+        const sizesStr = Array.isArray(p.sizes)
+          ? p.sizes.join("; ")
+          : p.sizes || "";
         csvRows.push(
           [
             `"${(p.sku || "").replace(/"/g, '""')}"`,
@@ -252,8 +269,11 @@ export default function AdminPage() {
             `"${(p.category || "").replace(/"/g, '""')}"`,
             `"${(p.subcategory || "").replace(/"/g, '""')}"`,
             `"${(p.brand || "").replace(/"/g, '""')}"`,
+            `"${(p.color || "").replace(/"/g, '""')}"`,
+            `"${(p.barcode || "").replace(/"/g, '""')}"`,
             p.price || "",
-            `"${(p.sizes || "").replace(/"/g, '""')}"`,
+            p.rrp || "",
+            `"${sizesStr.replace(/"/g, '""')}"`,
             p.quantity || "",
             `"${(p.imageUrl || "").replace(/"/g, '""')}"`,
           ].join(","),
@@ -279,7 +299,10 @@ export default function AdminPage() {
         (p) =>
           (p.name || "").toLowerCase().includes(searchQuery.toLowerCase()) ||
           (p.sku || "").toLowerCase().includes(searchQuery.toLowerCase()) ||
-          (p.category || "").toLowerCase().includes(searchQuery.toLowerCase()),
+          (p.category || "")
+            .toLowerCase()
+            .includes(searchQuery.toLowerCase()) ||
+          (p.color || "").toLowerCase().includes(searchQuery.toLowerCase()),
       )
     : products;
 
@@ -366,9 +389,11 @@ export default function AdminPage() {
           <div className="admin-card">
             <h3>Upload Product Excel</h3>
             <p className="admin-hint">
-              Drag and drop your <strong>.xlsx</strong> file. The system smartly
-              auto-detects columns like SKU, Product Name, Price, Category, etc.
-              — works with Adidas, Puma, and generic price lists.
+              Drag and drop your <strong>.xlsx</strong> file. The system reads
+              <strong> all sheets</strong> (Master, FIREBIRD, etc.) and
+              auto-detects columns: Code, Gender, Style, Colour Desc, UK Size,
+              Barcode, RRP, Trade. Same-SKU rows with different sizes are merged
+              automatically.
             </p>
 
             <div
@@ -412,9 +437,46 @@ export default function AdminPage() {
                     ❌ {excelResult.failed ?? 0} failed
                   </span>
                   <span className="stat-total">
-                    📊 {excelResult.total ?? 0} total rows
+                    📊 {excelResult.totalRawRows ?? excelResult.total ?? 0} raw
+                    rows → {excelResult.consolidatedProducts ?? "?"} products
                   </span>
+                  {excelResult.executionTime && (
+                    <span className="stat-total">
+                      ⏱️ {excelResult.executionTime}
+                    </span>
+                  )}
                 </div>
+
+                {excelResult.sheetSummary &&
+                  excelResult.sheetSummary.length > 0 && (
+                    <details style={{ marginTop: "0.75rem" }}>
+                      <summary style={{ cursor: "pointer", fontWeight: 600 }}>
+                        Sheet breakdown ({excelResult.sheetSummary.length}{" "}
+                        sheets)
+                      </summary>
+                      <ul className="mapping-list">
+                        {excelResult.sheetSummary.map((s, i) => (
+                          <li key={i}>
+                            <strong>{s.name}</strong>: {s.rows} rows
+                          </li>
+                        ))}
+                      </ul>
+                    </details>
+                  )}
+
+                {excelResult.categoriesCreated &&
+                  excelResult.categoriesCreated.length > 0 && (
+                    <div
+                      style={{
+                        marginTop: "0.5rem",
+                        fontSize: "0.85rem",
+                        color: "#059669",
+                      }}
+                    >
+                      📁 Categories auto-created:{" "}
+                      {excelResult.categoriesCreated.join(", ")}
+                    </div>
+                  )}
 
                 {excelResult.mapping && (
                   <details style={{ marginTop: "0.75rem" }}>
@@ -595,7 +657,25 @@ export default function AdminPage() {
                 />
               </div>
               <div className="form-field">
-                <label>Price (£) *</label>
+                <label>Color</label>
+                <input
+                  name="color"
+                  value={productForm.color}
+                  onChange={handleFormChange}
+                  placeholder="e.g. Black/White"
+                />
+              </div>
+              <div className="form-field">
+                <label>Barcode</label>
+                <input
+                  name="barcode"
+                  value={productForm.barcode}
+                  onChange={handleFormChange}
+                  placeholder="EAN/UPC"
+                />
+              </div>
+              <div className="form-field">
+                <label>Trade Price (£) *</label>
                 <input
                   name="price"
                   type="number"
@@ -605,6 +685,18 @@ export default function AdminPage() {
                   onChange={handleFormChange}
                   placeholder="0.00"
                   required
+                />
+              </div>
+              <div className="form-field">
+                <label>RRP (£)</label>
+                <input
+                  name="rrp"
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  value={productForm.rrp}
+                  onChange={handleFormChange}
+                  placeholder="0.00"
                 />
               </div>
               <div className="form-field">
@@ -714,7 +806,9 @@ export default function AdminPage() {
                       <th>SKU</th>
                       <th>Name</th>
                       <th>Category</th>
-                      <th>Price</th>
+                      <th>Color</th>
+                      <th>Trade</th>
+                      <th>RRP</th>
                       <th>Sizes</th>
                       <th style={{ width: 60, textAlign: "center" }}>Delete</th>
                       <th style={{ width: 60, textAlign: "center" }}>Edit</th>
@@ -746,8 +840,14 @@ export default function AdminPage() {
                         </td>
                         <td>{p.name}</td>
                         <td>{p.category || "—"}</td>
+                        <td>{p.color || "—"}</td>
                         <td>£{Number(p.price).toFixed(2)}</td>
-                        <td>{p.sizes || "—"}</td>
+                        <td>{p.rrp ? `£${Number(p.rrp).toFixed(2)}` : "—"}</td>
+                        <td style={{ fontSize: "0.8rem" }}>
+                          {Array.isArray(p.sizes)
+                            ? p.sizes.join(", ")
+                            : p.sizes || "—"}
+                        </td>
                         <td style={{ textAlign: "center" }}>
                           <button
                             onClick={() => handleDelete(p.sku)}

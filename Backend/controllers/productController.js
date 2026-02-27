@@ -1,7 +1,11 @@
 const Product = require("../models/Product");
+const Category = require("../models/Category");
 
 // ── Category keyword mapping for front-end slugs → DB values ──
 const CATEGORY_KEYWORDS = {
+  mens: ["^mens$"],
+  womens: ["^womens$", "^women$", "^female$", "^ladies$"],
+  junior: ["^junior$", "^juniors$", "^kids$", "^youth$", "^boys$", "^girls$"],
   "rugby-category": ["rugby"],
   rugby: ["rugby"],
   football: ["football", "soccer"],
@@ -11,12 +15,14 @@ const CATEGORY_KEYWORDS = {
 /**
  * GET /api/products
  * Public — returns products with optional filters.
- * Query params: category, maxPrice, minPrice, brand, search, page, limit, sort
+ * Query params: category, subcategory, color, maxPrice, minPrice, brand, search, page, limit, sort
  */
 exports.getProducts = async (req, res) => {
   try {
     const {
       category,
+      subcategory,
+      color,
       maxPrice,
       minPrice,
       brand,
@@ -39,6 +45,20 @@ exports.getProducts = async (req, res) => {
       });
     }
 
+    // Subcategory filter
+    if (subcategory) {
+      conditions.push({
+        subcategory: { $regex: subcategory.replace(/-/g, " "), $options: "i" },
+      });
+    }
+
+    // Color filter
+    if (color) {
+      conditions.push({
+        color: { $regex: color, $options: "i" },
+      });
+    }
+
     // Price range
     if (maxPrice) conditions.push({ price: { $lte: parseFloat(maxPrice) } });
     if (minPrice) conditions.push({ price: { $gte: parseFloat(minPrice) } });
@@ -48,7 +68,7 @@ exports.getProducts = async (req, res) => {
       conditions.push({ brand: { $regex: `^${brand}$`, $options: "i" } });
     }
 
-    // Full-text search (regex fallback — works without text index)
+    // Full-text search (regex fallback)
     if (search) {
       const q = search.trim();
       conditions.push({
@@ -56,6 +76,7 @@ exports.getProducts = async (req, res) => {
           { name: { $regex: q, $options: "i" } },
           { sku: { $regex: q, $options: "i" } },
           { brand: { $regex: q, $options: "i" } },
+          { color: { $regex: q, $options: "i" } },
           { description: { $regex: q, $options: "i" } },
         ],
       });
@@ -104,6 +125,49 @@ exports.getBrands = async (_req, res) => {
       brand: { $ne: "" },
     });
     res.json({ brands: brands.sort() });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+/**
+ * GET /api/products/categories
+ * Return categories from the Category collection + product counts.
+ */
+exports.getCategories = async (_req, res) => {
+  try {
+    const categories = await Category.find({ isActive: true })
+      .sort({ displayOrder: 1, name: 1 })
+      .lean();
+
+    // Add product count per category
+    const withCounts = await Promise.all(
+      categories.map(async (cat) => {
+        const count = await Product.countDocuments({
+          category: { $regex: `^${cat.name}$`, $options: "i" },
+          isActive: true,
+        });
+        return { ...cat, productCount: count };
+      }),
+    );
+
+    res.json({ categories: withCounts });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+/**
+ * GET /api/products/colors
+ * Return distinct color values.
+ */
+exports.getColors = async (_req, res) => {
+  try {
+    const colors = await Product.distinct("color", {
+      isActive: true,
+      color: { $ne: "" },
+    });
+    res.json({ colors: colors.sort() });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

@@ -84,23 +84,45 @@ export default function ProductPage() {
                 Brand: <strong>{product.brand}</strong>
               </p>
             )}
+            {product.color && (
+              <p style={{ color: "#6b7280", marginBottom: "0.5rem" }}>
+                Colour: <strong>{product.color}</strong>
+              </p>
+            )}
             <div
               className="price"
-              style={{ fontSize: "1.8rem", marginBottom: "1rem" }}
+              style={{ fontSize: "1.8rem", marginBottom: "0.5rem" }}
             >
               £{Number(product.price).toFixed(2)}
               {isUnder5 && <span className="price-under5">UNDER £5</span>}
             </div>
+            {product.rrp > 0 && (
+              <p
+                style={{
+                  color: "#6b7280",
+                  marginBottom: "1rem",
+                  fontSize: "0.95rem",
+                }}
+              >
+                RRP: £{Number(product.rrp).toFixed(2)}
+              </p>
+            )}
             {product.description && (
               <p style={{ marginBottom: "1.5rem", lineHeight: 1.7 }}>
                 {product.description}
               </p>
             )}
-            {product.sizes && (
-              <p style={{ marginBottom: "1.5rem" }}>
-                <strong>Sizes:</strong> {product.sizes}
-              </p>
-            )}
+            {product.sizes &&
+              (Array.isArray(product.sizes)
+                ? product.sizes.length > 0
+                : product.sizes) && (
+                <p style={{ marginBottom: "1.5rem" }}>
+                  <strong>Sizes:</strong>{" "}
+                  {Array.isArray(product.sizes)
+                    ? product.sizes.join(", ")
+                    : product.sizes}
+                </p>
+              )}
             <a href={buildMailto(product)} className="btn btn-accent btn-lg">
               Order by Email
             </a>
