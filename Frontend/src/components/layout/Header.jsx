@@ -1,6 +1,10 @@
 import { useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
+import toast from "react-hot-toast";
 import { useAuth } from "../../context/AuthContext";
+
+// Pages that don't require authentication
+const PUBLIC_PATHS = new Set(["/", "/contact", "/register"]);
 
 export default function Header() {
   const [open, setOpen] = useState(false);
@@ -24,6 +28,20 @@ export default function Header() {
     navigate("/");
   };
 
+  /**
+   * Navigate handler — if the target page is protected and the user
+   * is NOT signed in, go to /register with state.from so they land
+   * on the intended page after login.
+   */
+  const handleNavClick = (e, to) => {
+    setOpen(false);
+    if (!isAuthenticated && !PUBLIC_PATHS.has(to)) {
+      e.preventDefault();
+      toast("Please sign in to access wholesale pages", { icon: "🔒" });
+      navigate("/register", { state: { from: to } });
+    }
+  };
+
   return (
     <header className="header">
       <div className="container header-inner">
@@ -37,7 +55,7 @@ export default function Header() {
               key={l.to}
               to={l.to}
               className={pathname === l.to ? "active" : ""}
-              onClick={() => setOpen(false)}
+              onClick={(e) => handleNavClick(e, l.to)}
             >
               {l.label}
             </Link>
