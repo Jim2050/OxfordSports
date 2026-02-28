@@ -26,7 +26,27 @@ const productSchema = new mongoose.Schema(
     sheetName: { type: String, default: "" },
     isActive: { type: Boolean, default: true, index: true },
   },
-  { timestamps: true },
+  {
+    timestamps: true,
+    toJSON: {
+      virtuals: true,
+      transform: function (doc, ret) {
+        // Add 'image' alias for 'imageUrl' for frontend compatibility
+        ret.image = ret.imageUrl;
+        // Add 'stockQuantity' alias for 'quantity'
+        ret.stockQuantity = ret.quantity;
+        return ret;
+      },
+    },
+    toObject: {
+      virtuals: true,
+      transform: function (doc, ret) {
+        ret.image = ret.imageUrl;
+        ret.stockQuantity = ret.quantity;
+        return ret;
+      },
+    },
+  },
 );
 
 // ── Text index for full-text search ──

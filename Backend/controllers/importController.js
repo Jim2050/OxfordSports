@@ -118,6 +118,7 @@ const COLUMN_MAP = {
     "quantity",
     "stock",
     "stock qty",
+    "stock quantity", // Added to match "Stock Quantity" column
     "available",
     "units",
     "pcs",
@@ -130,6 +131,7 @@ const COLUMN_MAP = {
     "photo",
     "picture",
     "image file",
+    "image url", // Added to match "Image URL" column
     "filename",
     "empty1", // unnamed second column in adidas Master sheet (__EMPTY_1 → 'empty1')
   ],
@@ -296,8 +298,17 @@ function consolidateBySku(rows) {
       const existing = skuMap.get(sku);
       // Merge size
       const newSize = row.sizes ? String(row.sizes).trim() : "";
-      if (newSize && !existing.sizes.includes(newSize)) {
-        existing.sizes.push(newSize);
+      if (newSize) {
+        // Split comma-separated sizes
+        const sizesArray = newSize
+          .split(",")
+          .map((s) => s.trim())
+          .filter((s) => s);
+        sizesArray.forEach((s) => {
+          if (!existing.sizes.includes(s)) {
+            existing.sizes.push(s);
+          }
+        });
       }
       // Merge barcode
       const newBarcode = row.barcode ? String(row.barcode).trim() : "";
@@ -310,10 +321,17 @@ function consolidateBySku(rows) {
     } else {
       const size = row.sizes ? String(row.sizes).trim() : "";
       const barcode = row.barcode ? String(row.barcode).trim() : "";
+      // Split comma-separated sizes into array
+      const sizesArray = size
+        ? size
+            .split(",")
+            .map((s) => s.trim())
+            .filter((s) => s)
+        : [];
       skuMap.set(sku, {
         ...row,
         sku,
-        sizes: size ? [size] : [],
+        sizes: sizesArray,
         barcodes: barcode ? [barcode] : [],
         quantity: parseInt(row.quantity) || 0,
       });
