@@ -1,0 +1,14 @@
+node_modules/
+.env
+uploads/temp/*
+*.log
+.DS_Store
+test-*.js
+diagnose.js
+fix-*.js
+clean-test.js
+add-demo-images.js
+check-excel.js
+upload-folder-images.js
+verify-production.js
+ultra-fast-price-fix.js
