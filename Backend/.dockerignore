@@ -1,0 +1,56 @@
+# Dependencies
+node_modules
+npm-debug.log
+yarn-debug.log
+yarn-error.log
+
+# Environment variables
+.env
+.env.local
+.env.*.local
+
+# Git
+.git
+.gitignore
+
+# IDE
+.vscode
+.idea
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Test files
+test-*.js
+*.test.js
+__tests__
+
+# Build files
+dist
+build
+
+# Logs
+*.log
+logs
+
+# Uploads (these should be in cloud storage)
+uploads/*
+!uploads/.gitkeep
+
+# Development files
+diagnose.js
+fix-*.js
+clean-test.js
+add-demo-images.js
+check-excel.js
+upload-folder-images.js
+verify-production.js
+ultra-fast-price-fix.js
+
+# Documentation that doesn't need to be in container
+*.md
+README.md
