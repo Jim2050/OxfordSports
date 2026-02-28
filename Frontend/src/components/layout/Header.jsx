@@ -45,8 +45,11 @@ export default function Header() {
   return (
     <header className="header">
       <div className="container header-inner">
-        <Link to="/" className="logo-text">
-          Oxford<span>Sports</span>
+        <Link to="/" className="logo-container">
+          <img src="/logo.jpeg" alt="Oxford Sports Logo" className="logo-img" />
+          <span className="logo-text">
+            Oxford<span>Sports</span>
+          </span>
         </Link>
 
         <nav className={`nav${open ? " open" : ""}`}>

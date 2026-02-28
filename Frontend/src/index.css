@@ -145,6 +145,29 @@ ol {
   width: auto;
 }
 
+.logo-container {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  text-decoration: none;
+  transition: var(--transition);
+}
+
+.logo-container:hover {
+  opacity: 0.9;
+  transform: translateY(-1px);
+}
+
+.logo-img {
+  height: 48px;
+  width: auto;
+  object-fit: contain;
+  border-radius: var(--radius-sm);
+  background: white;
+  padding: 4px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+}
+
 .logo-text {
   color: var(--text-inverse);
   font-size: 1.35rem;
@@ -1050,6 +1073,14 @@ ol {
 
 /* ========== Responsive ========== */
 @media (max-width: 768px) {
+  .logo-img {
+    height: 40px;
+  }
+
+  .logo-text {
+    font-size: 1.15rem;
+  }
+
   .nav {
     display: none;
   }
@@ -1106,6 +1137,18 @@ ol {
 }
 
 @media (max-width: 480px) {
+  .logo-img {
+    height: 36px;
+  }
+
+  .logo-text {
+    font-size: 1rem;
+  }
+
+  .logo-container {
+    gap: 0.5rem;
+  }
+
   .hero {
     padding: 3rem 0 2.5rem;
   }
