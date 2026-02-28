@@ -100,8 +100,11 @@ const FRONTEND_DIST = path.join(__dirname, "..", "Frontend", "dist");
 if (fs.existsSync(FRONTEND_DIST)) {
   app.use(express.static(FRONTEND_DIST));
   // SPA fallback — serve index.html for any non-API route
-  app.get("/{*splat}", (req, res) => {
-    if (req.path.startsWith("/api") || req.path.startsWith("/uploads")) return;
+  app.get("*", (req, res) => {
+    // Don't serve frontend for API or uploads routes
+    if (req.path.startsWith("/api") || req.path.startsWith("/uploads")) {
+      return res.status(404).json({ error: "Not found" });
+    }
     res.sendFile(path.join(FRONTEND_DIST, "index.html"));
   });
 }
