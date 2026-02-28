@@ -5,6 +5,7 @@
 **File:** `Backend/SAMPLE_PRODUCTS_IMPORT_TEMPLATE.xlsx`
 
 This Excel file contains:
+
 - ✅ **7 sample products** with correct formatting
 - ✅ **Instructions sheet** explaining each column
 - ✅ **Ready to use** as a template for clients
@@ -15,29 +16,30 @@ This Excel file contains:
 
 ### **Required Columns:**
 
-| Column Name | Required | Type | Example | Notes |
-|-------------|----------|------|---------|-------|
-| **SKU** | ✅ YES | Text | `ADI-RUG-001` | Unique product code |
-| **Product Name** | ✅ YES | Text | `All Blacks Home Jersey 2024` | Full product name |
-| **Category** | ✅ YES | Text | `Rugby` | Rugby, Football, Footwear, Clearance |
-| **Brand** | ✅ YES | Text | `adidas` | Brand name |
-| **Price** | ✅ YES | Number | `24.99` | Price in £ (no currency symbol) |
-| **Sizes** | ✅ YES | Text | `S,M,L,XL` | Comma-separated sizes |
+| Column Name      | Required | Type   | Example                       | Notes                                |
+| ---------------- | -------- | ------ | ----------------------------- | ------------------------------------ |
+| **SKU**          | ✅ YES   | Text   | `ADI-RUG-001`                 | Unique product code                  |
+| **Product Name** | ✅ YES   | Text   | `All Blacks Home Jersey 2024` | Full product name                    |
+| **Category**     | ✅ YES   | Text   | `Rugby`                       | Rugby, Football, Footwear, Clearance |
+| **Brand**        | ✅ YES   | Text   | `adidas`                      | Brand name                           |
+| **Price**        | ✅ YES   | Number | `24.99`                       | Price in £ (no currency symbol)      |
+| **Sizes**        | ✅ YES   | Text   | `S,M,L,XL`                    | Comma-separated sizes                |
 
 ### **Optional Columns:**
 
-| Column Name | Type | Example | Notes |
-|-------------|------|---------|-------|
-| **Description** | Text | `Authentic adidas rugby jersey` | Product description |
-| **Subcategory** | Text | `International` | Optional subcategory |
-| **Stock Quantity** | Number | `50` | Available quantity |
-| **Image URL** | URL | `https://...` | Cloudinary or external image URL |
+| Column Name        | Type   | Example                         | Notes                            |
+| ------------------ | ------ | ------------------------------- | -------------------------------- |
+| **Description**    | Text   | `Authentic adidas rugby jersey` | Product description              |
+| **Subcategory**    | Text   | `International`                 | Optional subcategory             |
+| **Stock Quantity** | Number | `50`                            | Available quantity               |
+| **Image URL**      | URL    | `https://...`                   | Cloudinary or external image URL |
 
 ---
 
 ## 📝 **Column Details**
 
 ### **1. SKU** (Required)
+
 - **Format:** Text
 - **Example:** `ADI-RUG-001`, `NIKE-FB-123`
 - **Rules:**
@@ -46,6 +48,7 @@ This Excel file contains:
   - Recommended format: `BRAND-CATEGORY-NUMBER`
 
 ### **2. Product Name** (Required)
+
 - **Format:** Text
 - **Example:** `All Blacks Home Jersey 2024`
 - **Rules:**
@@ -53,6 +56,7 @@ This Excel file contains:
   - Include team/model name and year if applicable
 
 ### **3. Description** (Optional)
+
 - **Format:** Text
 - **Example:** `Authentic adidas All Blacks rugby jersey. High quality replica kit.`
 - **Rules:**
@@ -60,6 +64,7 @@ This Excel file contains:
   - Can include features, materials, etc.
 
 ### **4. Category** (Required)
+
 - **Format:** Text
 - **Valid Options:**
   - `Rugby`
@@ -69,16 +74,19 @@ This Excel file contains:
 - **Rules:** Must match one of the valid categories exactly
 
 ### **5. Subcategory** (Optional)
+
 - **Format:** Text
 - **Examples:** `International`, `Premier League`, `Football Boots`, `Training Wear`
 - **Rules:** Use for additional product classification
 
 ### **6. Brand** (Required)
+
 - **Format:** Text
 - **Example:** `adidas`, `Nike`, `Puma`
 - **Rules:** Brand name, typically lowercase
 
 ### **7. Price** (Required)
+
 - **Format:** Number
 - **Example:** `24.99`
 - **Rules:**
@@ -87,6 +95,7 @@ This Excel file contains:
   - Represents price in £ (GBP)
 
 ### **8. Sizes** (Required)
+
 - **Format:** Text (comma-separated)
 - **Examples:**
   - Clothing: `S,M,L,XL,XXL`
@@ -98,11 +107,13 @@ This Excel file contains:
   - Common sizes: XS, S, M, L, XL, XXL, XXXL
 
 ### **9. Stock Quantity** (Optional)
+
 - **Format:** Number
 - **Example:** `50`
 - **Rules:** Whole number representing available stock
 
 ### **10. Image URL** (Optional)
+
 - **Format:** URL (Text)
 - **Example:** `https://res.cloudinary.com/dxsxoqiq3/image/upload/v1234567890/product.jpg`
 - **Rules:**
@@ -129,16 +140,19 @@ The template includes 7 realistic examples:
 ## 🎯 **How Clients Should Use This Template**
 
 ### **Step 1: Open Template**
+
 - Open `SAMPLE_PRODUCTS_IMPORT_TEMPLATE.xlsx`
 - Review the "Instructions" sheet
 - Look at sample products
 
 ### **Step 2: Prepare Data**
+
 - Keep the same column headers
 - Delete sample products (rows 2-8)
 - Add your actual products
 
 ### **Step 3: Validate Data**
+
 - ✅ All required columns filled
 - ✅ SKUs are unique
 - ✅ Prices are numbers only
@@ -146,6 +160,7 @@ The template includes 7 realistic examples:
 - ✅ Sizes are comma-separated
 
 ### **Step 4: Save & Upload**
+
 - Save as `.xlsx` or `.csv`
 - Upload via admin panel
 - System will validate and import
@@ -165,6 +180,7 @@ The template includes 7 realistic examples:
 7. Check imported products
 
 ### **System Validates:**
+
 - ✅ Required fields present
 - ✅ SKU uniqueness
 - ✅ Valid categories
@@ -176,18 +192,23 @@ The template includes 7 realistic examples:
 ## ⚠️ **Common Errors & Solutions**
 
 ### **Error: "Missing required column: SKU"**
+
 **Solution:** Ensure column header is exactly `SKU` (case-sensitive)
 
 ### **Error: "Duplicate SKU"**
+
 **Solution:** Each SKU must be unique across all products
 
 ### **Error: "Invalid price format"**
+
 **Solution:** Use numbers only: `24.99` (not `£24.99` or `24,99`)
 
 ### **Error: "Invalid category"**
+
 **Solution:** Use only: Rugby, Football, Footwear, or Clearance
 
 ### **Error: "Sizes format invalid"**
+
 **Solution:** Use comma-separated: `S,M,L,XL` (no spaces)
 
 ---
@@ -195,6 +216,7 @@ The template includes 7 realistic examples:
 ## 📧 **Client Support**
 
 If clients have issues:
+
 1. Provide this template
 2. Direct them to the Instructions sheet
 3. Ask them to match the sample format exactly
@@ -205,12 +227,14 @@ If clients have issues:
 ## 🎨 **Customization Tips**
 
 ### **For Bulk Imports:**
+
 - Use Excel formulas to generate SKUs
 - Copy formatting from samples
 - Use data validation for categories
 - Filter/sort before importing
 
 ### **For Image URLs:**
+
 - Upload images to Cloudinary first
 - Get public URLs
 - Paste into Image URL column
@@ -221,6 +245,7 @@ If clients have issues:
 ## ✅ **Quality Checklist**
 
 Before sending to client, verify template has:
+
 - [ ] Clear column headers
 - [ ] Sample products that match their inventory type
 - [ ] Instructions sheet
@@ -236,7 +261,7 @@ Before sending to client, verify template has:
 **Format:** Microsoft Excel (.xlsx)  
 **Sheets:** 2 (Products, Instructions)  
 **Sample Rows:** 7 products  
-**Columns:** 10 (6 required, 4 optional)  
+**Columns:** 10 (6 required, 4 optional)
 
 ---
 
