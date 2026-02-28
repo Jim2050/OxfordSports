@@ -1,33 +1,11 @@
-# Railway Configuration
-# Upload this to Railway Config-as-code
+# Railway Configuration File
+# This configures your backend deployment
 
 [build]
 builder = "NIXPACKS"
-buildCommand = "npm install --production"
+buildCommand = "cd Backend && npm install --production"
 
 [deploy]
-startCommand = "node server.js"
+startCommand = "cd Backend && node server.js"
 restartPolicyType = "ON_FAILURE"
 restartPolicyMaxRetries = 10
-numReplicas = 1
-sleepApplication = false
-restartPolicyMaxRetries = 10
-
-[[services]]
-name = "backend"
-rootDirectory = "/Backend"
-
-[services.envVars]
-NODE_ENV = "production"
-PORT = "5000"
-MONGO_URI = "mongodb+srv://bhuttokashifali957:mongodb%4012@cluster0.puflo.mongodb.net/Oxford"
-JWT_SECRET = "oxford-sports-jwt-secret-2026"
-ADMIN_EMAIL = "admin@oxfordsports.net"
-ADMIN_PASSWORD = "Godaddy1971turbs*"
-CLOUDINARY_CLOUD_NAME = "dxsxoqiq3"
-CLOUDINARY_API_KEY = "431986497367911"
-CLOUDINARY_API_SECRET = "0mREQCXhMvbi8Ze1Ob5NsAqQZ1M"
-CONTACT_EMAIL_TO = "sales@oxfordsports.net"
-
-# IMPORTANT: Update this with your actual Netlify URL
-CLIENT_ORIGIN = "https://oxford-sports.netlify.app/"
