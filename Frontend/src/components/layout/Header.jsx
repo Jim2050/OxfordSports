@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import toast from "react-hot-toast";
 import { useAuth } from "../../context/AuthContext";
+import { useCart } from "../../context/CartContext";
 
 // Pages that don't require authentication
 const PUBLIC_PATHS = new Set(["/", "/contact", "/register"]);
@@ -11,6 +12,7 @@ export default function Header() {
   const { pathname } = useLocation();
   const navigate = useNavigate();
   const { isAuthenticated, user, logout } = useAuth();
+  const { itemCount, openDrawer } = useCart();
 
   const links = [
     { to: "/", label: "Home" },
@@ -81,6 +83,21 @@ export default function Header() {
             </Link>
           )}
         </nav>
+
+        {/* Cart icon with badge */}
+        <button
+          className="cart-icon-btn"
+          onClick={openDrawer}
+          aria-label="Shopping cart"
+          title="Shopping cart"
+        >
+          🛒
+          {itemCount > 0 && (
+            <span className="cart-badge">
+              {itemCount > 99 ? "99+" : itemCount}
+            </span>
+          )}
+        </button>
 
         <button
           className="burger"

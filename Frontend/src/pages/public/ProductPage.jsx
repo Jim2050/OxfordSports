@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import { useParams, Link } from "react-router-dom";
-import { buildMailto } from "../../utils/buildMailto";
+import toast from "react-hot-toast";
 import { resolveImageUrl, getDisplayPrice } from "../../api/api";
+import { useCart } from "../../context/CartContext";
 import API from "../../api/axiosInstance";
 
 const PLACEHOLDER = "https://placehold.co/600x600/e2e8f0/64748b?text=No+Image";
@@ -10,9 +11,14 @@ export default function ProductPage() {
   const { sku } = useParams();
   const [product, setProduct] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [selectedSize, setSelectedSize] = useState("");
+  const [qty, setQty] = useState(1);
+  const { addToCart, isInCart, openDrawer } = useCart();
 
   useEffect(() => {
     setLoading(true);
+    setSelectedSize("");
+    setQty(1);
     API.get(`/products/${encodeURIComponent(sku)}`)
       .then((r) => setProduct(r.data))
       .catch(() => setProduct(null))
@@ -54,6 +60,36 @@ export default function ProductPage() {
   const rrp = Number(product.rrp) || 0;
   const showRrp = rrp > 0 && rrp > finalPrice;
   const isUnder5 = finalPrice > 0 && finalPrice <= 5;
+
+  // Size handling
+  const sizes = Array.isArray(product.sizes) ? product.sizes : [];
+  const sizeStock =
+    product.sizeStock && typeof product.sizeStock === "object"
+      ? product.sizeStock
+      : {};
+  const hasSizeStock = Object.keys(sizeStock).length > 0;
+  const hasSizes = sizes.length > 0 || hasSizeStock;
+  const availableSizes = hasSizeStock ? Object.keys(sizeStock) : sizes;
+
+  // Max quantity for selected size
+  const maxQty = hasSizeStock
+    ? sizeStock[selectedSize] || 0
+    : product.quantity || 0;
+
+  const inCart = isInCart(product.sku, selectedSize);
+
+  const handleAddToCart = () => {
+    if (hasSizes && !selectedSize) {
+      toast.error("Please select a size.");
+      return;
+    }
+    if (hasSizeStock && maxQty > 0 && qty > maxQty) {
+      toast.error(`Only ${maxQty} available in size ${selectedSize}.`);
+      return;
+    }
+    addToCart(product, selectedSize, qty);
+    toast.success(`${product.name} added to cart!`);
+  };
 
   return (
     <>
@@ -118,20 +154,110 @@ export default function ProductPage() {
                 {product.description}
               </p>
             )}
-            {product.sizes &&
-              (Array.isArray(product.sizes)
-                ? product.sizes.length > 0
-                : product.sizes) && (
-                <p style={{ marginBottom: "1.5rem" }}>
-                  <strong>Sizes:</strong>{" "}
-                  {Array.isArray(product.sizes)
-                    ? product.sizes.join(", ")
-                    : product.sizes}
-                </p>
+
+            {/* ── Size selection ── */}
+            {hasSizes && (
+              <div style={{ marginBottom: "1.25rem" }}>
+                <strong style={{ display: "block", marginBottom: "0.5rem" }}>
+                  Select Size:
+                </strong>
+                <div className="size-selector">
+                  {availableSizes.map((s) => {
+                    const stock = hasSizeStock ? sizeStock[s] || 0 : null;
+                    const outOfStock = hasSizeStock && stock === 0;
+                    return (
+                      <button
+                        key={s}
+                        className={`size-btn${selectedSize === s ? " selected" : ""}${outOfStock ? " disabled" : ""}`}
+                        onClick={() => {
+                          if (!outOfStock) {
+                            setSelectedSize(s);
+                            setQty(1);
+                          }
+                        }}
+                        disabled={outOfStock}
+                        title={
+                          outOfStock
+                            ? "Out of stock"
+                            : stock !== null
+                              ? `${stock} available`
+                              : s
+                        }
+                      >
+                        {s}
+                        {stock !== null && (
+                          <span className="size-stock">
+                            {outOfStock ? "—" : stock}
+                          </span>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* ── Quantity selector ── */}
+            <div
+              style={{
+                marginBottom: "1.5rem",
+                display: "flex",
+                alignItems: "center",
+                gap: "0.75rem",
+              }}
+            >
+              <strong>Qty:</strong>
+              <div className="qty-selector">
+                <button
+                  className="cart-qty-btn"
+                  onClick={() => setQty((q) => Math.max(1, q - 1))}
+                  disabled={qty <= 1}
+                >
+                  −
+                </button>
+                <input
+                  type="number"
+                  min="1"
+                  max={maxQty > 0 ? maxQty : 9999}
+                  value={qty}
+                  onChange={(e) => {
+                    const v = parseInt(e.target.value) || 1;
+                    setQty(maxQty > 0 ? Math.min(v, maxQty) : Math.max(1, v));
+                  }}
+                  className="qty-input"
+                />
+                <button
+                  className="cart-qty-btn"
+                  onClick={() =>
+                    setQty((q) =>
+                      maxQty > 0 ? Math.min(q + 1, maxQty) : q + 1,
+                    )
+                  }
+                  disabled={maxQty > 0 && qty >= maxQty}
+                >
+                  +
+                </button>
+              </div>
+              {maxQty > 0 && (
+                <span style={{ fontSize: "0.85rem", color: "#6b7280" }}>
+                  {maxQty} available
+                </span>
               )}
-            <a href={buildMailto(product)} className="btn btn-accent btn-lg">
-              Order by Email
-            </a>
+            </div>
+
+            {/* ── Add to cart / View cart ── */}
+            {inCart ? (
+              <button className="btn btn-primary btn-lg" onClick={openDrawer}>
+                In Cart ✓ — View Cart
+              </button>
+            ) : (
+              <button
+                className="btn btn-accent btn-lg"
+                onClick={handleAddToCart}
+              >
+                Add to Cart
+              </button>
+            )}
             <Link
               to="/products"
               className="btn btn-outline"

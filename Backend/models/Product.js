@@ -20,6 +20,12 @@ const productSchema = new mongoose.Schema(
     price: { type: Number, required: true, min: 0, index: true },
     rrp: { type: Number, default: 0, min: 0 },
     sizes: { type: [String], default: [] },
+    /**
+     * Per-size stock map — e.g. { "S": 50, "M": 30, "L": 20, "XL": 10 }
+     * When present, the cart enforces stock-per-size limits.
+     * When absent/empty, product uses the flat `quantity` field.
+     */
+    sizeStock: { type: Map, of: Number, default: {} },
     quantity: { type: Number, default: 0 },
     imageUrl: { type: String, default: "" },
     imagePublicId: { type: String, default: "" },

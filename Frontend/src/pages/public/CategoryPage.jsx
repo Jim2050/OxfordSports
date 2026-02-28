@@ -2,7 +2,9 @@ import { useEffect, useState } from "react";
 import { useParams, useLocation } from "react-router-dom";
 import ProductGrid from "../../components/products/ProductGrid";
 import SearchBar from "../../components/products/SearchBar";
-import { fetchProducts } from "../../api/api";
+import { fetchProducts, resolveImageUrl } from "../../api/api";
+
+const PLACEHOLDER_BG = "https://placehold.co/300x300/1a1281/ffffff?text=•";
 
 const CATEGORY_META = {
   "rugby-category": {
@@ -47,12 +49,34 @@ export default function CategoryPage() {
       .finally(() => setLoading(false));
   }, [slug, search]);
 
+  // Pick up to 4 products with images for the background showcase
+  const bgProducts = products
+    .filter((p) => p.imageUrl || p.image)
+    .slice(0, 4)
+    .map((p) => resolveImageUrl(p.imageUrl || p.image) || PLACEHOLDER_BG);
+
+  // Pad to 4 if not enough images
+  while (bgProducts.length < 4) bgProducts.push(PLACEHOLDER_BG);
+
   return (
     <>
-      <section className="page-banner">
-        <div className="container">
+      <section className="page-banner category-banner">
+        {/* Four background product thumbnails */}
+        <div className="category-bg-grid" aria-hidden="true">
+          {bgProducts.map((src, i) => (
+            <div key={i} className="category-bg-item">
+              <img src={src} alt="" loading="lazy" />
+            </div>
+          ))}
+        </div>
+        <div className="container" style={{ position: "relative", zIndex: 2 }}>
           <h1>{meta.title}</h1>
           <p>{meta.subtitle}</p>
+          <span className="category-count">
+            {loading
+              ? "…"
+              : `${products.length} product${products.length !== 1 ? "s" : ""}`}
+          </span>
         </div>
       </section>
 

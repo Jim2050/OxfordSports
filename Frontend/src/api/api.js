@@ -38,6 +38,54 @@ export const sendContact = (data) =>
   API.post("/contact", data).then((r) => r.data);
 
 // ══════════════════════════════════════════
+//  Orders (Member)
+// ══════════════════════════════════════════
+
+export const placeOrder = (items, notes = "") => {
+  const token = localStorage.getItem("memberToken");
+  return API.post(
+    "/orders",
+    { items, notes },
+    { headers: token ? { Authorization: `Bearer ${token}` } : {} },
+  ).then((r) => r.data);
+};
+
+export const fetchMyOrders = () => {
+  const token = localStorage.getItem("memberToken");
+  return API.get("/orders/mine", {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  }).then((r) => r.data);
+};
+
+// Admin order management
+export const fetchAdminOrders = (params) =>
+  API.get("/admin/orders", { params, headers: adminHeaders() }).then(
+    (r) => r.data,
+  );
+
+export const updateOrderStatus = (id, status) =>
+  API.put(
+    `/admin/orders/${id}/status`,
+    { status },
+    { headers: adminHeaders() },
+  ).then((r) => r.data);
+
+export const exportOrders = (params) =>
+  API.get("/admin/export-orders", {
+    params,
+    headers: adminHeaders(),
+    responseType: "blob",
+  }).then((r) => {
+    // Trigger file download
+    const url = URL.createObjectURL(r.data);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `orders-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  });
+
+// ══════════════════════════════════════════
 //  Admin Auth + CRUD
 // ══════════════════════════════════════════
 

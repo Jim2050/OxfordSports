@@ -66,6 +66,7 @@ exports.addProduct = async (req, res) => {
       price,
       rrp,
       sizes,
+      sizeStock,
       quantity,
     } = req.body;
 
@@ -87,6 +88,7 @@ exports.addProduct = async (req, res) => {
       price: parseFloat(price),
       rrp: rrp ? parseFloat(rrp) : 0,
       sizes: Array.isArray(sizes) ? sizes : sizes ? [sizes] : [],
+      sizeStock: sizeStock && typeof sizeStock === "object" ? sizeStock : {},
       quantity: quantity ? parseInt(quantity) : 0,
     };
 
@@ -139,6 +141,7 @@ exports.updateProduct = async (req, res) => {
       "price",
       "rrp",
       "sizes",
+      "sizeStock",
       "quantity",
       "imageUrl",
     ];

@@ -22,6 +22,12 @@ const {
 } = require("../controllers/adminController");
 
 const {
+  getOrders,
+  updateOrderStatus,
+  exportOrders,
+} = require("../controllers/orderController");
+
+const {
   importProducts,
   uploadImages: uploadImagesCtrl,
   getImportBatches,
@@ -52,6 +58,11 @@ router.post("/import-products", uploadExcel, importProducts);
 router.post("/upload-images", uploadZip, uploadImagesCtrl);
 router.get("/import-batches", getImportBatches);
 router.get("/export", exportProducts);
+
+// Orders
+router.get("/orders", getOrders);
+router.put("/orders/:id/status", updateOrderStatus);
+router.get("/export-orders", exportOrders);
 
 // One-time migration utilities
 router.post("/fix-subcategories", fixSubcategories);
