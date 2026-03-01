@@ -4,6 +4,7 @@ import { useCart } from "../../context/CartContext";
 import { useAuth } from "../../context/AuthContext";
 import { resolveImageUrl } from "../../api/api";
 import API from "../../api/axiosInstance";
+import { buildOrderMailto } from "../../utils/buildOrderMailto";
 
 const PLACEHOLDER = "https://placehold.co/64x64/e2e8f0/64748b?text=—";
 
@@ -41,7 +42,14 @@ export default function CartDrawer() {
       const res = await API.post("/orders", payload, {
         headers: { Authorization: `Bearer ${token}` },
       });
-      toast.success(`Order ${res.data.order.orderNumber} placed successfully!`);
+
+      const order = res.data.order;
+      toast.success(`Order ${order.orderNumber} placed successfully!`);
+
+      // Open mailto link with order details
+      const mailtoLink = buildOrderMailto(order);
+      window.location.href = mailtoLink;
+
       clearCart();
       closeDrawer();
     } catch (err) {
