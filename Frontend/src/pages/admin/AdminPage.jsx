@@ -958,7 +958,7 @@ export default function AdminPage() {
                         .join(", ");
 
                       return (
-                        <tr key={p.sku || i}>
+                        <tr key={p._id || p.sku}>
                           <td>
                             {p.imageUrl || p.image ? (
                               <img

@@ -31,13 +31,12 @@ function saveCart(items) {
  * {
  *   sku: string,
  *   name: string,
- *   size: string,        // "" if no size selected
+ *   size: string,        // "" if no size / ONE SIZE
  *   quantity: number,
- *   price: number,
+ *   price: number,       // salePrice (unit price)
+ *   rrp: number,         // retail reference price
  *   imageUrl: string,
  *   maxStock: number,    // 0 = unlimited (wholesale)
- *   sizes: string[],     // available sizes for the product
- *   sizeStock: object,   // { "S": 50, "M": 30 } or {}
  * }
  *
  * Cart key = sku + size  (same product in different sizes = separate items)

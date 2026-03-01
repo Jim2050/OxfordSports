@@ -64,7 +64,7 @@ export default function CategoryPage() {
         {/* Four background product thumbnails */}
         <div className="category-bg-grid" aria-hidden="true">
           {bgProducts.map((src, i) => (
-            <div key={i} className="category-bg-item">
+            <div key={`bg-${i}`} className="category-bg-item">
               <img src={src} alt="" loading="lazy" />
             </div>
           ))}

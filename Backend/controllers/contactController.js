@@ -15,9 +15,11 @@ exports.sendContactForm = async (req, res) => {
 
     // If SMTP is not configured, just log (development)
     if (!process.env.SMTP_USER || !process.env.SMTP_PASS) {
-      console.log("📧 Contact form (SMTP not configured — logged only):");
-      console.log(`   From: ${name} <${email}>`);
-      console.log(`   Message: ${message}`);
+      if (process.env.NODE_ENV !== "production") {
+        console.log("📧 Contact form (SMTP not configured — logged only):");
+        console.log(`   From: ${name} <${email}>`);
+        console.log(`   Message: ${message}`);
+      }
       return res.json({
         success: true,
         message: "Message received (email delivery pending SMTP setup).",

@@ -216,9 +216,13 @@ export function resolveImageUrl(url) {
   const trimmed = String(url).trim();
   // Relative path → prepend backend base
   if (trimmed.startsWith("/")) {
+    const apiBase = import.meta.env.VITE_API_BASE_URL || "";
+    // Derive backend origin from API base URL (strip trailing /api)
     const backendBase =
-      import.meta.env.VITE_BACKEND_URL || "http://localhost:5000";
-    return `${backendBase}${trimmed}`;
+      import.meta.env.VITE_BACKEND_URL ||
+      apiBase.replace(/\/api\/?$/, "") ||
+      "";
+    return backendBase ? `${backendBase}${trimmed}` : trimmed;
   }
   // Absolute URL → validate it points to an actual image
   if (isDirectImageUrl(trimmed)) return trimmed;

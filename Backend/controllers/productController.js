@@ -125,8 +125,7 @@ exports.getProducts = async (req, res) => {
       Product.find(filter)
         .sort(sortObj)
         .skip((pageNum - 1) * limitNum)
-        .limit(limitNum)
-        .lean(),
+        .limit(limitNum),
       Product.countDocuments(filter),
     ]);
 
@@ -209,7 +208,7 @@ exports.getProductBySku = async (req, res) => {
     const product = await Product.findOne({
       sku: req.params.sku.toUpperCase(),
       isActive: true,
-    }).lean();
+    });
 
     if (!product) {
       return res.status(404).json({ error: "Product not found." });

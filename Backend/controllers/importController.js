@@ -11,6 +11,10 @@ const {
   batchResolveImages,
 } = require("../utils/imageResolver");
 
+// Production-safe logger — silent in production, verbose in development
+const isDev = process.env.NODE_ENV !== "production";
+const debug = isDev ? console.log.bind(console) : () => {};
+
 // ═══════════════════════════════════════════════════════════════
 //  COLUMN ALIAS MAP — handles client Excel + generic formats
 //  Client sheets: Master (Code, Image Link, Gender, Style, Colour Desc, UK Size, Barcode, RRP, Trade)
@@ -295,7 +299,8 @@ function consolidateBySku(rows) {
     const sku = row.sku ? String(row.sku).trim().toUpperCase() : "";
     if (!sku) continue;
 
-    const rowQty = parseInt(row.quantity) || 1;
+    const parsedQty = parseInt(row.quantity);
+    const rowQty = isNaN(parsedQty) ? 1 : Math.max(0, parsedQty);
     const rawSize = row.sizes ? String(row.sizes).trim() : "";
     // Split comma-separated sizes (e.g. "8, 9, 10")
     const rowSizes = rawSize
@@ -514,24 +519,21 @@ exports.importProducts = async (req, res) => {
     const { rows, headers, mapping, unmappedHeaders, sheetSummary } =
       parseExcelFile(filePath);
 
-    console.log(
+    debug(
       `[IMPORT] Parsed ${rows.length} raw rows from ${sheetSummary.length} sheets`,
     );
-    console.log(`[IMPORT] Column mapping:`, JSON.stringify(mapping, null, 2));
-    console.log(
+    debug(`[IMPORT] Column mapping:`, JSON.stringify(mapping, null, 2));
+    debug(
       `[IMPORT] Sheet breakdown:`,
       sheetSummary.map((s) => `${s.name}(${s.rows})`).join(", "),
     );
     if (unmappedHeaders.length > 0) {
-      console.log(`[IMPORT] Unmapped headers:`, unmappedHeaders);
+      debug(`[IMPORT] Unmapped headers:`, unmappedHeaders);
     }
 
     // ── Phase 1 diagnostic: log first 3 parsed rows ──
     for (let d = 0; d < Math.min(3, rows.length); d++) {
-      console.log(
-        `[IMPORT] Parsed row ${d}:`,
-        JSON.stringify(rows[d], null, 2),
-      );
+      debug(`[IMPORT] Parsed row ${d}:`, JSON.stringify(rows[d], null, 2));
     }
 
     if (rows.length === 0) {
@@ -550,7 +552,7 @@ exports.importProducts = async (req, res) => {
 
     // ── Consolidate same-SKU rows (size merging) ──
     const consolidated = consolidateBySku(rows);
-    console.log(
+    debug(
       `[IMPORT] Consolidated ${rows.length} rows → ${consolidated.length} unique products`,
     );
 
@@ -567,7 +569,7 @@ exports.importProducts = async (req, res) => {
       Object.keys(brandFreq).sort((a, b) => brandFreq[b] - brandFreq[a])[0] ||
       "";
     if (brandDefault) {
-      console.log(
+      debug(
         `[IMPORT] Brand default detected: "${brandDefault}" (${brandFreq[brandDefault]} products) — applied to rows with no brand`,
       );
     }
@@ -577,7 +579,7 @@ exports.importProducts = async (req, res) => {
       (r) => r._rawPrice !== undefined,
     ).length;
     if (priceFallbackCount > 0) {
-      console.log(
+      debug(
         `[IMPORT] ${priceFallbackCount} products using Price column fallback (Trade was empty)`,
       );
     }
@@ -698,14 +700,14 @@ exports.importProducts = async (req, res) => {
         productData.imageUrl = "";
         productData._pendingImageQuery = rawImageUrl;
         if (i < 5) {
-          console.log(
+          debug(
             `[IMPORT] Row ${i + 1} imageUrl queued for auto-resolution: "${rawImageUrl.substring(0, 80)}"`,
           );
         }
       } else {
         productData.imageUrl = "";
         if (rawImageUrl && i < 5) {
-          console.log(
+          debug(
             `[IMPORT] Row ${i + 1} imageUrl is not a valid URL: "${rawImageUrl}" — use ZIP image upload`,
           );
         }
@@ -732,7 +734,7 @@ exports.importProducts = async (req, res) => {
     }
 
     // ── Execute in bulk batches ──
-    console.log(
+    debug(
       `[IMPORT] Executing ${operations.length} operations in batches of ${BATCH_SIZE}`,
     );
     for (let i = 0; i < operations.length; i += BATCH_SIZE) {
@@ -740,7 +742,7 @@ exports.importProducts = async (req, res) => {
       const result = await Product.bulkWrite(chunk, { ordered: false });
       imported += result.upsertedCount || 0;
       updated += result.modifiedCount || 0;
-      console.log(
+      debug(
         `[IMPORT] Batch ${Math.floor(i / BATCH_SIZE) + 1}: upserted=${result.upsertedCount || 0}, modified=${result.modifiedCount || 0}`,
       );
     }
@@ -751,7 +753,7 @@ exports.importProducts = async (req, res) => {
     let imageResolved = 0;
     let imageFailed = 0;
     if (pendingImageProducts.length > 0) {
-      console.log(
+      debug(
         `[IMPORT] Starting auto image resolution for ${pendingImageProducts.length} products...`,
       );
       // Resolve up to 50 images during import (rest handled by /resolve-images endpoint)
@@ -762,7 +764,7 @@ exports.importProducts = async (req, res) => {
           3,
           (r, f, t) => {
             if ((r + f) % 10 === 0)
-              console.log(
+              debug(
                 `[IMAGE-RESOLVE] Progress: ${r} resolved, ${f} failed of ${t}`,
               );
           },
@@ -779,18 +781,16 @@ exports.importProducts = async (req, res) => {
             },
           }));
           await Product.bulkWrite(imgOps, { ordered: false });
-          console.log(
-            `[IMPORT] Auto-resolved ${resolved.length} product images`,
-          );
+          debug(`[IMPORT] Auto-resolved ${resolved.length} product images`);
         }
         if (imgFailed.length > 0) {
-          console.log(
+          debug(
             `[IMPORT] Image resolution failed for ${imgFailed.length} products (first 5):`,
             imgFailed.slice(0, 5).map((f) => `${f.sku}: ${f.reason}`),
           );
         }
         if (pendingImageProducts.length > 50) {
-          console.log(
+          debug(
             `[IMPORT] ${pendingImageProducts.length - 50} products still need image resolution — use POST /api/admin/resolve-images`,
           );
         }
@@ -800,11 +800,11 @@ exports.importProducts = async (req, res) => {
     }
 
     // Log import summary
-    console.log(
+    debug(
       `[IMPORT] Complete: ${imported} inserted, ${updated} updated, ${failed} failed, ${imageResolved} images resolved in ${elapsed}s`,
     );
     if (errors.length > 0) {
-      console.log(
+      debug(
         `[IMPORT] Failed rows (first 10):`,
         JSON.stringify(errors.slice(0, 10), null, 2),
       );
@@ -971,7 +971,7 @@ exports.uploadImages = async (req, res) => {
         if (imagePublicId) product.imagePublicId = imagePublicId;
         await product.save();
         matched++;
-        console.log(
+        debug(
           `[IMAGE] Matched ${img.filename} → ${product.sku} | URL: ${imageUrl.substring(0, 80)}...`,
         );
       } catch (imgErr) {
@@ -1045,7 +1045,7 @@ exports.resolveImages = async (req, res) => {
       });
     }
 
-    console.log(
+    debug(
       `[RESOLVE-IMAGES] Starting resolution for ${products.length} products (concurrency: ${concurrency})`,
     );
 
@@ -1061,7 +1061,7 @@ exports.resolveImages = async (req, res) => {
       concurrency,
       (r, f, t) => {
         if ((r + f) % 10 === 0)
-          console.log(
+          debug(
             `[RESOLVE-IMAGES] Progress: ${r} resolved, ${f} failed of ${t}`,
           );
       },
@@ -1084,7 +1084,7 @@ exports.resolveImages = async (req, res) => {
       isActive: true,
     });
 
-    console.log(
+    debug(
       `[RESOLVE-IMAGES] Done: ${resolved.length} resolved, ${failed.length} failed, ${remaining} remaining`,
     );
 
