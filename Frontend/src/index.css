@@ -472,6 +472,227 @@ ol {
   margin-left: 0.4rem;
 }
 
+/* ========== Discount Badge (Product Card overlay) ========== */
+.discount-badge {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 0.72rem;
+  font-weight: 800;
+  padding: 0.25rem 0.6rem;
+  border-radius: 4px;
+  z-index: 2;
+  letter-spacing: 0.3px;
+  box-shadow: 0 2px 6px rgba(253, 8, 8, 0.25);
+}
+
+/* ========== Sizes Preview (Product Card) ========== */
+.sizes-preview {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.3rem;
+  margin-bottom: 0.5rem;
+}
+
+.sizes-label {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--text-light);
+  margin-right: 0.15rem;
+}
+
+.size-tag {
+  display: inline-block;
+  font-size: 0.7rem;
+  font-weight: 600;
+  background: #f3f4f6;
+  color: #374151;
+  padding: 0.15rem 0.45rem;
+  border-radius: 3px;
+  border: 1px solid #e5e7eb;
+  line-height: 1.3;
+}
+
+.size-tag.out-of-stock {
+  opacity: 0.4;
+  text-decoration: line-through;
+}
+
+.size-tag.more {
+  background: var(--primary);
+  color: #fff;
+  border-color: var(--primary);
+}
+
+/* ========== Stock Info ========== */
+.stock-info {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: #059669;
+  margin-bottom: 0.5rem;
+}
+
+/* ========== Price RRP & Discount (in card footer) ========== */
+.price-rrp {
+  font-size: 0.78rem;
+  font-weight: 500;
+  color: #9ca3af;
+  text-decoration: line-through;
+  margin-left: 0.4rem;
+}
+
+.price-discount {
+  font-size: 0.68rem;
+  font-weight: 700;
+  color: #fff;
+  background: #059669;
+  padding: 0.1rem 0.4rem;
+  border-radius: 3px;
+  margin-left: 0.35rem;
+  vertical-align: middle;
+}
+
+/* ========== Price Block (Product Detail Page) ========== */
+.price-block {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+}
+
+.price-main {
+  font-size: 1.75rem;
+  font-weight: 800;
+  color: var(--accent);
+}
+
+.price-rrp-detail {
+  font-size: 1rem;
+  color: #9ca3af;
+  font-weight: 500;
+}
+
+.discount-tag {
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: #fff;
+  background: #059669;
+  padding: 0.2rem 0.6rem;
+  border-radius: 4px;
+}
+
+/* ========== Multi-Size Order Grid (Wholesale Grouping View) ========== */
+.size-order-section {
+  margin-bottom: 1.5rem;
+  padding: 1.25rem;
+  background: #f9fafb;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+}
+
+.size-order-grid {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  background: #fff;
+}
+
+.size-order-header {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1.4fr;
+  padding: 0.6rem 0.85rem;
+  background: var(--bg-section);
+  font-weight: 700;
+  font-size: 0.82rem;
+  color: var(--text-light);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  border-bottom: 2px solid var(--border);
+}
+
+.size-order-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1.4fr;
+  padding: 0.55rem 0.85rem;
+  align-items: center;
+  border-bottom: 1px solid var(--border);
+  transition: background 0.15s ease;
+}
+
+.size-order-row:last-child {
+  border-bottom: none;
+}
+
+.size-order-row:hover {
+  background: rgba(26, 18, 129, 0.02);
+}
+
+.size-order-row.selected {
+  background: rgba(26, 18, 129, 0.06);
+}
+
+.size-order-row.out-of-stock {
+  opacity: 0.45;
+  background: #fafafa;
+}
+
+.size-order-row.in-cart {
+  border-left: 3px solid #059669;
+}
+
+.size-order-label {
+  font-weight: 700;
+  font-size: 0.92rem;
+}
+
+.size-order-stock {
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: #059669;
+}
+
+.size-order-stock.zero {
+  color: #9ca3af;
+  font-weight: 400;
+  font-style: italic;
+}
+
+.size-order-qty {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.qty-input-sm {
+  width: 48px;
+  text-align: center;
+  border: 1.5px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 0.3rem;
+  font-weight: 700;
+  font-size: 0.88rem;
+}
+
+.qty-input-sm:focus {
+  outline: none;
+  border-color: var(--primary);
+}
+
+.in-cart-badge {
+  font-size: 0.68rem;
+  font-weight: 700;
+  color: #059669;
+  background: #ecfdf5;
+  padding: 0.15rem 0.4rem;
+  border-radius: 3px;
+  margin-left: 0.25rem;
+  white-space: nowrap;
+}
+
 /* ========== Members Only Gate ========== */
 .members-gate {
   text-align: center;
@@ -1119,6 +1340,21 @@ ol {
   .product-detail {
     grid-template-columns: 1fr;
     gap: 1.5rem;
+  }
+
+  .size-order-section {
+    padding: 0.75rem;
+  }
+
+  .size-order-header,
+  .size-order-row {
+    grid-template-columns: 0.8fr 0.8fr 1.4fr;
+    padding: 0.45rem 0.5rem;
+    font-size: 0.82rem;
+  }
+
+  .price-main {
+    font-size: 1.35rem;
   }
 
   .footer-grid {

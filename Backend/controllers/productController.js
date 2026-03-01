@@ -84,9 +84,11 @@ exports.getProducts = async (req, res) => {
       });
     }
 
-    // Price range
-    if (maxPrice) conditions.push({ price: { $lte: parseFloat(maxPrice) } });
-    if (minPrice) conditions.push({ price: { $gte: parseFloat(minPrice) } });
+    // Price range (use salePrice — the actual selling price)
+    if (maxPrice)
+      conditions.push({ salePrice: { $lte: parseFloat(maxPrice) } });
+    if (minPrice)
+      conditions.push({ salePrice: { $gte: parseFloat(minPrice) } });
 
     // Brand exact (case-insensitive)
     if (brand) {
@@ -112,8 +114,8 @@ exports.getProducts = async (req, res) => {
 
     // Sorting
     let sortObj = { createdAt: -1 };
-    if (sort === "price_asc") sortObj = { price: 1 };
-    else if (sort === "price_desc") sortObj = { price: -1 };
+    if (sort === "price_asc") sortObj = { salePrice: 1 };
+    else if (sort === "price_desc") sortObj = { salePrice: -1 };
     else if (sort === "name_asc") sortObj = { name: 1 };
 
     const pageNum = Math.max(1, parseInt(page));

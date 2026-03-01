@@ -1,5 +1,17 @@
 const mongoose = require("mongoose");
 
+/**
+ * Size-stock sub-schema: each entry is one size with its quantity.
+ * Example: { size: "8", quantity: 3 }
+ */
+const sizeEntrySchema = new mongoose.Schema(
+  {
+    size: { type: String, required: true, trim: true },
+    quantity: { type: Number, default: 0, min: 0 },
+  },
+  { _id: false },
+);
+
 const productSchema = new mongoose.Schema(
   {
     sku: {
@@ -17,18 +29,22 @@ const productSchema = new mongoose.Schema(
     brand: { type: String, default: "", index: true },
     color: { type: String, default: "" },
     barcode: { type: String, default: "" },
-    price: { type: Number, required: true, min: 0, index: true },
+
+    /* ── Pricing ── */
+    salePrice: { type: Number, required: true, min: 0, index: true },
     rrp: { type: Number, default: 0, min: 0 },
-    sizes: { type: [String], default: [] },
-    /**
-     * Per-size stock map — e.g. { "S": 50, "M": 30, "L": 20, "XL": 10 }
-     * When present, the cart enforces stock-per-size limits.
-     * When absent/empty, product uses the flat `quantity` field.
-     */
-    sizeStock: { type: Map, of: Number, default: {} },
-    quantity: { type: Number, default: 0 },
+
+    /* ── Sizes with per-size stock ── */
+    sizes: { type: [sizeEntrySchema], default: [] },
+
+    /* ── Total quantity (sum of all sizes; computed on save) ── */
+    totalQuantity: { type: Number, default: 0, min: 0 },
+
+    /* ── Images ── */
     imageUrl: { type: String, default: "" },
     imagePublicId: { type: String, default: "" },
+
+    /* ── Metadata ── */
     sheetName: { type: String, default: "" },
     isActive: { type: Boolean, default: true, index: true },
   },
@@ -36,24 +52,62 @@ const productSchema = new mongoose.Schema(
     timestamps: true,
     toJSON: {
       virtuals: true,
-      transform: function (doc, ret) {
-        // Add 'image' alias for 'imageUrl' for frontend compatibility
+      transform(_doc, ret) {
+        // Backward-compat aliases for frontend
         ret.image = ret.imageUrl;
-        // Add 'stockQuantity' alias for 'quantity'
-        ret.stockQuantity = ret.quantity;
+        ret.stockQuantity = ret.totalQuantity;
+        ret.price = ret.salePrice;
+        ret.quantity = ret.totalQuantity;
+        // Discount percentage (computed)
+        const rrp = ret.rrp || 0;
+        const sale = ret.salePrice || 0;
+        ret.discountPercentage =
+          rrp > 0 && sale < rrp ? Math.round(((rrp - sale) / rrp) * 100) : 0;
+        // Legacy sizeStock map for backward compat
+        const sizeStock = {};
+        if (Array.isArray(ret.sizes)) {
+          ret.sizes.forEach((s) => {
+            if (s && s.size) sizeStock[s.size] = s.quantity || 0;
+          });
+        }
+        ret.sizeStock = sizeStock;
         return ret;
       },
     },
     toObject: {
       virtuals: true,
-      transform: function (doc, ret) {
+      transform(_doc, ret) {
         ret.image = ret.imageUrl;
-        ret.stockQuantity = ret.quantity;
+        ret.stockQuantity = ret.totalQuantity;
+        ret.price = ret.salePrice;
+        ret.quantity = ret.totalQuantity;
+        const rrp = ret.rrp || 0;
+        const sale = ret.salePrice || 0;
+        ret.discountPercentage =
+          rrp > 0 && sale < rrp ? Math.round(((rrp - sale) / rrp) * 100) : 0;
+        const sizeStock = {};
+        if (Array.isArray(ret.sizes)) {
+          ret.sizes.forEach((s) => {
+            if (s && s.size) sizeStock[s.size] = s.quantity || 0;
+          });
+        }
+        ret.sizeStock = sizeStock;
         return ret;
       },
     },
   },
 );
+
+// ── Pre-save: compute totalQuantity from sizes array ──
+productSchema.pre("save", function (next) {
+  if (Array.isArray(this.sizes)) {
+    this.totalQuantity = this.sizes.reduce(
+      (sum, s) => sum + (s.quantity || 0),
+      0,
+    );
+  }
+  next();
+});
 
 // ── Text index for full-text search ──
 productSchema.index(

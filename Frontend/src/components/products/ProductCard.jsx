@@ -1,7 +1,13 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import toast from "react-hot-toast";
-import { resolveImageUrl, getDisplayPrice } from "../../api/api";
+import {
+  resolveImageUrl,
+  getDisplayPrice,
+  getDiscountPercentage,
+  getTotalQuantity,
+  getSizes,
+} from "../../api/api";
 import { useCart } from "../../context/CartContext";
 
 const PLACEHOLDER = "https://placehold.co/400x400/e2e8f0/64748b?text=No+Image";
@@ -11,16 +17,19 @@ export default function ProductCard({ product }) {
   const finalPrice = getDisplayPrice(product);
   const rrp = Number(product.rrp) || 0;
   const showRrp = rrp > 0 && rrp > finalPrice;
+  const discount = getDiscountPercentage(product);
+  const totalQty = getTotalQuantity(product);
   const isUnder5 = finalPrice > 0 && finalPrice <= 5;
   const detailUrl = product.sku
     ? `/product/${encodeURIComponent(product.sku)}`
     : "#";
 
   const { addToCart, isInCart, openDrawer } = useCart();
-  const hasSizes = Array.isArray(product.sizes) && product.sizes.length > 0;
-  const hasSizeStock =
-    product.sizeStock && Object.keys(product.sizeStock).length > 0;
-  const needsSizeSelection = hasSizes || hasSizeStock;
+  const productSizes = getSizes(product);
+  const hasSizes = productSizes.length > 0;
+  const needsSizeSelection =
+    hasSizes &&
+    !(productSizes.length === 1 && productSizes[0].size === "ONE SIZE");
 
   const [added, setAdded] = useState(false);
 
@@ -29,12 +38,11 @@ export default function ProductCard({ product }) {
     e.stopPropagation();
 
     if (needsSizeSelection) {
-      // Redirect to product detail for size selection
       window.location.href = detailUrl;
       return;
     }
 
-    addToCart(product, "", 1);
+    addToCart(product, productSizes[0]?.size || "", 1);
     setAdded(true);
     toast.success(`${product.name} added to cart`);
     setTimeout(() => setAdded(false), 1200);
@@ -46,12 +54,15 @@ export default function ProductCard({ product }) {
     openDrawer();
   };
 
-  // Check if already in cart (no-size variant)
-  const alreadyInCart = !needsSizeSelection && isInCart(product.sku, "");
+  const alreadyInCart =
+    !needsSizeSelection && isInCart(product.sku, productSizes[0]?.size || "");
 
   return (
     <div className="product-card">
       <Link to={detailUrl} style={{ position: "relative", display: "block" }}>
+        {discount > 0 && (
+          <span className="discount-badge">{discount}% OFF</span>
+        )}
         <img
           className="product-card-img"
           src={img}
@@ -62,7 +73,6 @@ export default function ProductCard({ product }) {
             e.target.src = PLACEHOLDER;
           }}
         />
-        {/* ❤️ quick-add button */}
         <button
           className={`card-heart-btn${added ? " added" : ""}${alreadyInCart ? " in-cart" : ""}`}
           onClick={alreadyInCart ? handleCartClick : handleAdd}
@@ -84,32 +94,51 @@ export default function ProductCard({ product }) {
         >
           <h3>{product.name}</h3>
         </Link>
+        {product.brand && (
+          <p
+            className="sku"
+            style={{
+              color: "#6b7280",
+              fontSize: "0.8rem",
+              marginBottom: "0.15rem",
+            }}
+          >
+            {product.brand}
+          </p>
+        )}
         {product.sku && <p className="sku">SKU: {product.sku}</p>}
         {product.color && (
           <p className="sku" style={{ color: "#6b7280" }}>
             {product.color}
           </p>
         )}
-        {hasSizes && (
-          <p className="sku" style={{ fontSize: "0.75rem", color: "#9ca3af" }}>
-            {product.sizes.join(", ")}
-          </p>
+        {hasSizes && needsSizeSelection && (
+          <div className="sizes-preview">
+            <span className="sizes-label">Sizes:</span>
+            {productSizes.slice(0, 8).map((s) => (
+              <span
+                key={s.size}
+                className={`size-tag${s.quantity === 0 ? " out-of-stock" : ""}`}
+                title={
+                  s.quantity > 0 ? `${s.quantity} available` : "Out of stock"
+                }
+              >
+                {s.size}
+                {s.quantity > 0 ? ` (${s.quantity})` : ""}
+              </span>
+            ))}
+            {productSizes.length > 8 && (
+              <span className="size-tag more">+{productSizes.length - 8}</span>
+            )}
+          </div>
         )}
+        {totalQty > 0 && <p className="stock-info">{totalQty} in stock</p>}
         <div className="product-card-footer">
           <span className="price">
             £{finalPrice.toFixed(2)}
-            {showRrp && (
-              <span
-                style={{
-                  textDecoration: "line-through",
-                  color: "#9ca3af",
-                  fontSize: "0.8rem",
-                  marginLeft: "0.5rem",
-                  fontWeight: "normal",
-                }}
-              >
-                £{rrp.toFixed(2)}
-              </span>
+            {showRrp && <span className="price-rrp">£{rrp.toFixed(2)}</span>}
+            {discount > 0 && (
+              <span className="price-discount">{discount}% OFF</span>
             )}
             {isUnder5 && <span className="price-under5">UNDER £5</span>}
           </span>

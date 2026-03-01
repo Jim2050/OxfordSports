@@ -46,43 +46,46 @@ exports.placeOrder = async (req, res) => {
       const size = (item.size || "").trim();
 
       // ── Stock validation ──
-      if (product.sizeStock && product.sizeStock.size > 0) {
-        // Per-size stock mode
-        if (!size) {
-          return res
-            .status(400)
-            .json({ error: `Size is required for ${product.name}.` });
-        }
-        const available = product.sizeStock.get(size) || 0;
-        if (qty > available) {
+      const sizeEntries = Array.isArray(product.sizes) ? product.sizes : [];
+      const hasSizeStock =
+        sizeEntries.length > 0 && sizeEntries.some((s) => s.quantity > 0);
+
+      if (hasSizeStock) {
+        // Per-size stock mode using new sizes array
+        const sizeEntry = sizeEntries.find((s) => s.size === size);
+        const available = sizeEntry ? sizeEntry.quantity : 0;
+        if (available > 0 && qty > available) {
           return res.status(400).json({
             error: `Only ${available} of size ${size} available for ${product.name}.`,
           });
         }
-        // Queue stock deduction
-        stockUpdates.push({
-          updateOne: {
-            filter: { _id: product._id },
-            update: { $inc: { [`sizeStock.${size}`]: -qty, quantity: -qty } },
-          },
-        });
-      } else if (product.quantity > 0) {
+        if (available > 0) {
+          stockUpdates.push({
+            updateOne: {
+              filter: { _id: product._id, "sizes.size": size },
+              update: {
+                $inc: { "sizes.$.quantity": -qty, totalQuantity: -qty },
+              },
+            },
+          });
+        }
+      } else if (product.totalQuantity > 0) {
         // Flat stock mode
-        if (qty > product.quantity) {
+        if (qty > product.totalQuantity) {
           return res.status(400).json({
-            error: `Only ${product.quantity} available for ${product.name}.`,
+            error: `Only ${product.totalQuantity} available for ${product.name}.`,
           });
         }
         stockUpdates.push({
           updateOne: {
             filter: { _id: product._id },
-            update: { $inc: { quantity: -qty } },
+            update: { $inc: { totalQuantity: -qty } },
           },
         });
       }
-      // If quantity == 0, we allow ordering (wholesale — no strict stock enforcement)
+      // If totalQuantity == 0, we allow ordering (wholesale — no strict stock enforcement)
 
-      const unitPrice = product.price;
+      const unitPrice = product.salePrice;
       orderItems.push({
         product: product._id,
         sku: product.sku,

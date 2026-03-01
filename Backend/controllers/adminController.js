@@ -64,17 +64,54 @@ exports.addProduct = async (req, res) => {
       color,
       barcode,
       price,
+      salePrice,
       rrp,
       sizes,
-      sizeStock,
       quantity,
     } = req.body;
 
     if (!name)
       return res.status(400).json({ error: "Product name is required." });
-    if (price === undefined || price === null) {
-      return res.status(400).json({ error: "Price is required." });
+
+    const finalSalePrice = parseFloat(salePrice || price);
+    if (isNaN(finalSalePrice) || finalSalePrice < 0) {
+      return res.status(400).json({ error: "Valid sale price is required." });
     }
+
+    // Build sizes array: accept either new format [{size,quantity}] or legacy "S, M, L" string
+    let sizesArray = [];
+    if (Array.isArray(sizes) && sizes.length > 0) {
+      if (typeof sizes[0] === "object" && sizes[0].size !== undefined) {
+        sizesArray = sizes.map((s) => ({
+          size: String(s.size).trim(),
+          quantity: parseInt(s.quantity) || 0,
+        }));
+      } else {
+        // Legacy: array of strings
+        const qty = parseInt(quantity) || 0;
+        const perSize = sizes.length > 0 ? Math.floor(qty / sizes.length) : 0;
+        sizesArray = sizes.map((s) => ({
+          size: String(s).trim(),
+          quantity: perSize,
+        }));
+      }
+    } else if (typeof sizes === "string" && sizes.trim()) {
+      const sizeList = sizes
+        .split(",")
+        .map((s) => s.trim())
+        .filter(Boolean);
+      const qty = parseInt(quantity) || 0;
+      const perSize =
+        sizeList.length > 0 ? Math.floor(qty / sizeList.length) : 0;
+      sizesArray = sizeList.map((s) => ({ size: s, quantity: perSize }));
+    } else if (parseInt(quantity) > 0) {
+      sizesArray = [{ size: "ONE SIZE", quantity: parseInt(quantity) }];
+    }
+
+    const totalQuantity = sizesArray.reduce(
+      (sum, s) => sum + (s.quantity || 0),
+      0,
+    );
 
     const productData = {
       sku: sku ? sku.trim().toUpperCase() : `AUTO-${Date.now()}`,
@@ -85,11 +122,10 @@ exports.addProduct = async (req, res) => {
       brand: brand || "",
       color: color || "",
       barcode: barcode || "",
-      price: parseFloat(price),
+      salePrice: finalSalePrice,
       rrp: rrp ? parseFloat(rrp) : 0,
-      sizes: Array.isArray(sizes) ? sizes : sizes ? [sizes] : [],
-      sizeStock: sizeStock && typeof sizeStock === "object" ? sizeStock : {},
-      quantity: quantity ? parseInt(quantity) : 0,
+      sizes: sizesArray,
+      totalQuantity,
     };
 
     const product = await Product.findOneAndUpdate(
@@ -130,7 +166,7 @@ exports.updateProduct = async (req, res) => {
     }
 
     // Merge only provided fields
-    const fields = [
+    const simpleFields = [
       "name",
       "description",
       "category",
@@ -138,28 +174,55 @@ exports.updateProduct = async (req, res) => {
       "brand",
       "color",
       "barcode",
-      "price",
-      "rrp",
-      "sizes",
-      "sizeStock",
-      "quantity",
       "imageUrl",
     ];
-    fields.forEach((f) => {
-      if (req.body[f] !== undefined) {
-        if (f === "price" || f === "rrp") {
-          product[f] = parseFloat(req.body[f]);
-        } else if (f === "sizes") {
-          product[f] = Array.isArray(req.body[f])
-            ? req.body[f]
-            : req.body[f]
-              ? [req.body[f]]
-              : [];
-        } else {
-          product[f] = req.body[f];
-        }
-      }
+    simpleFields.forEach((f) => {
+      if (req.body[f] !== undefined) product[f] = req.body[f];
     });
+
+    // Price fields (accept both legacy "price" and new "salePrice")
+    if (req.body.salePrice !== undefined) {
+      product.salePrice = parseFloat(req.body.salePrice);
+    } else if (req.body.price !== undefined) {
+      product.salePrice = parseFloat(req.body.price);
+    }
+    if (req.body.rrp !== undefined) {
+      product.rrp = parseFloat(req.body.rrp);
+    }
+
+    // Sizes: accept new format [{size,quantity}] or legacy string "S, M, L"
+    if (req.body.sizes !== undefined) {
+      const s = req.body.sizes;
+      if (Array.isArray(s) && s.length > 0 && typeof s[0] === "object") {
+        product.sizes = s.map((e) => ({
+          size: String(e.size).trim(),
+          quantity: parseInt(e.quantity) || 0,
+        }));
+      } else if (typeof s === "string" && s.trim()) {
+        const sizeList = s
+          .split(",")
+          .map((x) => x.trim())
+          .filter(Boolean);
+        const qty = parseInt(req.body.quantity) || 0;
+        const perSize =
+          sizeList.length > 0 ? Math.floor(qty / sizeList.length) : 0;
+        product.sizes = sizeList.map((x) => ({ size: x, quantity: perSize }));
+      } else if (Array.isArray(s)) {
+        // Legacy string array
+        const qty = parseInt(req.body.quantity) || 0;
+        const perSize = s.length > 0 ? Math.floor(qty / s.length) : 0;
+        product.sizes = s.map((x) => ({
+          size: String(x).trim(),
+          quantity: perSize,
+        }));
+      }
+    }
+
+    // Recompute totalQuantity
+    product.totalQuantity = (product.sizes || []).reduce(
+      (sum, e) => sum + (e.quantity || 0),
+      0,
+    );
 
     await product.save();
 
@@ -359,7 +422,7 @@ exports.getStats = async (_req, res) => {
       recentBatches,
     ] = await Promise.all([
       Product.countDocuments({}),
-      Product.countDocuments({ price: { $lte: 5 } }),
+      Product.countDocuments({ salePrice: { $lte: 5 } }),
       Product.countDocuments({ imageUrl: { $ne: "" } }),
       Product.distinct("category", { category: { $ne: "" } }),
       Product.distinct("subcategory", { subcategory: { $ne: "" } }),

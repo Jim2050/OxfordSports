@@ -286,6 +286,7 @@ function parseExcelFile(filePath) {
 /**
  * Consolidate rows by SKU — merges size variants into a single product.
  * Same SKU with different sizes becomes one product with sizes array.
+ * NEW: sizes is now an array of { size, quantity } objects.
  */
 function consolidateBySku(rows) {
   const skuMap = new Map();
@@ -294,46 +295,76 @@ function consolidateBySku(rows) {
     const sku = row.sku ? String(row.sku).trim().toUpperCase() : "";
     if (!sku) continue;
 
-    if (skuMap.has(sku)) {
-      const existing = skuMap.get(sku);
-      // Merge size
-      const newSize = row.sizes ? String(row.sizes).trim() : "";
-      if (newSize) {
-        // Split comma-separated sizes
-        const sizesArray = newSize
+    const rowQty = parseInt(row.quantity) || 1;
+    const rawSize = row.sizes ? String(row.sizes).trim() : "";
+    // Split comma-separated sizes (e.g. "8, 9, 10")
+    const rowSizes = rawSize
+      ? rawSize
           .split(",")
           .map((s) => s.trim())
-          .filter((s) => s);
-        sizesArray.forEach((s) => {
-          if (!existing.sizes.includes(s)) {
-            existing.sizes.push(s);
+          .filter(Boolean)
+      : [];
+
+    if (skuMap.has(sku)) {
+      const existing = skuMap.get(sku);
+
+      // Merge sizes with quantities
+      if (rowSizes.length > 0) {
+        for (const s of rowSizes) {
+          const found = existing.sizeEntries.find((e) => e.size === s);
+          if (found) {
+            found.quantity += rowQty;
+          } else {
+            existing.sizeEntries.push({ size: s, quantity: rowQty });
           }
-        });
+        }
+      } else if (!rawSize && rowQty > 0) {
+        // Row has quantity but no size — add to "ONE SIZE" bucket
+        const found = existing.sizeEntries.find((e) => e.size === "ONE SIZE");
+        if (found) {
+          found.quantity += rowQty;
+        } else if (existing.sizeEntries.length === 0) {
+          existing.sizeEntries.push({ size: "ONE SIZE", quantity: rowQty });
+        } else {
+          // Distribute to first entry if no specific size
+          existing.sizeEntries[0].quantity += rowQty;
+        }
       }
+
       // Merge barcode
       const newBarcode = row.barcode ? String(row.barcode).trim() : "";
       if (newBarcode && !existing.barcodes.includes(newBarcode)) {
         existing.barcodes.push(newBarcode);
       }
-      // Sum quantity
-      const qty = parseInt(row.quantity) || 0;
-      existing.quantity += qty;
+
+      // Update price/rrp if existing has 0 and row has value
+      if (!existing.price && row.price) existing.price = row.price;
+      if (!existing.rrp && row.rrp) existing.rrp = row.rrp;
+      if (!existing._rawPrice && row._rawPrice)
+        existing._rawPrice = row._rawPrice;
     } else {
-      const size = row.sizes ? String(row.sizes).trim() : "";
       const barcode = row.barcode ? String(row.barcode).trim() : "";
-      // Split comma-separated sizes into array
-      const sizesArray = size
-        ? size
-            .split(",")
-            .map((s) => s.trim())
-            .filter((s) => s)
-        : [];
+      const sizeEntries = [];
+
+      if (rowSizes.length > 0) {
+        for (const s of rowSizes) {
+          const found = sizeEntries.find((e) => e.size === s);
+          if (found) {
+            found.quantity += rowQty;
+          } else {
+            sizeEntries.push({ size: s, quantity: rowQty });
+          }
+        }
+      } else if (rowQty > 0) {
+        // No explicit size column value
+        sizeEntries.push({ size: "ONE SIZE", quantity: rowQty });
+      }
+
       skuMap.set(sku, {
         ...row,
         sku,
-        sizes: sizesArray,
+        sizeEntries,
         barcodes: barcode ? [barcode] : [],
-        quantity: parseInt(row.quantity) || 0,
       });
     }
   }
@@ -624,10 +655,13 @@ exports.importProducts = async (req, res) => {
         brand: row.brand ? String(row.brand).trim() : brandDefault, // fallback to workbook-wide brand (e.g. "adidas")
         color: row.color ? String(row.color).trim() : "",
         barcode: (row.barcodes || []).join(", "),
-        price,
+        salePrice: price,
         rrp,
-        sizes: row.sizes || [],
-        quantity: row.quantity || 0,
+        sizes: row.sizeEntries || [],
+        totalQuantity: (row.sizeEntries || []).reduce(
+          (sum, s) => sum + (s.quantity || 0),
+          0,
+        ),
         sheetName: row._sheetName || "",
         isActive: true,
       };
@@ -1081,9 +1115,9 @@ exports.resolveImages = async (req, res) => {
  */
 exports.fixPrices = async (req, res) => {
   try {
-    // Find all products with price = 0 that have rrp > 0
+    // Find all products with salePrice = 0 that have rrp > 0
     const zeroPrice = await Product.find({
-      price: 0,
+      salePrice: 0,
       rrp: { $gt: 0 },
       isActive: true,
     }).lean();
@@ -1091,44 +1125,34 @@ exports.fixPrices = async (req, res) => {
     if (zeroPrice.length === 0) {
       return res.json({
         success: true,
-        message: "No products with price=0 found. All prices are correct.",
+        message: "No products with salePrice=0 found. All prices are correct.",
         fixed: 0,
       });
     }
 
-    console.log(
-      `[FIX-PRICES] Found ${zeroPrice.length} products with price=0 and rrp>0`,
-    );
-
-    // For these products, we set price = rrp as a fallback
-    // (the correct fix is to re-import the Excel which now maps SALE→price correctly)
+    // For these products, we set salePrice = rrp as a fallback
     const ops = zeroPrice.map((p) => ({
       updateOne: {
         filter: { _id: p._id },
-        update: { $set: { price: p.rrp } },
+        update: { $set: { salePrice: p.rrp } },
       },
     }));
 
     const result = await Product.bulkWrite(ops, { ordered: false });
 
-    console.log(
-      `[FIX-PRICES] Updated ${result.modifiedCount} products: price = rrp`,
-    );
-
     res.json({
       success: true,
       found: zeroPrice.length,
       fixed: result.modifiedCount,
-      message: `Set price = rrp for ${result.modifiedCount} products. Re-import Excel for correct SALE prices.`,
+      message: `Set salePrice = rrp for ${result.modifiedCount} products. Re-import Excel for correct sale prices.`,
       sampleFixed: zeroPrice.slice(0, 10).map((p) => ({
         sku: p.sku,
-        oldPrice: p.price,
+        oldPrice: p.salePrice,
         newPrice: p.rrp,
         rrp: p.rrp,
       })),
     });
   } catch (err) {
-    console.error("[FIX-PRICES] Error:", err);
     res.status(500).json({ error: err.message });
   }
 };

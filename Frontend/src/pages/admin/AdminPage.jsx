@@ -213,6 +213,18 @@ export default function AdminPage() {
   };
 
   const startEdit = (product) => {
+    const sizesArr = Array.isArray(product.sizes) ? product.sizes : [];
+    let sizesStr = "";
+    let qtyStr = "";
+    if (sizesArr.length > 0 && typeof sizesArr[0] === "object") {
+      sizesStr = sizesArr.map((s) => s.size).join(", ");
+      qtyStr = sizesArr
+        .reduce((sum, s) => sum + (s.quantity || 0), 0)
+        .toString();
+    } else {
+      sizesStr = sizesArr.join(", ");
+      qtyStr = (product.totalQuantity || product.quantity || "").toString();
+    }
     setProductForm({
       sku: product.sku || "",
       name: product.name || "",
@@ -222,12 +234,10 @@ export default function AdminPage() {
       brand: product.brand || "",
       color: product.color || "",
       barcode: product.barcode || "",
-      price: product.price || "",
+      price: product.salePrice || product.price || "",
       rrp: product.rrp || "",
-      sizes: Array.isArray(product.sizes)
-        ? product.sizes.join(", ")
-        : product.sizes || "",
-      quantity: product.quantity || "",
+      sizes: sizesStr,
+      quantity: qtyStr,
     });
     setEditingSku(product.sku);
     setTab("addproduct");
@@ -286,17 +296,29 @@ export default function AdminPage() {
         "Brand",
         "Color",
         "Barcode",
-        "Trade Price",
+        "Sale Price",
         "RRP",
+        "Discount %",
         "Sizes",
-        "Quantity",
+        "Total Quantity",
         "Image URL",
       ];
       const csvRows = [headers.join(",")];
       rows.forEach((p) => {
-        const sizesStr = Array.isArray(p.sizes)
-          ? p.sizes.join("; ")
-          : p.sizes || "";
+        const sizesArr = Array.isArray(p.sizes) ? p.sizes : [];
+        const sizesStr = sizesArr
+          .map((s) =>
+            typeof s === "object" ? `${s.size}(${s.quantity || 0})` : s,
+          )
+          .join("; ");
+        const salePrice = Number(p.salePrice || p.price) || 0;
+        const rrpVal = Number(p.rrp) || 0;
+        const discPct =
+          p.discountPercentage ||
+          (rrpVal > 0 && salePrice < rrpVal
+            ? Math.round(((rrpVal - salePrice) / rrpVal) * 100)
+            : 0);
+        const totalQty = p.totalQuantity || p.quantity || 0;
         csvRows.push(
           [
             `"${(p.sku || "").replace(/"/g, '""')}"`,
@@ -307,10 +329,11 @@ export default function AdminPage() {
             `"${(p.brand || "").replace(/"/g, '""')}"`,
             `"${(p.color || "").replace(/"/g, '""')}"`,
             `"${(p.barcode || "").replace(/"/g, '""')}"`,
-            p.price || "",
-            p.rrp || "",
+            salePrice,
+            rrpVal,
+            discPct,
             `"${sizesStr.replace(/"/g, '""')}"`,
-            p.quantity || "",
+            totalQty,
             `"${(p.imageUrl || "").replace(/"/g, '""')}"`,
           ].join(","),
         );
@@ -374,7 +397,8 @@ export default function AdminPage() {
           <div className="stat-card">
             <div className="number">
               {stats?.underFive ??
-                products.filter((p) => Number(p.price) <= 5).length}
+                products.filter((p) => Number(p.salePrice || p.price) <= 5)
+                  .length}
             </div>
             <div className="label">Under £5</div>
           </div>
@@ -514,17 +538,17 @@ export default function AdminPage() {
                 <strong>Import Summary</strong>
                 <div className="import-stats">
                   <span className="stat-green">
-                    ✅ {excelResult.imported ?? 0} imported
+                    ✅ {excelResult.imported ?? 0} SKUs imported
                   </span>
                   <span className="stat-blue">
-                    🔄 {excelResult.updated ?? 0} updated
+                    🔄 {excelResult.updated ?? 0} SKUs updated
                   </span>
                   <span className="stat-red">
                     ❌ {excelResult.failed ?? 0} failed
                   </span>
                   <span className="stat-total">
                     📊 {excelResult.totalRawRows ?? excelResult.total ?? 0} raw
-                    rows → {excelResult.consolidatedProducts ?? "?"} products
+                    rows → {excelResult.consolidatedProducts ?? "?"} unique SKUs
                   </span>
                   {excelResult.executionTime && (
                     <span className="stat-total">
@@ -761,7 +785,7 @@ export default function AdminPage() {
                 />
               </div>
               <div className="form-field">
-                <label>Trade Price (£) *</label>
+                <label>Sale Price (£) *</label>
                 <input
                   name="price"
                   type="number"
@@ -898,81 +922,130 @@ export default function AdminPage() {
                       <th>Name</th>
                       <th>Category</th>
                       <th>Color</th>
-                      <th>Trade</th>
+                      <th>Sale £</th>
                       <th>RRP</th>
-                      <th>Sizes</th>
+                      <th>Discount</th>
+                      <th>Sizes (Qty)</th>
+                      <th>Total Qty</th>
                       <th style={{ width: 60, textAlign: "center" }}>Delete</th>
                       <th style={{ width: 60, textAlign: "center" }}>Edit</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {filteredProducts.slice(0, 500).map((p, i) => (
-                      <tr key={p.sku || i}>
-                        <td>
-                          {p.imageUrl || p.image ? (
-                            <img
-                              src={resolveImageUrl(p.imageUrl || p.image)}
-                              alt=""
+                    {filteredProducts.slice(0, 500).map((p, i) => {
+                      const salePrice = Number(p.salePrice || p.price) || 0;
+                      const rrpVal = Number(p.rrp) || 0;
+                      const discPct =
+                        p.discountPercentage ||
+                        (rrpVal > 0 && salePrice < rrpVal
+                          ? Math.round(((rrpVal - salePrice) / rrpVal) * 100)
+                          : 0);
+                      const sizesArr = Array.isArray(p.sizes) ? p.sizes : [];
+                      const totalQty =
+                        p.totalQuantity ||
+                        p.quantity ||
+                        sizesArr.reduce(
+                          (s, e) =>
+                            s + (typeof e === "object" ? e.quantity || 0 : 0),
+                          0,
+                        );
+                      const sizesDisplay = sizesArr
+                        .map((s) =>
+                          typeof s === "object"
+                            ? `${s.size}(${s.quantity || 0})`
+                            : s,
+                        )
+                        .join(", ");
+
+                      return (
+                        <tr key={p.sku || i}>
+                          <td>
+                            {p.imageUrl || p.image ? (
+                              <img
+                                src={resolveImageUrl(p.imageUrl || p.image)}
+                                alt=""
+                                style={{
+                                  width: 48,
+                                  height: 48,
+                                  objectFit: "cover",
+                                  borderRadius: 4,
+                                }}
+                              />
+                            ) : (
+                              <span style={{ color: "#9ca3af" }}>—</span>
+                            )}
+                          </td>
+                          <td>
+                            <code style={{ fontSize: "0.8rem" }}>
+                              {p.sku || "—"}
+                            </code>
+                          </td>
+                          <td>{p.name}</td>
+                          <td>{p.category || "—"}</td>
+                          <td>{p.color || "—"}</td>
+                          <td>£{salePrice.toFixed(2)}</td>
+                          <td>{rrpVal ? `£${rrpVal.toFixed(2)}` : "—"}</td>
+                          <td>
+                            {discPct > 0 ? (
+                              <span
+                                style={{ color: "#dc2626", fontWeight: 600 }}
+                              >
+                                {discPct}%
+                              </span>
+                            ) : (
+                              "—"
+                            )}
+                          </td>
+                          <td
+                            style={{
+                              fontSize: "0.78rem",
+                              maxWidth: 180,
+                              overflow: "hidden",
+                              textOverflow: "ellipsis",
+                              whiteSpace: "nowrap",
+                            }}
+                            title={sizesDisplay}
+                          >
+                            {sizesDisplay || "—"}
+                          </td>
+                          <td style={{ fontWeight: 600, textAlign: "center" }}>
+                            {totalQty}
+                          </td>
+                          <td style={{ textAlign: "center" }}>
+                            <button
+                              onClick={() => handleDelete(p.sku)}
+                              title="Delete product"
                               style={{
-                                width: 48,
-                                height: 48,
-                                objectFit: "cover",
-                                borderRadius: 4,
+                                background: "none",
+                                border: "none",
+                                cursor: "pointer",
+                                fontSize: "1.1rem",
+                                color: "#dc2626",
+                                padding: "0.25rem",
                               }}
-                            />
-                          ) : (
-                            <span style={{ color: "#9ca3af" }}>—</span>
-                          )}
-                        </td>
-                        <td>
-                          <code style={{ fontSize: "0.8rem" }}>
-                            {p.sku || "—"}
-                          </code>
-                        </td>
-                        <td>{p.name}</td>
-                        <td>{p.category || "—"}</td>
-                        <td>{p.color || "—"}</td>
-                        <td>£{Number(p.price).toFixed(2)}</td>
-                        <td>{p.rrp ? `£${Number(p.rrp).toFixed(2)}` : "—"}</td>
-                        <td style={{ fontSize: "0.8rem" }}>
-                          {Array.isArray(p.sizes)
-                            ? p.sizes.join(", ")
-                            : p.sizes || "—"}
-                        </td>
-                        <td style={{ textAlign: "center" }}>
-                          <button
-                            onClick={() => handleDelete(p.sku)}
-                            title="Delete product"
-                            style={{
-                              background: "none",
-                              border: "none",
-                              cursor: "pointer",
-                              fontSize: "1.1rem",
-                              color: "#dc2626",
-                              padding: "0.25rem",
-                            }}
-                          >
-                            🗑️
-                          </button>
-                        </td>
-                        <td style={{ textAlign: "center" }}>
-                          <button
-                            onClick={() => startEdit(p)}
-                            title="Edit product"
-                            style={{
-                              background: "none",
-                              border: "none",
-                              cursor: "pointer",
-                              fontSize: "1.1rem",
-                              color: "#1a1281",
-                              padding: "0.25rem",
-                            }}
-                          >
-                            ✏️
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
+                            >
+                              🗑️
+                            </button>
+                          </td>
+                          <td style={{ textAlign: "center" }}>
+                            <button
+                              onClick={() => startEdit(p)}
+                              title="Edit product"
+                              style={{
+                                background: "none",
+                                border: "none",
+                                cursor: "pointer",
+                                fontSize: "1.1rem",
+                                color: "#1a1281",
+                                padding: "0.25rem",
+                              }}
+                            >
+                              ✏️
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
                 {filteredProducts.length > 500 && (

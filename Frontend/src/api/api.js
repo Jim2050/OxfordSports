@@ -232,7 +232,54 @@ export function resolveImageUrl(url) {
  * Returns a numeric value (never NaN).
  */
 export function getDisplayPrice(product) {
+  // Prefer salePrice, fall back to legacy "price"
+  const sale = Number(product?.salePrice);
+  if (!isNaN(sale) && sale >= 0) return sale;
   const price = Number(product?.price);
   if (!isNaN(price) && price >= 0) return price;
   return 0;
+}
+
+/**
+ * Compute discount percentage from RRP and sale price.
+ */
+export function getDiscountPercentage(product) {
+  if (product?.discountPercentage) return product.discountPercentage;
+  const rrp = Number(product?.rrp) || 0;
+  const sale = getDisplayPrice(product);
+  if (rrp > 0 && sale < rrp) return Math.round(((rrp - sale) / rrp) * 100);
+  return 0;
+}
+
+/**
+ * Get total available quantity across all sizes.
+ */
+export function getTotalQuantity(product) {
+  if (product?.totalQuantity != null) return product.totalQuantity;
+  if (product?.quantity != null) return product.quantity;
+  if (Array.isArray(product?.sizes)) {
+    return product.sizes.reduce((sum, s) => {
+      if (typeof s === "object" && s.quantity != null) return sum + s.quantity;
+      return sum;
+    }, 0);
+  }
+  return 0;
+}
+
+/**
+ * Get sizes array in normalized format: [{size, quantity}]
+ */
+export function getSizes(product) {
+  if (!product) return [];
+  const sizes = product.sizes;
+  if (!Array.isArray(sizes) || sizes.length === 0) return [];
+  if (typeof sizes[0] === "object" && sizes[0].size !== undefined) {
+    return sizes; // Already in new format
+  }
+  // Legacy: array of strings — derive quantities from sizeStock
+  const sizeStock = product.sizeStock || {};
+  return sizes.map((s) => ({
+    size: String(s),
+    quantity: sizeStock[String(s)] || 0,
+  }));
 }

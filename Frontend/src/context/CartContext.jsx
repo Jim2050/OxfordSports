@@ -61,13 +61,26 @@ export function CartProvider({ children }) {
       const key = cartKey(product.sku, size);
       const idx = prev.findIndex((i) => cartKey(i.sku, i.size) === key);
 
-      // Determine max stock for this size
+      // Determine max stock for this size from new sizes array or legacy sizeStock
       let maxStock = 0;
-      if (product.sizeStock && Object.keys(product.sizeStock).length > 0) {
+      const sizesArr = Array.isArray(product.sizes) ? product.sizes : [];
+      if (sizesArr.length > 0 && typeof sizesArr[0] === "object") {
+        // New format: [{size, quantity}]
+        const entry = sizesArr.find((s) => s.size === size);
+        maxStock = entry ? entry.quantity : 0;
+      } else if (
+        product.sizeStock &&
+        Object.keys(product.sizeStock).length > 0
+      ) {
         maxStock = product.sizeStock[size] || 0;
+      } else if (product.totalQuantity) {
+        maxStock = product.totalQuantity;
       } else if (product.quantity) {
         maxStock = product.quantity;
       }
+
+      // Get the sale price (prefer salePrice, fall back to price)
+      const itemPrice = Number(product.salePrice) || Number(product.price) || 0;
 
       if (idx >= 0) {
         // Update existing item
@@ -77,6 +90,7 @@ export function CartProvider({ children }) {
           ...updated[idx],
           quantity: maxStock > 0 ? Math.min(newQty, maxStock) : newQty,
           maxStock,
+          price: itemPrice,
         };
         return updated;
       }
@@ -89,14 +103,10 @@ export function CartProvider({ children }) {
           name: product.name,
           size,
           quantity: maxStock > 0 ? Math.min(qty, maxStock) : qty,
-          price: Number(product.price) || 0,
+          price: itemPrice,
+          rrp: Number(product.rrp) || 0,
           imageUrl: product.imageUrl || product.image || "",
           maxStock,
-          sizes: Array.isArray(product.sizes) ? product.sizes : [],
-          sizeStock:
-            product.sizeStock && typeof product.sizeStock === "object"
-              ? product.sizeStock
-              : {},
         },
       ];
     });
