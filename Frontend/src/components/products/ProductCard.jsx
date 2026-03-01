@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import toast from "react-hot-toast";
 import {
   resolveImageUrl,
@@ -13,6 +13,7 @@ import { useCart } from "../../context/CartContext";
 const PLACEHOLDER = "https://placehold.co/400x400/e2e8f0/64748b?text=No+Image";
 
 export default function ProductCard({ product }) {
+  const navigate = useNavigate();
   const img = resolveImageUrl(product.imageUrl || product.image) || PLACEHOLDER;
   const finalPrice = getDisplayPrice(product);
   const rrp = Number(product.rrp) || 0;
@@ -36,13 +37,19 @@ export default function ProductCard({ product }) {
   const handleAdd = (e) => {
     e.preventDefault();
     e.stopPropagation();
+    e.nativeEvent?.stopImmediatePropagation?.();
 
     if (needsSizeSelection) {
-      window.location.href = detailUrl;
+      // For products needing size selection, take user to detail page
+      navigate(detailUrl);
       return;
     }
 
-    addToCart(product, productSizes[0]?.size || "", 1);
+    // Get the current product's size
+    const size = productSizes[0]?.size || "";
+
+    // Add to cart with current product reference
+    addToCart(product, size, 1);
     setAdded(true);
     toast.success(`${product.name} added to cart`);
     setTimeout(() => setAdded(false), 1200);
@@ -51,6 +58,7 @@ export default function ProductCard({ product }) {
   const handleCartClick = (e) => {
     e.preventDefault();
     e.stopPropagation();
+    e.nativeEvent?.stopImmediatePropagation?.();
     openDrawer();
   };
 
@@ -59,20 +67,22 @@ export default function ProductCard({ product }) {
 
   return (
     <div className="product-card">
-      <Link to={detailUrl} style={{ position: "relative", display: "block" }}>
-        {discount > 0 && (
-          <span className="discount-badge">{discount}% OFF</span>
-        )}
-        <img
-          className="product-card-img"
-          src={img}
-          alt={product.name}
-          loading="lazy"
-          onError={(e) => {
-            e.target.onerror = null;
-            e.target.src = PLACEHOLDER;
-          }}
-        />
+      <div style={{ position: "relative" }}>
+        <Link to={detailUrl} style={{ display: "block" }}>
+          {discount > 0 && (
+            <span className="discount-badge">{discount}% OFF</span>
+          )}
+          <img
+            className="product-card-img"
+            src={img}
+            alt={product.name}
+            loading="lazy"
+            onError={(e) => {
+              e.target.onerror = null;
+              e.target.src = PLACEHOLDER;
+            }}
+          />
+        </Link>
         <button
           className={`card-heart-btn${added ? " added" : ""}${alreadyInCart ? " in-cart" : ""}`}
           onClick={alreadyInCart ? handleCartClick : handleAdd}
@@ -86,7 +96,7 @@ export default function ProductCard({ product }) {
         >
           {alreadyInCart ? "✓" : "♥"}
         </button>
-      </Link>
+      </div>
       <div className="product-card-body">
         <Link
           to={detailUrl}
