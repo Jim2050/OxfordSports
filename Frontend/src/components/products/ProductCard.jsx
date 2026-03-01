@@ -65,12 +65,22 @@ export default function ProductCard({ product }) {
   const alreadyInCart =
     !needsSizeSelection && isInCart(product.sku, productSizes[0]?.size || "");
 
+  const isOutOfStock = totalQty === 0;
+
   return (
     <div className="product-card">
       <div style={{ position: "relative" }}>
         <Link to={detailUrl} style={{ display: "block" }}>
           {discount > 0 && (
             <span className="discount-badge">{discount}% OFF</span>
+          )}
+          {isOutOfStock && (
+            <span
+              className="discount-badge"
+              style={{ background: "#6b7280", left: "auto", right: "10px" }}
+            >
+              OUT OF STOCK
+            </span>
           )}
           <img
             className="product-card-img"
@@ -86,12 +96,15 @@ export default function ProductCard({ product }) {
         <button
           className={`card-heart-btn${added ? " added" : ""}${alreadyInCart ? " in-cart" : ""}`}
           onClick={alreadyInCart ? handleCartClick : handleAdd}
+          disabled={isOutOfStock && !alreadyInCart}
           title={
-            needsSizeSelection
-              ? "Select size first"
-              : alreadyInCart
-                ? "View cart"
-                : "Add to cart"
+            isOutOfStock
+              ? "Out of stock"
+              : needsSizeSelection
+                ? "Select size first"
+                : alreadyInCart
+                  ? "View cart"
+                  : "Add to cart"
           }
         >
           {alreadyInCart ? "✓" : "♥"}
@@ -143,6 +156,11 @@ export default function ProductCard({ product }) {
           </div>
         )}
         {totalQty > 0 && <p className="stock-info">{totalQty} in stock</p>}
+        {totalQty === 0 && (
+          <p className="stock-info" style={{ color: "#ef4444" }}>
+            Out of stock
+          </p>
+        )}
         <div className="product-card-footer">
           <span className="price">
             £{finalPrice.toFixed(2)}
@@ -155,12 +173,15 @@ export default function ProductCard({ product }) {
           <button
             className="btn btn-accent btn-sm"
             onClick={alreadyInCart ? handleCartClick : handleAdd}
+            disabled={isOutOfStock && !alreadyInCart}
           >
-            {needsSizeSelection
-              ? "Select Size"
-              : alreadyInCart
-                ? "In Cart ✓"
-                : "Add to Cart"}
+            {isOutOfStock
+              ? "Out of Stock"
+              : needsSizeSelection
+                ? "Select Size"
+                : alreadyInCart
+                  ? "In Cart ✓"
+                  : "Add to Cart"}
           </button>
         </div>
       </div>
