@@ -54,20 +54,22 @@ const productSchema = new mongoose.Schema(
       virtuals: true,
       transform(_doc, ret) {
         // Backward-compat aliases for frontend
-        ret.image = ret.imageUrl;
-        ret.stockQuantity = ret.totalQuantity;
-        ret.price = ret.salePrice;
-        ret.quantity = ret.totalQuantity;
+        ret.image = ret.imageUrl || "";
+        ret.stockQuantity = ret.totalQuantity || 0;
+        // Only overwrite price/quantity if source values are valid numbers
+        const sp = Number(ret.salePrice);
+        if (!isNaN(sp) && sp >= 0) ret.price = sp;
+        ret.quantity = ret.totalQuantity || 0;
         // Discount percentage (computed)
-        const rrp = ret.rrp || 0;
-        const sale = ret.salePrice || 0;
+        const rrp = Number(ret.rrp) || 0;
+        const sale = !isNaN(sp) ? sp : Number(ret.price) || 0;
         ret.discountPercentage =
           rrp > 0 && sale < rrp ? Math.round(((rrp - sale) / rrp) * 100) : 0;
         // Legacy sizeStock map for backward compat
         const sizeStock = {};
         if (Array.isArray(ret.sizes)) {
           ret.sizes.forEach((s) => {
-            if (s && s.size) sizeStock[s.size] = s.quantity || 0;
+            if (s && s.size) sizeStock[s.size] = Number(s.quantity) || 0;
           });
         }
         ret.sizeStock = sizeStock;
@@ -77,18 +79,19 @@ const productSchema = new mongoose.Schema(
     toObject: {
       virtuals: true,
       transform(_doc, ret) {
-        ret.image = ret.imageUrl;
-        ret.stockQuantity = ret.totalQuantity;
-        ret.price = ret.salePrice;
-        ret.quantity = ret.totalQuantity;
-        const rrp = ret.rrp || 0;
-        const sale = ret.salePrice || 0;
+        ret.image = ret.imageUrl || "";
+        ret.stockQuantity = ret.totalQuantity || 0;
+        const sp = Number(ret.salePrice);
+        if (!isNaN(sp) && sp >= 0) ret.price = sp;
+        ret.quantity = ret.totalQuantity || 0;
+        const rrp = Number(ret.rrp) || 0;
+        const sale = !isNaN(sp) ? sp : Number(ret.price) || 0;
         ret.discountPercentage =
           rrp > 0 && sale < rrp ? Math.round(((rrp - sale) / rrp) * 100) : 0;
         const sizeStock = {};
         if (Array.isArray(ret.sizes)) {
           ret.sizes.forEach((s) => {
-            if (s && s.size) sizeStock[s.size] = s.quantity || 0;
+            if (s && s.size) sizeStock[s.size] = Number(s.quantity) || 0;
           });
         }
         ret.sizeStock = sizeStock;
