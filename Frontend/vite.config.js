@@ -12,4 +12,14 @@ export default defineConfig({
       },
     },
   },
+  // Add this section below to fix the "Blocked Host" error
+  preview: {
+    port: 4173,
+    host: '0.0.0.0',
+    allowedHosts: [
+      'www.oxfordsports.online',
+      'oxfordsports.online',
+      '.railway.app' // This allows Railway's internal URLs too
+    ]
+  }
 });
