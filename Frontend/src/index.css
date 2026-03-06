@@ -857,17 +857,6 @@ ol {
   color: var(--primary-dark);
 }
 
-.btn-outline {
-  background: transparent;
-  border: 2px solid var(--primary);
-  color: var(--primary);
-}
-
-.btn-outline:hover {
-  background: var(--primary);
-  color: var(--text-inverse);
-}
-
 /* ========== Contact Page ========== */
 .contact-grid {
   display: grid;
