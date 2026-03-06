@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link } from "react-router-dom";
 import toast from "react-hot-toast";
 import {
   resolveImageUrl,
@@ -13,7 +13,6 @@ import { useCart } from "../../context/CartContext";
 const PLACEHOLDER = "https://placehold.co/400x400/e2e8f0/64748b?text=No+Image";
 
 export default function ProductCard({ product }) {
-  const navigate = useNavigate();
   const img = resolveImageUrl(product.imageUrl || product.image) || PLACEHOLDER;
   const finalPrice = getDisplayPrice(product);
   const rrp = Number(product.rrp) || 0;
@@ -37,19 +36,13 @@ export default function ProductCard({ product }) {
   const handleAdd = (e) => {
     e.preventDefault();
     e.stopPropagation();
-    e.nativeEvent?.stopImmediatePropagation?.();
 
     if (needsSizeSelection) {
-      // For products needing size selection, take user to detail page
-      navigate(detailUrl);
+      window.location.href = detailUrl;
       return;
     }
 
-    // Get the current product's size
-    const size = productSizes[0]?.size || "";
-
-    // Add to cart with current product reference
-    addToCart(product, size, 1);
+    addToCart(product, productSizes[0]?.size || "", 1);
     setAdded(true);
     toast.success(`${product.name} added to cart`);
     setTimeout(() => setAdded(false), 1200);
@@ -58,58 +51,54 @@ export default function ProductCard({ product }) {
   const handleCartClick = (e) => {
     e.preventDefault();
     e.stopPropagation();
-    e.nativeEvent?.stopImmediatePropagation?.();
     openDrawer();
   };
 
   const alreadyInCart =
     !needsSizeSelection && isInCart(product.sku, productSizes[0]?.size || "");
 
-  const isOutOfStock = totalQty === 0;
+  // Derive gender from product name/description/category
+  const genderLabel = (() => {
+    const text = `${product.name || ""} ${product.description || ""} ${product.category || ""} ${product.subcategory || ""}`.toLowerCase();
+    if (text.includes("women") || text.includes("ladies") || text.includes("wmns") || text.includes("female")) return "Women's";
+    if (text.includes("kids") || text.includes("junior") || text.includes("youth") || text.includes("children") || text.includes("infant")) return "Kids";
+    if (text.includes("men") || text.includes("male") || text.includes("adult")) return "Men's";
+    return null;
+  })();
 
   return (
     <div className="product-card">
-      <div style={{ position: "relative" }}>
-        <Link to={detailUrl} style={{ display: "block" }}>
-          {discount > 0 && (
-            <span className="discount-badge">{discount}% OFF</span>
-          )}
-          {isOutOfStock && (
-            <span
-              className="discount-badge"
-              style={{ background: "#6b7280", left: "auto", right: "10px" }}
-            >
-              OUT OF STOCK
-            </span>
-          )}
-          <img
-            className="product-card-img"
-            src={img}
-            alt={product.name}
-            loading="lazy"
-            onError={(e) => {
-              e.target.onerror = null;
-              e.target.src = PLACEHOLDER;
-            }}
-          />
-        </Link>
+      <Link to={detailUrl} style={{ position: "relative", display: "block" }}>
+        {discount > 0 && (
+          <span className="discount-badge">{discount}% OFF</span>
+        )}
+        <img
+          className="product-card-img"
+          src={img}
+          alt={product.name}
+          loading="lazy"
+          onError={(e) => {
+            e.target.onerror = null;
+            e.target.src = PLACEHOLDER;
+          }}
+        />
         <button
           className={`card-heart-btn${added ? " added" : ""}${alreadyInCart ? " in-cart" : ""}`}
           onClick={alreadyInCart ? handleCartClick : handleAdd}
-          disabled={isOutOfStock && !alreadyInCart}
           title={
-            isOutOfStock
-              ? "Out of stock"
-              : needsSizeSelection
-                ? "Select size first"
-                : alreadyInCart
-                  ? "View cart"
-                  : "Add to cart"
+            needsSizeSelection
+              ? "Select size first"
+              : alreadyInCart
+                ? "View cart"
+                : "Add to cart"
           }
         >
-          {alreadyInCart ? "✓" : "♥"}
+          {alreadyInCart ? "✓" : "♡"}
         </button>
-      </div>
+        {totalQty === 0 && (
+          <span className="sold-out-badge">Sold Out</span>
+        )}
+      </Link>
       <div className="product-card-body">
         <Link
           to={detailUrl}
@@ -129,7 +118,10 @@ export default function ProductCard({ product }) {
             {product.brand}
           </p>
         )}
-        {product.sku && <p className="sku">SKU: {product.sku}</p>}
+        <div className="product-info-tags">
+          {product.sku && <span className="info-tag info-tag-sku">{product.sku}</span>}
+          {genderLabel && <span className="info-tag info-tag-gender">{genderLabel}</span>}
+        </div>
         {product.color && (
           <p className="sku" style={{ color: "#6b7280" }}>
             {product.color}
@@ -143,7 +135,7 @@ export default function ProductCard({ product }) {
                 key={s.size}
                 className={`size-tag${s.quantity === 0 ? " out-of-stock" : ""}`}
                 title={
-                  s.quantity > 0 ? `${s.quantity} available` : "Out of stock"
+                  s.quantity > 0 ? `${s.quantity} available` : "Sold Out"
                 }
               >
                 {s.size}
@@ -156,29 +148,26 @@ export default function ProductCard({ product }) {
           </div>
         )}
         {totalQty > 0 && <p className="stock-info">{totalQty} in stock</p>}
-        {totalQty === 0 && (
-          <p className="stock-info" style={{ color: "#ef4444" }}>
-            Out of stock
-          </p>
-        )}
         <div className="product-card-footer">
-          <span className="price">
-            £{finalPrice.toFixed(2)}
-            {showRrp && <span className="price-rrp">£{rrp.toFixed(2)}</span>}
+          <div className="price-display">
+            <span className="price">£{finalPrice.toFixed(2)}</span>
+            {showRrp && (
+              <span className="price-rrp">RRP: £{rrp.toFixed(2)}</span>
+            )}
             {discount > 0 && (
               <span className="price-discount">{discount}% OFF</span>
             )}
             {isUnder5 && <span className="price-under5">UNDER £5</span>}
-          </span>
+          </div>
           <button
-            className="btn btn-accent btn-sm"
+            className={`btn btn-sm ${needsSizeSelection ? "btn-buynow" : "btn-accent"}`}
             onClick={alreadyInCart ? handleCartClick : handleAdd}
-            disabled={isOutOfStock && !alreadyInCart}
+            disabled={totalQty === 0 && !alreadyInCart}
           >
-            {isOutOfStock
-              ? "Out of Stock"
+            {totalQty === 0
+              ? "Sold Out"
               : needsSizeSelection
-                ? "Select Size"
+                ? "Buy Now"
                 : alreadyInCart
                   ? "In Cart ✓"
                   : "Add to Cart"}

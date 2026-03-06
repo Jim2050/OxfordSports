@@ -74,12 +74,14 @@ export function AuthProvider({ children }) {
     throw new Error(res.data?.error || "Login failed");
   };
 
-  const register = async (name, email, password, company) => {
+  const register = async (name, email, password, company, mobileNumber, deliveryAddress) => {
     const res = await API.post("/auth/register", {
       name,
       email,
       password,
       company,
+      mobileNumber,
+      deliveryAddress,
     });
     if (res.data?.success) {
       setToken(res.data.token);

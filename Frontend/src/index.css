@@ -119,6 +119,17 @@ ol {
   font-size: 0.85rem;
 }
 
+/* ── Buy Now (dark blue) button ── */
+.btn-buynow {
+  background: #0f2d5c;
+  color: #ffffff;
+  border: none;
+  font-weight: 700;
+}
+.btn-buynow:hover {
+  background: #0a1f42;
+}
+
 .btn-lg {
   padding: 0.85rem 2rem;
   font-size: 1.05rem;
@@ -137,7 +148,7 @@ ol {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  height: 70px;
+  height: 80px;
 }
 
 .logo img {
@@ -159,7 +170,7 @@ ol {
 }
 
 .logo-img {
-  height: 48px;
+  height: 54px;
   width: auto;
   object-fit: contain;
   border-radius: var(--radius-sm);
@@ -170,7 +181,7 @@ ol {
 
 .logo-text {
   color: var(--text-inverse);
-  font-size: 1.35rem;
+  font-size: 1.55rem;
   font-weight: 800;
   letter-spacing: -0.5px;
 }
@@ -188,8 +199,8 @@ ol {
   color: rgba(255, 255, 255, 0.85);
   padding: 0.5rem 0.85rem;
   border-radius: var(--radius-sm);
-  font-size: 0.9rem;
-  font-weight: 500;
+  font-size: 1rem;
+  font-weight: 600;
   transition: var(--transition);
 }
 .nav a:hover,
@@ -200,6 +211,49 @@ ol {
 
 .nav .btn-primary {
   margin-left: 0.5rem;
+}
+
+/* ── Header Search Bar ── */
+.header-search {
+  display: flex;
+  align-items: center;
+  background: rgba(255, 255, 255, 0.12);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 6px;
+  overflow: hidden;
+  max-width: 280px;
+  flex: 1;
+  margin: 0 1rem;
+}
+
+.header-search input {
+  background: transparent;
+  border: none;
+  color: #fff;
+  padding: 0.45rem 0.75rem;
+  font-size: 0.85rem;
+  font-family: inherit;
+  outline: none;
+  flex: 1;
+  min-width: 0;
+}
+
+.header-search input::placeholder {
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.header-search button {
+  background: none;
+  border: none;
+  padding: 0.45rem 0.65rem;
+  cursor: pointer;
+  font-size: 0.9rem;
+  color: rgba(255, 255, 255, 0.7);
+  transition: color 0.2s;
+}
+
+.header-search button:hover {
+  color: #fff;
 }
 
 /* Mobile burger */
@@ -426,16 +480,48 @@ ol {
 }
 
 .product-card-body h3 {
-  font-size: 1rem;
-  font-weight: 700;
+  font-size: 1.05rem;
+  font-weight: 800;
   margin-bottom: 0.3rem;
   line-height: 1.35;
+  color: var(--text);
 }
 
 .product-card-body .sku {
-  font-size: 0.78rem;
-  color: var(--text-light);
+  font-size: 0.72rem;
+  color: #9ca3af;
   margin-bottom: 0.5rem;
+  letter-spacing: 0.3px;
+}
+
+/* ── Product Info Tags (SKU + Gender pills) ── */
+.product-info-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+  margin-bottom: 0.4rem;
+}
+
+.info-tag {
+  display: inline-block;
+  font-size: 0.68rem;
+  font-weight: 700;
+  padding: 0.15rem 0.5rem;
+  border-radius: 3px;
+  letter-spacing: 0.3px;
+  text-transform: uppercase;
+}
+
+.info-tag-sku {
+  background: #f3f4f6;
+  color: #4b5563;
+  border: 1px solid #e5e7eb;
+}
+
+.info-tag-gender {
+  background: #eff6ff;
+  color: #1d4ed8;
+  border: 1px solid #bfdbfe;
 }
 
 .product-card-body .description {
@@ -454,6 +540,12 @@ ol {
   align-items: center;
   justify-content: space-between;
   gap: 0.75rem;
+}
+
+.price-display {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
 }
 
 .price {
@@ -541,7 +633,7 @@ ol {
   font-weight: 500;
   color: #9ca3af;
   text-decoration: line-through;
-  margin-left: 0.4rem;
+  display: block;
 }
 
 .price-discount {
@@ -763,17 +855,6 @@ ol {
 
 .link-btn:hover {
   color: var(--primary-dark);
-}
-
-.btn-outline {
-  background: transparent;
-  border: 2px solid var(--primary);
-  color: var(--primary);
-}
-
-.btn-outline:hover {
-  background: var(--primary);
-  color: var(--text-inverse);
 }
 
 /* ========== Contact Page ========== */
@@ -1325,6 +1406,10 @@ ol {
     display: flex;
   }
 
+  .header-search {
+    display: none;
+  }
+
   .hero h1 {
     font-size: 2rem;
   }
@@ -1401,7 +1486,7 @@ ol {
   position: relative;
   background: none;
   border: none;
-  font-size: 1.4rem;
+  font-size: 1.55rem;
   cursor: pointer;
   padding: 0.25rem 0.4rem;
   line-height: 1;
@@ -1431,38 +1516,56 @@ ol {
   position: absolute;
   top: 10px;
   right: 10px;
-  width: 36px;
-  height: 36px;
+  width: 42px;
+  height: 42px;
   border-radius: 50%;
-  background: rgba(255, 255, 255, 0.92);
+  background: rgba(255, 255, 255, 0.95);
   border: 1.5px solid var(--border);
-  font-size: 1.1rem;
+  font-size: 1.4rem;
   line-height: 1;
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
   transition: var(--transition);
-  color: var(--accent);
+  color: #9ca3af;
   z-index: 2;
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1);
 }
 .card-heart-btn:hover {
-  background: var(--accent);
-  color: #fff;
+  background: #fff;
+  color: var(--accent);
   border-color: var(--accent);
-  transform: scale(1.12);
+  transform: scale(1.15);
 }
 .card-heart-btn.added {
   background: var(--accent);
   color: #fff;
   border-color: var(--accent);
+  font-size: 1.4rem;
   animation: heartPop 0.35s ease;
 }
 .card-heart-btn.in-cart {
   background: #059669;
   color: #fff;
   border-color: #059669;
+}
+
+/* ── Sold Out Badge (under heart icon) ── */
+.sold-out-badge {
+  position: absolute;
+  top: 56px;
+  right: 6px;
+  background: rgba(220, 38, 38, 0.92);
+  color: #fff;
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  padding: 0.2rem 0.55rem;
+  border-radius: 4px;
+  z-index: 2;
+  box-shadow: 0 2px 6px rgba(220, 38, 38, 0.3);
 }
 @keyframes heartPop {
   0% {
