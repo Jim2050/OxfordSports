@@ -57,6 +57,15 @@ export default function ProductCard({ product }) {
   const alreadyInCart =
     !needsSizeSelection && isInCart(product.sku, productSizes[0]?.size || "");
 
+  // Derive gender from product name/description/category
+  const genderLabel = (() => {
+    const text = `${product.name || ""} ${product.description || ""} ${product.category || ""} ${product.subcategory || ""}`.toLowerCase();
+    if (text.includes("women") || text.includes("ladies") || text.includes("wmns") || text.includes("female")) return "Women's";
+    if (text.includes("kids") || text.includes("junior") || text.includes("youth") || text.includes("children") || text.includes("infant")) return "Kids";
+    if (text.includes("men") || text.includes("male") || text.includes("adult")) return "Men's";
+    return null;
+  })();
+
   return (
     <div className="product-card">
       <Link to={detailUrl} style={{ position: "relative", display: "block" }}>
@@ -84,8 +93,11 @@ export default function ProductCard({ product }) {
                 : "Add to cart"
           }
         >
-          {alreadyInCart ? "✓" : "♥"}
+          {alreadyInCart ? "✓" : "♡"}
         </button>
+        {totalQty === 0 && (
+          <span className="sold-out-badge">Sold Out</span>
+        )}
       </Link>
       <div className="product-card-body">
         <Link
@@ -106,7 +118,10 @@ export default function ProductCard({ product }) {
             {product.brand}
           </p>
         )}
-        {product.sku && <p className="sku">SKU: {product.sku}</p>}
+        <div className="product-info-tags">
+          {product.sku && <span className="info-tag info-tag-sku">{product.sku}</span>}
+          {genderLabel && <span className="info-tag info-tag-gender">{genderLabel}</span>}
+        </div>
         {product.color && (
           <p className="sku" style={{ color: "#6b7280" }}>
             {product.color}
@@ -120,7 +135,7 @@ export default function ProductCard({ product }) {
                 key={s.size}
                 className={`size-tag${s.quantity === 0 ? " out-of-stock" : ""}`}
                 title={
-                  s.quantity > 0 ? `${s.quantity} available` : "Out of stock"
+                  s.quantity > 0 ? `${s.quantity} available` : "Sold Out"
                 }
               >
                 {s.size}
@@ -134,20 +149,22 @@ export default function ProductCard({ product }) {
         )}
         {totalQty > 0 && <p className="stock-info">{totalQty} in stock</p>}
         <div className="product-card-footer">
-          <span className="price">
-            £{finalPrice.toFixed(2)}
-            {showRrp && <span className="price-rrp">£{rrp.toFixed(2)}</span>}
+          <div className="price-display">
+            <span className="price">£{finalPrice.toFixed(2)}</span>
+            {showRrp && (
+              <span className="price-rrp">RRP: £{rrp.toFixed(2)}</span>
+            )}
             {discount > 0 && (
               <span className="price-discount">{discount}% OFF</span>
             )}
             {isUnder5 && <span className="price-under5">UNDER £5</span>}
-          </span>
+          </div>
           <button
-            className="btn btn-accent btn-sm"
+            className={`btn btn-sm ${needsSizeSelection ? "btn-buynow" : "btn-accent"}`}
             onClick={alreadyInCart ? handleCartClick : handleAdd}
           >
             {needsSizeSelection
-              ? "Select Size"
+              ? "Buy Now"
               : alreadyInCart
                 ? "In Cart ✓"
                 : "Add to Cart"}

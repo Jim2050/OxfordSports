@@ -9,6 +9,7 @@ const PUBLIC_PATHS = new Set(["/", "/contact", "/register"]);
 
 export default function Header() {
   const [open, setOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
   const { pathname } = useLocation();
   const navigate = useNavigate();
   const { isAuthenticated, user, logout } = useAuth();
@@ -44,6 +45,20 @@ export default function Header() {
     }
   };
 
+  const handleSearch = (e) => {
+    e.preventDefault();
+    const q = searchQuery.trim();
+    if (!q) return;
+    if (!isAuthenticated) {
+      toast("Please sign in to search products", { icon: "🔒" });
+      navigate("/register", { state: { from: `/products?search=${encodeURIComponent(q)}` } });
+      return;
+    }
+    navigate(`/products?search=${encodeURIComponent(q)}`);
+    setSearchQuery("");
+    setOpen(false);
+  };
+
   return (
     <header className="header">
       <div className="container header-inner">
@@ -53,6 +68,18 @@ export default function Header() {
             Oxford<span>Sports</span>
           </span>
         </Link>
+
+        {/* Search bar in header */}
+        <form className="header-search" onSubmit={handleSearch}>
+          <input
+            type="text"
+            placeholder="Search products…"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            aria-label="Search products"
+          />
+          <button type="submit" aria-label="Search">🔍</button>
+        </form>
 
         <nav className={`nav${open ? " open" : ""}`}>
           {links.map((l) => (
@@ -67,9 +94,15 @@ export default function Header() {
           ))}
           {isAuthenticated ? (
             <button
-              className="btn btn-outline btn-sm"
+              className="btn btn-sm"
               onClick={handleLogout}
-              style={{ cursor: "pointer" }}
+              style={{
+                cursor: "pointer",
+                background: "#1a6fbf",
+                color: "#ffffff",
+                border: "none",
+                fontWeight: 700,
+              }}
             >
               Sign Out
             </button>

@@ -7,7 +7,7 @@ const generateToken = require("../utils/generateToken");
  */
 exports.register = async (req, res) => {
   try {
-    const { name, email, password, company } = req.body;
+    const { name, email, password, company, mobileNumber, deliveryAddress } = req.body;
 
     if (!name || !email || !password) {
       return res
@@ -32,6 +32,8 @@ exports.register = async (req, res) => {
       email,
       password,
       company: company || "",
+      mobileNumber: mobileNumber || "",
+      deliveryAddress: deliveryAddress || "",
       role: "member",
     });
 

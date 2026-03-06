@@ -13,6 +13,8 @@ const userSchema = new mongoose.Schema(
     },
     password: { type: String, required: true, minlength: 6, select: false },
     company: { type: String, default: "" },
+    mobileNumber: { type: String, default: "", trim: true },
+    deliveryAddress: { type: String, default: "", trim: true },
     role: {
       type: String,
       enum: ["member", "admin"],

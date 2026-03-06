@@ -11,6 +11,8 @@ export default function RegisterPage() {
     email: "",
     password: "",
     company: "",
+    mobileNumber: "",
+    deliveryAddress: "",
   });
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
@@ -29,7 +31,7 @@ export default function RegisterPage() {
           toast.error("Name, email, and password are required.");
           return;
         }
-        await register(form.name, form.email, form.password, form.company);
+        await register(form.name, form.email, form.password, form.company, form.mobileNumber, form.deliveryAddress);
         toast.success("Registration successful! Welcome.");
       } else {
         if (!form.email || !form.password) {
@@ -138,6 +140,29 @@ export default function RegisterPage() {
                     value={form.company}
                     onChange={handle}
                     placeholder="Your business name"
+                  />
+                </div>
+                <div className="form-field">
+                  <label htmlFor="mobileNumber">Mobile Number (optional)</label>
+                  <input
+                    id="mobileNumber"
+                    name="mobileNumber"
+                    type="tel"
+                    value={form.mobileNumber}
+                    onChange={handle}
+                    placeholder="07700 123456"
+                  />
+                </div>
+                <div className="form-field">
+                  <label htmlFor="deliveryAddress">Delivery Address (optional)</label>
+                  <textarea
+                    id="deliveryAddress"
+                    name="deliveryAddress"
+                    value={form.deliveryAddress}
+                    onChange={handle}
+                    placeholder="Full delivery address"
+                    rows={3}
+                    style={{ resize: "vertical" }}
                   />
                 </div>
               </>
