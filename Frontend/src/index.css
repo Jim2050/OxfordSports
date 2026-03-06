@@ -292,21 +292,22 @@ ol {
 .header-search {
   display: flex;
   align-items: center;
-  background: rgba(255, 255, 255, 0.12);
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  border-radius: 6px;
+  background: #ffffff;
+  border: 2px solid rgba(255, 255, 255, 0.4);
+  border-radius: 8px;
   overflow: hidden;
-  max-width: 280px;
+  max-width: 300px;
   flex: 1;
-  margin: 0 1rem;
+  margin: 0 1.25rem;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.1);
 }
 
 .header-search input {
   background: transparent;
   border: none;
-  color: #fff;
-  padding: 0.45rem 0.75rem;
-  font-size: 0.85rem;
+  color: #1a1a2e;
+  padding: 0.5rem 0.85rem;
+  font-size: 0.88rem;
   font-family: inherit;
   outline: none;
   flex: 1;
@@ -314,21 +315,21 @@ ol {
 }
 
 .header-search input::placeholder {
-  color: rgba(255, 255, 255, 0.5);
+  color: #9ca3af;
 }
 
 .header-search button {
-  background: none;
+  background: var(--primary, #1a1281);
   border: none;
-  padding: 0.45rem 0.65rem;
+  padding: 0.5rem 0.75rem;
   cursor: pointer;
-  font-size: 0.9rem;
-  color: rgba(255, 255, 255, 0.7);
-  transition: color 0.2s;
+  font-size: 0.95rem;
+  color: #fff;
+  transition: background 0.2s;
 }
 
 .header-search button:hover {
-  color: #fff;
+  background: #0f0a5c;
 }
 
 /* Mobile burger */
