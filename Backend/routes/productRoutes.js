@@ -13,6 +13,7 @@ const {
   getProducts,
   getBrands,
   getCategories,
+  getSubcategories,
   getColors,
   getProductBySku,
 } = require("../controllers/productController");
@@ -20,6 +21,7 @@ const {
 router.get("/", getProducts);
 router.get("/brands", getBrands);
 router.get("/categories", getCategories);
+router.get("/subcategories", getSubcategories);
 router.get("/colors", getColors);
 router.get("/:sku", getProductBySku);
 

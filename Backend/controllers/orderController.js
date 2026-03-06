@@ -24,6 +24,11 @@ exports.placeOrder = async (req, res) => {
     const orderItems = [];
     const stockUpdates = []; // bulk ops to deduct stock
 
+    // ── MOQ thresholds (must match frontend api.js) ──
+    const FOOTWEAR_THRESHOLD = 12;
+    const DEFAULT_THRESHOLD = 50;
+    const MIN_ORDER_TOTAL = 300;
+
     for (const item of items) {
       if (!item.sku || !item.quantity || item.quantity < 1) {
         return res
@@ -100,6 +105,47 @@ exports.placeOrder = async (req, res) => {
     const totalAmount = +orderItems
       .reduce((sum, i) => sum + i.lineTotal, 0)
       .toFixed(2);
+
+    // ── MOQ enforcement: minimum cart total ──
+    if (totalAmount < MIN_ORDER_TOTAL) {
+      return res.status(400).json({
+        error: `Minimum order total is £${MIN_ORDER_TOTAL}. Your cart is £${totalAmount.toFixed(2)}.`,
+      });
+    }
+
+    // ── MOQ enforcement: must-buy-all products ──
+    // Group order items by SKU to check per-product MOQ
+    const skuMap = {};
+    for (const oi of orderItems) {
+      if (!skuMap[oi.sku]) skuMap[oi.sku] = { items: [], product: null };
+      skuMap[oi.sku].items.push(oi);
+    }
+    // Fetch products for MOQ check
+    for (const sku of Object.keys(skuMap)) {
+      const product = await Product.findOne({ sku: sku.toUpperCase(), isActive: true }).lean();
+      if (product) skuMap[sku].product = product;
+    }
+    for (const [sku, entry] of Object.entries(skuMap)) {
+      const product = entry.product;
+      if (!product) continue;
+      const cat = (product.category || "").toUpperCase();
+      const isFootwear = cat === "FOOTWEAR";
+      const threshold = isFootwear ? FOOTWEAR_THRESHOLD : DEFAULT_THRESHOLD;
+      const totalQty = product.totalQuantity || 0;
+      if (totalQty > 0 && totalQty < threshold) {
+        // Must buy ALL available sizes — validate the order contains every size
+        const availableSizes = (product.sizes || [])
+          .filter((s) => s.quantity > 0)
+          .map((s) => s.size);
+        const orderedSizes = new Set(entry.items.map((i) => (i.size || "").trim()));
+        const missingSizes = availableSizes.filter((s) => !orderedSizes.has(s));
+        if (missingSizes.length > 0) {
+          return res.status(400).json({
+            error: `Product ${product.name} (${sku}) has only ${totalQty} units — you must buy the entire lot. Missing sizes: ${missingSizes.join(", ")}.`,
+          });
+        }
+      }
+    }
 
     const order = await Order.create({
       customer: req.user._id,

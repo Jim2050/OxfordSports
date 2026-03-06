@@ -2,7 +2,7 @@ import { useState } from "react";
 import toast from "react-hot-toast";
 import { useCart } from "../../context/CartContext";
 import { useAuth } from "../../context/AuthContext";
-import { resolveImageUrl } from "../../api/api";
+import { resolveImageUrl, MIN_CART_TOTAL } from "../../api/api";
 import API from "../../api/axiosInstance";
 import { buildOrderMailto } from "../../utils/buildOrderMailto";
 
@@ -21,6 +21,7 @@ export default function CartDrawer() {
   } = useCart();
   const { isAuthenticated, token } = useAuth();
   const [submitting, setSubmitting] = useState(false);
+  const belowMinimum = totalAmount < MIN_CART_TOTAL;
 
   /** Place order via API. */
   const handleCheckout = async () => {
@@ -155,13 +156,18 @@ export default function CartDrawer() {
                 <span>Total</span>
                 <strong>£{totalAmount.toFixed(2)}</strong>
               </div>
+              {belowMinimum && items.length > 0 && (
+                <p className="cart-min-warning">
+                  Minimum order: £{MIN_CART_TOTAL}. Add £{(MIN_CART_TOTAL - totalAmount).toFixed(2)} more.
+                </p>
+              )}
               <button
                 className="btn btn-accent"
                 style={{ width: "100%" }}
                 onClick={handleCheckout}
-                disabled={submitting}
+                disabled={submitting || belowMinimum}
               >
-                {submitting ? "Placing order…" : "Place Order"}
+                {submitting ? "Placing order…" : belowMinimum ? `Min. order £${MIN_CART_TOTAL}` : "Place Order"}
               </button>
               <button
                 className="btn btn-outline btn-sm"

@@ -287,3 +287,44 @@ export function getSizes(product) {
     quantity: sizeStock[String(s)] || 0,
   }));
 }
+
+// ═══════════════════════════════════════════════════════════════
+//  MOQ (Minimum Order Quantity) helpers
+// ═══════════════════════════════════════════════════════════════
+
+/** Minimum cart total (£) — orders below this are rejected. */
+export const MIN_CART_TOTAL = 300;
+
+/**
+ * Determine MOQ rules for a product.
+ *
+ * Rules (from client — Lily / Jim):
+ *   FOOTWEAR  — totalQty < 12 → must buy ALL,  ≥ 12 → selectable
+ *   CLOTHING / ACCESSORIES / other — totalQty < 50 → must buy ALL,  ≥ 50 → selectable
+ *
+ * Returns { threshold, mustBuyAll: boolean }
+ */
+export function getMOQInfo(product) {
+  const cat = (product?.category || "").toUpperCase();
+  const totalQty = getTotalQuantity(product);
+  const isFootwear = cat === "FOOTWEAR";
+  const threshold = isFootwear ? 12 : 50;
+  const mustBuyAll = totalQty > 0 && totalQty < threshold;
+  return { threshold, mustBuyAll, totalQty };
+}
+
+/**
+ * Pro-rata: average quantity per size.
+ */
+export function getProRata(product) {
+  const sizes = getSizes(product);
+  const availableSizes = sizes.filter((s) => s.quantity > 0);
+  if (availableSizes.length === 0) return 0;
+  const total = availableSizes.reduce((sum, s) => sum + s.quantity, 0);
+  return +(total / availableSizes.length).toFixed(1);
+}
+
+/** Fetch subcategories for a given category name. */
+export const fetchSubcategories = (categoryName) =>
+  API.get("/products/subcategories", { params: { category: categoryName } }).then((r) => r.data);
+

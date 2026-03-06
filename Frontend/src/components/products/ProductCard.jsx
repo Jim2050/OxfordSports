@@ -7,6 +7,8 @@ import {
   getDiscountPercentage,
   getTotalQuantity,
   getSizes,
+  getMOQInfo,
+  getProRata,
 } from "../../api/api";
 import { useCart } from "../../context/CartContext";
 
@@ -27,21 +29,32 @@ export default function ProductCard({ product }) {
   const { addToCart, isInCart, openDrawer } = useCart();
   const productSizes = getSizes(product);
   const hasSizes = productSizes.length > 0;
+  const { mustBuyAll, threshold } = getMOQInfo(product);
+  const proRata = getProRata(product);
 
   const [added, setAdded] = useState(false);
 
-  /* Heart click → quick-add first available size to cart */
+  /* Heart click → quick-add to cart.
+     mustBuyAll → adds ALL available sizes at full qty.
+     Otherwise → adds 1 of first available size. */
   const handleHeartClick = (e) => {
     e.preventDefault();
     e.stopPropagation();
     if (!hasSizes || totalQty === 0) return;
 
-    const firstAvail = productSizes.find((s) => s.quantity > 0);
-    if (!firstAvail) return;
-
-    addToCart(product, firstAvail.size, 1);
-    setAdded(true);
-    toast.success(`${product.name} added to cart`);
+    if (mustBuyAll) {
+      productSizes.forEach((s) => {
+        if (s.quantity > 0) addToCart(product, s.size, s.quantity);
+      });
+      setAdded(true);
+      toast.success(`Entire lot of ${product.name} added to cart`);
+    } else {
+      const firstAvail = productSizes.find((s) => s.quantity > 0);
+      if (!firstAvail) return;
+      addToCart(product, firstAvail.size, 1);
+      setAdded(true);
+      toast.success(`${product.name} added to cart`);
+    }
     setTimeout(() => setAdded(false), 1200);
   };
 
@@ -130,6 +143,19 @@ export default function ProductCard({ product }) {
           {genderLabel && <span className="info-tag">{genderLabel}</span>}
           {product.color && <span className="info-tag">{product.color}</span>}
         </div>
+
+        {/* ── MOQ info ── */}
+        {totalQty > 0 && mustBuyAll && (
+          <p className="moq-badge">Must buy all {totalQty} units</p>
+        )}
+        {totalQty > 0 && !mustBuyAll && totalQty >= threshold && (
+          <p className="moq-info">Min order: individual sizes selectable</p>
+        )}
+
+        {/* ── Pro rata ── */}
+        {proRata > 0 && (
+          <p className="pro-rata">Avg. {proRata} per size</p>
+        )}
 
         {/* ── Available Sizes (R7 / #12) ── */}
         {hasSizes && (

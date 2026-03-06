@@ -7,6 +7,8 @@ import {
   getDiscountPercentage,
   getTotalQuantity,
   getSizes,
+  getMOQInfo,
+  getProRata,
 } from "../../api/api";
 import { useCart } from "../../context/CartContext";
 import API from "../../api/axiosInstance";
@@ -72,6 +74,8 @@ export default function ProductPage() {
   const hasSizes = productSizes.length > 0;
   const isOneSize =
     productSizes.length === 1 && productSizes[0].size === "ONE SIZE";
+  const { mustBuyAll, threshold } = getMOQInfo(product);
+  const proRata = getProRata(product);
 
   // Total items selected across all sizes
   const totalSelected = Object.values(sizeQtys).reduce((sum, q) => sum + q, 0);
@@ -89,6 +93,15 @@ export default function ProductPage() {
   };
 
   const handleAddAllToCart = () => {
+    // mustBuyAll → add entire lot (all sizes, all qty)
+    if (mustBuyAll) {
+      productSizes.forEach((s) => {
+        if (s.quantity > 0) addToCart(product, s.size, s.quantity);
+      });
+      toast.success(`Entire lot of ${product.name} added to cart!`);
+      return;
+    }
+
     if (hasSizes && !isOneSize && totalSelected === 0) {
       toast.error("Select at least one size and quantity.");
       return;
@@ -176,13 +189,28 @@ export default function ProductPage() {
             {totalQty > 0 && (
               <p
                 style={{
-                  color: "#059669",
+                  color: "#0f2d5c",
                   fontSize: "0.9rem",
-                  marginBottom: "1rem",
+                  marginBottom: "0.5rem",
                   fontWeight: 600,
                 }}
               >
                 {totalQty} total in stock
+              </p>
+            )}
+
+            {/* ── MOQ notice ── */}
+            {totalQty > 0 && mustBuyAll && (
+              <div className="moq-notice">
+                <strong>Wholesale lot:</strong> This item has fewer than {threshold} units
+                and must be purchased as a complete lot ({totalQty} units).
+              </div>
+            )}
+
+            {/* ── Pro rata ── */}
+            {proRata > 0 && hasSizes && !isOneSize && (
+              <p style={{ color: "#6b7280", fontSize: "0.85rem", marginBottom: "1rem" }}>
+                Pro rata: avg. <strong>{proRata}</strong> units per size
               </p>
             )}
 
@@ -193,7 +221,7 @@ export default function ProductPage() {
             )}
 
             {/* ── Multi-size order grid (TASK 5 — Wholesale Grouping View) ── */}
-            {hasSizes && !isOneSize ? (
+            {hasSizes && !isOneSize && !mustBuyAll ? (
               <div className="size-order-section">
                 <strong
                   style={{
@@ -379,10 +407,13 @@ export default function ProductPage() {
               <button
                 className="btn btn-accent btn-lg"
                 onClick={handleAddAllToCart}
+                disabled={totalQty === 0}
               >
-                {hasSizes && !isOneSize
-                  ? `Add ${totalSelected || 0} Item${totalSelected !== 1 ? "s" : ""} to Cart`
-                  : "Add to Cart"}
+                {mustBuyAll
+                  ? `Buy Entire Lot (${totalQty} units) — £${(totalQty * finalPrice).toFixed(2)}`
+                  : hasSizes && !isOneSize
+                    ? `Add ${totalSelected || 0} Item${totalSelected !== 1 ? "s" : ""} to Cart`
+                    : "Add to Cart"}
               </button>
               {anySizeInCart && (
                 <button className="btn btn-primary btn-lg" onClick={openDrawer}>

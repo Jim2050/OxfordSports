@@ -1,5 +1,6 @@
 const Product = require("../models/Product");
 const Category = require("../models/Category");
+const Subcategory = require("../models/Subcategory");
 
 // ── Category keyword mapping for front-end slugs → DB values ──
 // These keywords are searched in BOTH category AND name/subcategory fields
@@ -194,6 +195,33 @@ exports.getColors = async (_req, res) => {
       color: { $ne: "" },
     });
     res.json({ colors: colors.sort() });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+/**
+ * GET /api/products/subcategories?category=FOOTWEAR
+ * Return subcategories for a given category name.
+ */
+exports.getSubcategories = async (req, res) => {
+  try {
+    const { category } = req.query;
+    if (!category) {
+      return res.json({ subcategories: [] });
+    }
+    // Find the category document
+    const cat = await Category.findOne({
+      name: { $regex: `^${category}$`, $options: "i" },
+      isActive: true,
+    });
+    if (!cat) {
+      return res.json({ subcategories: [] });
+    }
+    const subs = await Subcategory.find({ category: cat._id, isActive: true })
+      .sort({ name: 1 })
+      .lean();
+    res.json({ subcategories: subs });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

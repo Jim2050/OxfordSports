@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import ProductGrid from "../../components/products/ProductGrid";
 import SearchBar from "../../components/products/SearchBar";
-import { fetchProducts, fetchBrands } from "../../api/api";
+import { fetchProducts, fetchBrands, fetchSubcategories } from "../../api/api";
 
 export default function AllProductsPage() {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -14,6 +14,8 @@ export default function AllProductsPage() {
   const [minPrice, setMinPrice] = useState("");
   const [maxPrice, setMaxPrice] = useState("");
   const [brands, setBrands] = useState([]);
+  const [subcategory, setSubcategory] = useState("");
+  const [subcategories, setSubcategories] = useState([]);
 
   // Load brands on mount
   useEffect(() => {
@@ -30,12 +32,25 @@ export default function AllProductsPage() {
     if (urlSearch !== search) setSearch(urlSearch);
   }, [searchParams]);
 
+  // Load subcategories when category changes
+  useEffect(() => {
+    setSubcategory("");
+    if (!category) {
+      setSubcategories([]);
+      return;
+    }
+    fetchSubcategories(category)
+      .then((data) => setSubcategories(data.subcategories || []))
+      .catch(() => setSubcategories([]));
+  }, [category]);
+
   useEffect(() => {
     setLoading(true);
     const params = {};
     if (search) params.search = search;
     if (brand) params.brand = brand;
     if (category) params.category = category;
+    if (subcategory) params.subcategory = subcategory;
     if (minPrice) params.minPrice = minPrice;
     if (maxPrice) params.maxPrice = maxPrice;
     fetchProducts(params)
@@ -44,18 +59,20 @@ export default function AllProductsPage() {
       )
       .catch(() => setProducts([]))
       .finally(() => setLoading(false));
-  }, [search, brand, category, minPrice, maxPrice]);
+  }, [search, brand, category, subcategory, minPrice, maxPrice]);
 
   const clearFilters = () => {
     setBrand("");
     setCategory("");
+    setSubcategory("");
+    setSubcategories([]);
     setMinPrice("");
     setMaxPrice("");
     setSearch("");
     setSearchParams({});
   };
 
-  const hasFilters = brand || minPrice || maxPrice || search || category;
+  const hasFilters = brand || minPrice || maxPrice || search || category || subcategory;
 
   const pageTitle = category ? category : "All Products";
 
@@ -98,6 +115,21 @@ export default function AllProductsPage() {
               <option value="BRANDS">Brands</option>
               <option value="SPORTS">Sports</option>
             </select>
+
+            {subcategories.length > 0 && (
+              <select
+                value={subcategory}
+                onChange={(e) => setSubcategory(e.target.value)}
+                className="filter-select"
+              >
+                <option value="">All Sub-categories</option>
+                {subcategories.map((sc) => (
+                  <option key={sc._id} value={sc.name}>
+                    {sc.name}
+                  </option>
+                ))}
+              </select>
+            )}
 
             <select
               value={brand}

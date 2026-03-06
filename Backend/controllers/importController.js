@@ -668,25 +668,103 @@ exports.importProducts = async (req, res) => {
         isActive: true,
       };
 
-      // ── Auto-detect sport from product name → populate subcategory ──
-      // This allows Rugby/Football/Footwear pages to filter correctly
-      // even when Excel only has Gender (Mens/Womens) in the category column.
+      // ══════════════════════════════════════════════════════════════════
+      //  AUTO-CATEGORIZE — comprehensive keyword rules (#20)
+      //  Assigns category (FOOTWEAR / CLOTHING / ACCESSORIES) and
+      //  subcategory when the Excel only provides gender or nothing.
+      // ══════════════════════════════════════════════════════════════════
+      const upperName = (name || "").toUpperCase();
+      const upperDesc = (productData.description || "").toUpperCase();
+      const upperSku  = (sku || "").toUpperCase();
+      const combined  = `${upperName} ${upperDesc} ${upperSku}`;
+      const catUpper  = (productData.category || "").toUpperCase();
+
+      // ── Footwear indicators ──
+      const FOOTWEAR_MODELS = /\b(NEMEZIZ|COPA|PREDATOR|SPEEDFLOW|ULTRABOOST|ULTRA BOOST|NMD|SUPERSTAR|STAN SMITH|GAZELLE|SAMBA|FORUM|OZWEEGO|GRAND COURT|CONTINENTAL|RIVALRY|NIZZA|DAME|HARDEN|D\.O\.N|DONOVAN|TRAE|ADIZERO|DURAMO|SUPERNOVA|SOLAR|QUESTAR|RUNFALCON|RESPONSE|TERREX|SEELEY|ZX |YEEZY|4DFWD|ALPHABOOST|ALPHABOUNCE|SHOWTHEWAY|FLUIDFLOW|LITE RACER|RACER TR|KAPTIR|LITE 2|EDGE LUX|DROPSET|Court|COURTJAM|BARRICADE|SOLEMATCH|GAMECOURT|DROPSTEP|MIDCITY|HOOPS|BREAKNET|ADVANTAGE|ROGUERA|DAILY|VS PACE|BRAVADA|VULCRAID|VULC RAID)\b/;
+      const FOOTWEAR_STUDS = /\b(FG|SG|TF|AG|IN|FxG|MG|HG)\b/;
+      const FOOTWEAR_KEYWORDS = /\b(BOOT|BOOTS|TRAINER|TRAINERS|SHOE|SHOES|SNEAKER|SNEAKERS|FOOTWEAR|RUNNING|SLIDE|SLIDES|SANDAL|SANDALS|FLIP FLOP|FLIP FLOPS|MULE|MULES|CLOG|CLOGS|SLIPPER|SLIPPERS|SOCK SHOE|SLIP ON|SLIP-ON|SOCCER SHOE|FOOTBALL BOOT)\b/;
+
+      // ── Clothing abbreviation indicators (adidas naming convention) ──
+      const CLOTHING_ABBREVS = /\b(SHO|JKT|PT|TT|HD|TEE|JSY|POLO|VEST|SWT|SH|BRA|CROP|TANK|TIGHT|LEGGING|LEGGINGS|PANT|PANTS|TROUSER|TROUSERS|TRACKSUIT|TRACK TOP|TRACK PANT|HOODIE|HOODY|SWEATSHIRT|SWEAT|SHORTS|JERSEY|JACKET|WINDBREAKER|PARKA|GILET|FLEECE|ROMPER|ONESIE|BASE LAYER|MIDLAYER|SHIRT|LS SHIRT|SS SHIRT|POLO SHIRT|T SHIRT)\b/;
+      const CLOTHING_KEYWORDS = /\b(CLOTHING|APPAREL|GARMENT|TOP|BOTTOM|KIT|JERSEY|REPLICA|ANTHEM|WARM UP|WINDBREAKER|ANORAK|FLEECE|KNIT|WOVEN|MESH)\b/;
+
+      // ── Accessories indicators ──
+      const ACCESSORIES_KEYWORDS = /\b(BAG|BAGS|BALL|BALLS|TOWEL|TOWELS|BOTTLE|BOTTLES|SHIN|SHIN GUARD|SHIN PAD|SHINGUARD|GLOVE|GLOVES|CAP|CAPS|HAT|HATS|SCARF|SCARVES|BEANIE|BEANIES|HEADBAND|WRISTBAND|ARMBAND|SOCK|SOCKS|ANKLE SOCK|CREW SOCK|PROTECTOR|WATER BOTTLE|GYMSACK|GYM SACK|GYM BAG|BACKPACK|DUFFEL|DUFFLE|RUCKSACK|TEAM BAG|HOLDALL|WASHBAG|KEYRING|LANYARD|PENCIL CASE|WALLET|PURSE|WATCH|SUNGLASSES|BELT|STUD|STUDS|LACE|LACES|INSOLE|SHIN SOCK)\b/;
+
+      // ── Team / Country abbreviations → subcategory ──
+      const TEAM_MAP = {
+        "FFR": "France Rugby", "RFU": "England Rugby", "WRU": "Wales Rugby",
+        "SRU": "Scotland Rugby", "IRFU": "Ireland Rugby", "NZRU": "New Zealand Rugby",
+        "SARU": "South Africa Rugby", "ARU": "Australia Rugby",
+        "ALL BLACKS": "New Zealand Rugby", "SPRINGBOK": "South Africa Rugby",
+        "WALLABIES": "Australia Rugby", "LES BLEUS": "France Rugby",
+        "MUFC": "Manchester United", "MUFC ": "Manchester United",
+        "AFC": "Arsenal", "ARSENAL": "Arsenal",
+        "JUVE": "Juventus", "JUVENTUS": "Juventus",
+        "REAL MADRID": "Real Madrid", "RMCF": "Real Madrid",
+        "BAYERN": "Bayern Munich", "FCB": "Bayern Munich",
+        "MANCHESTER UNITED": "Manchester United",
+        "MANCHESTER UTD": "Manchester United",
+        "MAN UTD": "Manchester United", "MAN UNITED": "Manchester United",
+        "CHELSEA": "Chelsea", "CFC": "Chelsea",
+        "LIVERPOOL": "Liverpool", "LFC": "Liverpool",
+        "TOTTENHAM": "Tottenham", "SPURS": "Tottenham", "THFC": "Tottenham",
+        "LEICESTER": "Leicester",
+        "CELTIC": "Celtic", "RANGERS": "Rangers",
+        "BENFICA": "Benfica", "AJAX": "Ajax",
+      };
+
+      // ── Sport detection for subcategory ──
+      const SPORT_MAP = {
+        "RUGBY": "Rugby", "FOOTBALL": "Football", "SOCCER": "Football",
+        "TENNIS": "Tennis", "GOLF": "Golf", "RUNNING": "Running",
+        "BASKETBALL": "Basketball", "CRICKET": "Cricket",
+        "HOCKEY": "Hockey", "NETBALL": "Netball", "BOXING": "Boxing",
+        "SWIMMING": "Swimming", "GYM": "Training", "TRAINING": "Training",
+        "YOGA": "Yoga", "FITNESS": "Training", "OUTDOOR": "Outdoor",
+        "HIKING": "Outdoor", "TRAIL": "Outdoor",
+      };
+
+      // ── Step 1: Auto-assign category if missing or only gender ──
+      const isGenderOnly = /^(MENS?|WOMENS?|WOMEN|FEMALE|LADIES|JUNIOR|JUNIORS|KIDS|YOUTH|BOYS?|GIRLS?|UNISEX|INFANT|BABY|TODDLER)$/i.test(catUpper);
+      if (!catUpper || isGenderOnly) {
+        if (FOOTWEAR_MODELS.test(combined) || FOOTWEAR_STUDS.test(combined) || FOOTWEAR_KEYWORDS.test(combined)) {
+          productData.category = "FOOTWEAR";
+        } else if (ACCESSORIES_KEYWORDS.test(combined)) {
+          productData.category = "ACCESSORIES";
+        } else if (CLOTHING_ABBREVS.test(combined) || CLOTHING_KEYWORDS.test(combined)) {
+          productData.category = "CLOTHING";
+        } else {
+          // Default: if we truly can't tell, mark as CLOTHING (largest group)
+          productData.category = productData.category || "CLOTHING";
+        }
+      }
+
+      // ── Step 2: Auto-assign subcategory if missing ──
       if (!productData.subcategory) {
-        const lowerName = (name + " " + productData.description).toLowerCase();
-        if (/rugby/.test(lowerName)) {
-          productData.subcategory = "Rugby";
-        } else if (
-          /\bfootball\b|soccer|\bfc\b|\bf\.c\.|premier league|champions league/.test(
-            lowerName,
-          )
-        ) {
-          productData.subcategory = "Football";
-        } else if (
-          /\bboot\b|\bboots\b|\btrainer\b|\btrainers\b|\bshoe\b|\bshoes\b|footwear|sneaker|running/.test(
-            lowerName,
-          )
-        ) {
-          productData.subcategory = "Footwear";
+        // Check for team/country first (most specific)
+        for (const [key, subcat] of Object.entries(TEAM_MAP)) {
+          if (combined.includes(key)) {
+            productData.subcategory = subcat;
+            break;
+          }
+        }
+      }
+      if (!productData.subcategory) {
+        // Check for sport keywords
+        for (const [key, subcat] of Object.entries(SPORT_MAP)) {
+          const re = new RegExp(`\\b${key}\\b`);
+          if (re.test(combined)) {
+            productData.subcategory = subcat;
+            break;
+          }
+        }
+      }
+      if (!productData.subcategory) {
+        // Fallback: detect from category if it's a sport name
+        const catWord = catUpper.replace(/^(MENS?|WOMENS?|JUNIOR|KIDS)\s*/i, "").trim();
+        if (SPORT_MAP[catWord]) {
+          productData.subcategory = SPORT_MAP[catWord];
         }
       }
 
