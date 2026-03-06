@@ -225,7 +225,7 @@ export default function ProductPage() {
                         <span
                           className={`size-order-stock${outOfStock ? " zero" : ""}`}
                         >
-                          {outOfStock ? "Out of stock" : stock}
+                          {outOfStock ? "Sold Out" : stock}
                         </span>
                         <div className="size-order-qty">
                           {outOfStock ? (
