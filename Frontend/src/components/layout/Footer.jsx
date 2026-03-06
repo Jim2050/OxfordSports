@@ -19,10 +19,11 @@ export default function Footer() {
           <h4>Quick Links</h4>
           <div className="footer-links">
             <Link to="/">Home</Link>
-            <Link to="/rugby-category">Rugby Replica Clothing</Link>
-            <Link to="/football">Football Replica Clothing</Link>
-            <Link to="/footwear">adidas Footwear</Link>
-            <Link to="/under-5">Under £5</Link>
+            <Link to="/products?category=FOOTWEAR">Footwear</Link>
+            <Link to="/products?category=CLOTHING">Clothing</Link>
+            <Link to="/products?category=ACCESSORIES">Accessories</Link>
+            <Link to="/products?category=UNDER+%C2%A35">Under £5</Link>
+            <Link to="/products">All Products</Link>
             <Link to="/contact">Contact</Link>
           </div>
         </div>
