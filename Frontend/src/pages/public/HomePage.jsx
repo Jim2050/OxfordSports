@@ -1,35 +1,4 @@
 import { Link } from "react-router-dom";
-import CategoryTile from "../../components/categories/CategoryTile";
-
-const CATEGORIES = [
-  {
-    title: "Rugby Replica Clothing",
-    description:
-      "Authentic adidas rugby clearance stock. Brand new with tags at wholesale prices.",
-    to: "/rugby-category",
-    image: "https://placehold.co/600x300/1a1281/ffffff?text=Rugby",
-  },
-  {
-    title: "Football Replica Clothing",
-    description:
-      "Authentic adidas football club clearance stock. Brand new with tags at wholesale prices.",
-    to: "/football",
-    image: "https://placehold.co/600x300/1a1281/ffffff?text=Football",
-  },
-  {
-    title: "adidas Footwear",
-    description:
-      "Authentic adidas footwear clearance stock. Brand new with tags at wholesale prices.",
-    to: "/footwear",
-    image: "https://placehold.co/600x300/1a1281/ffffff?text=Footwear",
-  },
-  {
-    title: "Under £5",
-    description: "Incredible deals on branded sportswear all under £5.",
-    to: "/under-5",
-    image: "https://placehold.co/600x300/fd0808/ffffff?text=Under+%C2%A35",
-  },
-];
 
 export default function HomePage() {
   return (
@@ -53,21 +22,11 @@ export default function HomePage() {
           </div>
 
           <div className="hero-links">
-            <Link to="/rugby-category">Rugby Replica Clothing</Link>
-            <Link to="/football">Football Replica Clothing</Link>
-            <Link to="/footwear">adidas Footwear</Link>
-            <Link to="/under-5">Under £5</Link>
-          </div>
-        </div>
-      </section>
-
-      {/* Categories */}
-      <section className="section">
-        <div className="container">
-          <div className="category-grid">
-            {CATEGORIES.map((c) => (
-              <CategoryTile key={c.to} {...c} />
-            ))}
+            <Link to="/products?category=FOOTWEAR">Footwear</Link>
+            <Link to="/products?category=CLOTHING">Clothing</Link>
+            <Link to="/products?category=ACCESSORIES">Accessories</Link>
+            <Link to="/products?category=UNDER+%C2%A35">Under £5</Link>
+            <Link to="/products">Shop All</Link>
           </div>
         </div>
       </section>

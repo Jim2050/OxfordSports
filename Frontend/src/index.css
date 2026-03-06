@@ -130,6 +130,35 @@ ol {
   background: #0a1f42;
 }
 
+/* ── ORDER THIS ITEM — red CTA (#13 / #19) ── */
+.btn-order-item {
+  display: block;
+  width: 100%;
+  text-align: center;
+  padding: 0.7rem 1rem;
+  background: var(--accent);
+  color: #fff;
+  font-size: 0.85rem;
+  font-weight: 800;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+  border: none;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: var(--transition);
+  text-decoration: none;
+  margin-top: auto;
+}
+.btn-order-item:hover {
+  background: #d40707;
+  transform: translateY(-1px);
+}
+.btn-order-item.disabled {
+  background: #9ca3af;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
 .btn-lg {
   padding: 0.85rem 2rem;
   font-size: 1.05rem;
@@ -465,6 +494,11 @@ ol {
   box-shadow: var(--shadow-lg);
 }
 
+.product-card-img-wrap {
+  position: relative;
+  display: block;
+}
+
 .product-card-img {
   width: 100%;
   height: 260px;
@@ -494,6 +528,13 @@ ol {
   letter-spacing: 0.3px;
 }
 
+.product-brand {
+  font-size: 0.8rem;
+  color: #6b7280;
+  margin-bottom: 0.15rem;
+  font-weight: 500;
+}
+
 /* ── Product Info Tags (SKU + Gender pills) ── */
 .product-info-tags {
   display: flex;
@@ -510,18 +551,9 @@ ol {
   border-radius: 3px;
   letter-spacing: 0.3px;
   text-transform: uppercase;
-}
-
-.info-tag-sku {
-  background: #f3f4f6;
-  color: #4b5563;
-  border: 1px solid #e5e7eb;
-}
-
-.info-tag-gender {
-  background: #eff6ff;
-  color: #1d4ed8;
-  border: 1px solid #bfdbfe;
+  background: #eef2ff;
+  color: var(--primary);
+  border: 1px solid #c7d2fe;
 }
 
 .product-card-body .description {
@@ -548,6 +580,15 @@ ol {
   gap: 0.15rem;
 }
 
+/* ── Price Line — all on one row (R3 / R6 / #10) ── */
+.price-line {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-bottom: 0.35rem;
+}
+
 .price {
   font-size: 1.2rem;
   font-weight: 800;
@@ -564,12 +605,12 @@ ol {
   margin-left: 0.4rem;
 }
 
-/* ========== Discount Badge (Product Card overlay) ========== */
+/* ========== Discount Badge (Product Card overlay) — dark blue (R3) ========== */
 .discount-badge {
   position: absolute;
   top: 10px;
   left: 10px;
-  background: var(--accent);
+  background: #0f2d5c;
   color: #fff;
   font-size: 0.72rem;
   font-weight: 800;
@@ -577,16 +618,29 @@ ol {
   border-radius: 4px;
   z-index: 2;
   letter-spacing: 0.3px;
-  box-shadow: 0 2px 6px rgba(253, 8, 8, 0.25);
+  box-shadow: 0 2px 6px rgba(15, 45, 92, 0.3);
 }
 
-/* ========== Sizes Preview (Product Card) ========== */
+/* ========== Sizes Section (Product Card) — R7 / #12 ========== */
+.sizes-section {
+  margin-bottom: 0.5rem;
+}
+
+.sizes-header {
+  display: block;
+  font-size: 0.76rem;
+  font-weight: 700;
+  color: #0f2d5c;
+  margin-bottom: 0.3rem;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+
 .sizes-preview {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 0.3rem;
-  margin-bottom: 0.5rem;
 }
 
 .sizes-label {
@@ -619,11 +673,11 @@ ol {
   border-color: var(--primary);
 }
 
-/* ========== Stock Info ========== */
+/* ========== Stock Info — dark blue (R4) ========== */
 .stock-info {
   font-size: 0.78rem;
   font-weight: 600;
-  color: #059669;
+  color: #0f2d5c;
   margin-bottom: 0.5rem;
 }
 
@@ -640,10 +694,9 @@ ol {
   font-size: 0.68rem;
   font-weight: 700;
   color: #fff;
-  background: #059669;
+  background: #0f2d5c;
   padding: 0.1rem 0.4rem;
   border-radius: 3px;
-  margin-left: 0.35rem;
   vertical-align: middle;
 }
 
