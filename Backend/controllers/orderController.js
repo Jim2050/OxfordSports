@@ -25,8 +25,8 @@ exports.placeOrder = async (req, res) => {
     const stockUpdates = []; // bulk ops to deduct stock
 
     // ── MOQ thresholds (must match frontend api.js) ──
-    const FOOTWEAR_THRESHOLD = 12;
-    const DEFAULT_THRESHOLD = 50;
+    const FOOTWEAR_THRESHOLD = 24;
+    const DEFAULT_THRESHOLD = 100;
     const MIN_ORDER_TOTAL = 300;
 
     for (const item of items) {

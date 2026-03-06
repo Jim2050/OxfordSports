@@ -146,7 +146,7 @@ export default function ProductCard({ product }) {
 
         {/* ── MOQ info ── */}
         {totalQty > 0 && mustBuyAll && (
-          <p className="moq-badge">Must buy all {totalQty} units</p>
+          <p className="moq-badge">Must buy all {totalQty} {totalQty === 1 ? "unit" : "units"}</p>
         )}
         {totalQty > 0 && !mustBuyAll && totalQty >= threshold && (
           <p className="moq-info">Min order: individual sizes selectable</p>
