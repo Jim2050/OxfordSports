@@ -27,22 +27,19 @@ export default function ProductCard({ product }) {
   const { addToCart, isInCart, openDrawer } = useCart();
   const productSizes = getSizes(product);
   const hasSizes = productSizes.length > 0;
-  const needsSizeSelection =
-    hasSizes &&
-    !(productSizes.length === 1 && productSizes[0].size === "ONE SIZE");
 
   const [added, setAdded] = useState(false);
 
-  const handleAdd = (e) => {
+  /* Heart click → quick-add first available size to cart */
+  const handleHeartClick = (e) => {
     e.preventDefault();
     e.stopPropagation();
+    if (!hasSizes || totalQty === 0) return;
 
-    if (needsSizeSelection) {
-      window.location.href = detailUrl;
-      return;
-    }
+    const firstAvail = productSizes.find((s) => s.quantity > 0);
+    if (!firstAvail) return;
 
-    addToCart(product, productSizes[0]?.size || "", 1);
+    addToCart(product, firstAvail.size, 1);
     setAdded(true);
     toast.success(`${product.name} added to cart`);
     setTimeout(() => setAdded(false), 1200);
@@ -54,21 +51,44 @@ export default function ProductCard({ product }) {
     openDrawer();
   };
 
-  const alreadyInCart =
-    !needsSizeSelection && isInCart(product.sku, productSizes[0]?.size || "");
+  const firstSize =
+    productSizes.find((s) => s.quantity > 0)?.size ||
+    productSizes[0]?.size ||
+    "";
+  const alreadyInCart = isInCart(product.sku, firstSize);
 
-  // Derive gender from product name/description/category
+  /* Derive gender from product fields */
   const genderLabel = (() => {
-    const text = `${product.name || ""} ${product.description || ""} ${product.category || ""} ${product.subcategory || ""}`.toLowerCase();
-    if (text.includes("women") || text.includes("ladies") || text.includes("wmns") || text.includes("female")) return "Women's";
-    if (text.includes("kids") || text.includes("junior") || text.includes("youth") || text.includes("children") || text.includes("infant")) return "Kids";
-    if (text.includes("men") || text.includes("male") || text.includes("adult")) return "Men's";
+    const text =
+      `${product.name || ""} ${product.description || ""} ${product.category || ""} ${product.subcategory || ""}`.toLowerCase();
+    if (
+      text.includes("women") ||
+      text.includes("ladies") ||
+      text.includes("wmns") ||
+      text.includes("female")
+    )
+      return "Women's";
+    if (
+      text.includes("kids") ||
+      text.includes("junior") ||
+      text.includes("youth") ||
+      text.includes("children") ||
+      text.includes("infant")
+    )
+      return "Kids";
+    if (
+      text.includes("men") ||
+      text.includes("male") ||
+      text.includes("adult")
+    )
+      return "Men's";
     return null;
   })();
 
   return (
     <div className="product-card">
-      <Link to={detailUrl} style={{ position: "relative", display: "block" }}>
+      {/* ── Image area — NO link wrapper (R9 / #12) ── */}
+      <div className="product-card-img-wrap">
         {discount > 0 && (
           <span className="discount-badge">{discount}% OFF</span>
         )}
@@ -84,95 +104,81 @@ export default function ProductCard({ product }) {
         />
         <button
           className={`card-heart-btn${added ? " added" : ""}${alreadyInCart ? " in-cart" : ""}`}
-          onClick={alreadyInCart ? handleCartClick : handleAdd}
-          title={
-            needsSizeSelection
-              ? "Select size first"
-              : alreadyInCart
-                ? "View cart"
-                : "Add to cart"
-          }
+          onClick={alreadyInCart ? handleCartClick : handleHeartClick}
+          title={alreadyInCart ? "View cart" : "Add to cart"}
+          disabled={totalQty === 0}
         >
           {alreadyInCart ? "✓" : "♡"}
         </button>
-        {totalQty === 0 && (
-          <span className="sold-out-badge">Sold Out</span>
-        )}
-      </Link>
+        {totalQty === 0 && <span className="sold-out-badge">Sold Out</span>}
+      </div>
+
       <div className="product-card-body">
+        {/* Product name — still a link for accessibility */}
         <Link
           to={detailUrl}
           style={{ color: "inherit", textDecoration: "none" }}
         >
           <h3>{product.name}</h3>
         </Link>
-        {product.brand && (
-          <p
-            className="sku"
-            style={{
-              color: "#6b7280",
-              fontSize: "0.8rem",
-              marginBottom: "0.15rem",
-            }}
-          >
-            {product.brand}
-          </p>
-        )}
+
+        {product.brand && <p className="product-brand">{product.brand}</p>}
+
+        {/* ── Info tags — ALL same colour (R2 / R5 / #11) ── */}
         <div className="product-info-tags">
-          {product.sku && <span className="info-tag info-tag-sku">{product.sku}</span>}
-          {genderLabel && <span className="info-tag info-tag-gender">{genderLabel}</span>}
+          {product.sku && <span className="info-tag">{product.sku}</span>}
+          {genderLabel && <span className="info-tag">{genderLabel}</span>}
+          {product.color && <span className="info-tag">{product.color}</span>}
         </div>
-        {product.color && (
-          <p className="sku" style={{ color: "#6b7280" }}>
-            {product.color}
-          </p>
-        )}
-        {hasSizes && needsSizeSelection && (
-          <div className="sizes-preview">
-            <span className="sizes-label">Sizes:</span>
-            {productSizes.slice(0, 8).map((s) => (
-              <span
-                key={s.size}
-                className={`size-tag${s.quantity === 0 ? " out-of-stock" : ""}`}
-                title={
-                  s.quantity > 0 ? `${s.quantity} available` : "Sold Out"
-                }
-              >
-                {s.size}
-                {s.quantity > 0 ? ` (${s.quantity})` : ""}
-              </span>
-            ))}
-            {productSizes.length > 8 && (
-              <span className="size-tag more">+{productSizes.length - 8}</span>
-            )}
+
+        {/* ── Available Sizes (R7 / #12) ── */}
+        {hasSizes && (
+          <div className="sizes-section">
+            <span className="sizes-header">
+              Available Sizes ({totalQty}{" "}
+              {totalQty === 1 ? "unit" : "units"})
+            </span>
+            <div className="sizes-preview">
+              {productSizes.slice(0, 10).map((s) => (
+                <span
+                  key={s.size}
+                  className={`size-tag${s.quantity === 0 ? " out-of-stock" : ""}`}
+                >
+                  {s.size}
+                  {s.quantity > 0 ? `(${s.quantity})` : ""}
+                </span>
+              ))}
+              {productSizes.length > 10 && (
+                <span className="size-tag more">
+                  +{productSizes.length - 10}
+                </span>
+              )}
+            </div>
           </div>
         )}
+
+        {/* ── Price line — all on ONE row (R3 / R6 / #10) ── */}
+        <div className="price-line">
+          <span className="price">£{finalPrice.toFixed(2)}</span>
+          {showRrp && (
+            <span className="price-rrp">RRP: £{rrp.toFixed(2)}</span>
+          )}
+          {discount > 0 && (
+            <span className="price-discount">{discount}% OFF</span>
+          )}
+          {isUnder5 && <span className="price-under5">UNDER £5</span>}
+        </div>
+
+        {/* ── Stock info — dark blue (R4) ── */}
         {totalQty > 0 && <p className="stock-info">{totalQty} in stock</p>}
-        <div className="product-card-footer">
-          <div className="price-display">
-            <span className="price">£{finalPrice.toFixed(2)}</span>
-            {showRrp && (
-              <span className="price-rrp">RRP: £{rrp.toFixed(2)}</span>
-            )}
-            {discount > 0 && (
-              <span className="price-discount">{discount}% OFF</span>
-            )}
-            {isUnder5 && <span className="price-under5">UNDER £5</span>}
-          </div>
-          <button
-            className={`btn btn-sm ${needsSizeSelection ? "btn-buynow" : "btn-accent"}`}
-            onClick={alreadyInCart ? handleCartClick : handleAdd}
-            disabled={totalQty === 0 && !alreadyInCart}
-          >
-            {totalQty === 0
-              ? "Sold Out"
-              : needsSizeSelection
-                ? "Buy Now"
-                : alreadyInCart
-                  ? "In Cart ✓"
-                  : "Add to Cart"}
-          </button>
-        </div>
+
+        {/* ── ORDER THIS ITEM — RED button (R10 / #13 / #19) ── */}
+        <Link
+          to={detailUrl}
+          className={`btn btn-order-item${totalQty === 0 ? " disabled" : ""}`}
+        >
+          {totalQty === 0 ? "SOLD OUT" : "ORDER THIS ITEM"}
+        </Link>
       </div>
     </div>
   );

@@ -7,20 +7,25 @@ import { useCart } from "../../context/CartContext";
 // Pages that don't require authentication
 const PUBLIC_PATHS = new Set(["/", "/contact", "/register"]);
 
+const isPublicPath = (to) => {
+  const path = to.split("?")[0];
+  return PUBLIC_PATHS.has(path);
+};
+
 export default function Header() {
   const [open, setOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
-  const { pathname } = useLocation();
+  const { pathname, search } = useLocation();
   const navigate = useNavigate();
   const { isAuthenticated, user, logout } = useAuth();
   const { itemCount, openDrawer } = useCart();
 
   const links = [
     { to: "/", label: "Home" },
-    { to: "/rugby-category", label: "Rugby" },
-    { to: "/football", label: "Football" },
-    { to: "/footwear", label: "Footwear" },
-    { to: "/under-5", label: "Under £5" },
+    { to: "/products?category=FOOTWEAR", label: "Footwear" },
+    { to: "/products?category=CLOTHING", label: "Clothing" },
+    { to: "/products?category=ACCESSORIES", label: "Accessories" },
+    { to: "/products?category=UNDER+%C2%A35", label: "Under £5" },
     { to: "/products", label: "All Products" },
     { to: "/contact", label: "Contact" },
   ];
@@ -38,7 +43,7 @@ export default function Header() {
    */
   const handleNavClick = (e, to) => {
     setOpen(false);
-    if (!isAuthenticated && !PUBLIC_PATHS.has(to)) {
+    if (!isAuthenticated && !isPublicPath(to)) {
       e.preventDefault();
       toast("Please sign in to access wholesale pages", { icon: "🔒" });
       navigate("/register", { state: { from: to } });
@@ -86,7 +91,11 @@ export default function Header() {
             <Link
               key={l.to}
               to={l.to}
-              className={pathname === l.to ? "active" : ""}
+              className={
+                l.to.includes("?")
+                  ? pathname + search === l.to ? "active" : ""
+                  : pathname === l.to ? "active" : ""
+              }
               onClick={(e) => handleNavClick(e, l.to)}
             >
               {l.label}
