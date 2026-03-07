@@ -144,76 +144,117 @@ export default function AdminPage() {
       toast.error(`File rejected: ${reasons}`);
       return;
     }
-    const file = accepted[0];
-    if (!file) return;
-    setUploading(true);
-    setProgress(0);
-    setServerProcessing(false);
-    setImageResult(null);
-    try {
-      const res = await uploadImages(file, (e) => {
-        if (e.total) {
-          const pct = Math.round((e.loaded * 100) / e.total);
-          setProgress(pct);
-          if (pct >= 100) setServerProcessing(true);
-        }
-      });
+    if (!accepted?.length) return;
 
-      // If backend returned a jobId, poll for progress
-      if (res.jobId) {
-        toast.success(`Processing ${res.total} images in the background…`);
-        const jobId = res.jobId;
-        const poll = setInterval(async () => {
-          try {
-            const status = await getImageUploadStatus(jobId);
-            setProgress(status.percent || 0);
-            setImageResult({
-              matched: status.matched,
-              unmatched: status.unmatched,
-              errors: status.errors,
-              unmatchedFiles: status.unmatchedFiles,
-              total: status.total,
-              processed: status.processed,
-              status: status.status,
-            });
+    // If a single ZIP file, use the existing flow
+    const isZip = accepted.length === 1 && accepted[0].name.toLowerCase().endsWith(".zip");
+    if (isZip) {
+      const file = accepted[0];
+      setUploading(true);
+      setProgress(0);
+      setServerProcessing(false);
+      setImageResult(null);
+      try {
+        const res = await uploadImages(file, (e) => {
+          if (e.total) {
+            const pct = Math.round((e.loaded * 100) / e.total);
+            setProgress(pct);
+            if (pct >= 100) setServerProcessing(true);
+          }
+        });
 
-            if (status.status === "complete" || status.status === "failed") {
+        // If backend returned a jobId, poll for progress
+        if (res.jobId) {
+          toast.success(`Processing ${res.total} images in the background…`);
+          const jobId = res.jobId;
+          const poll = setInterval(async () => {
+            try {
+              const status = await getImageUploadStatus(jobId);
+              setProgress(status.percent || 0);
+              setImageResult({
+                matched: status.matched,
+                unmatched: status.unmatched,
+                errors: status.errors,
+                unmatchedFiles: status.unmatchedFiles,
+                total: status.total,
+                processed: status.processed,
+                status: status.status,
+              });
+
+              if (status.status === "complete" || status.status === "failed") {
+                clearInterval(poll);
+                setUploading(false);
+                setProgress(0);
+                setServerProcessing(false);
+                if (status.status === "complete") {
+                  toast.success(`Done! ${status.matched} images matched to products.`);
+                } else {
+                  toast.error("Image processing failed. Check errors below.");
+                }
+                loadProducts();
+                loadStats();
+              }
+            } catch {
               clearInterval(poll);
               setUploading(false);
               setProgress(0);
               setServerProcessing(false);
-              if (status.status === "complete") {
-                toast.success(`Done! ${status.matched} images matched to products.`);
-              } else {
-                toast.error("Image processing failed. Check errors below.");
-              }
-              loadProducts();
-              loadStats();
             }
-          } catch {
-            clearInterval(poll);
-            setUploading(false);
-            setProgress(0);
-            setServerProcessing(false);
-          }
-        }, 3000); // Poll every 3 seconds
-      } else {
-        // Small batch — result returned directly
-        setImageResult(res);
-        toast.success(`${res.matched ?? 0} images matched to products.`);
+          }, 3000);
+        } else {
+          setImageResult(res);
+          toast.success(`${res.matched ?? 0} images matched to products.`);
+          setUploading(false);
+          setProgress(0);
+          setServerProcessing(false);
+          loadProducts();
+          loadStats();
+        }
+      } catch (err) {
+        const msg = err?.response?.data?.error || "Image upload failed.";
+        toast.error(msg);
         setUploading(false);
         setProgress(0);
         setServerProcessing(false);
-        loadProducts();
-        loadStats();
       }
-    } catch (err) {
-      const msg = err?.response?.data?.error || "Image upload failed.";
-      toast.error(msg);
-      setUploading(false);
-      setProgress(0);
-      setServerProcessing(false);
+      return;
     }
+
+    // Multiple individual images — upload one by one
+    setUploading(true);
+    setProgress(0);
+    setServerProcessing(false);
+    setImageResult(null);
+    let totalMatched = 0;
+    let totalUnmatched = 0;
+    const allUnmatchedFiles = [];
+    const allErrors = [];
+
+    for (let i = 0; i < accepted.length; i++) {
+      try {
+        const res = await uploadImages(accepted[i], () => {});
+        totalMatched += res.matched ?? 0;
+        totalUnmatched += res.unmatched ?? 0;
+        if (res.unmatchedFiles) allUnmatchedFiles.push(...res.unmatchedFiles);
+        if (res.errors) allErrors.push(...res.errors);
+      } catch {
+        allErrors.push(accepted[i].name);
+      }
+      setProgress(Math.round(((i + 1) / accepted.length) * 100));
+    }
+
+    setImageResult({
+      matched: totalMatched,
+      unmatched: totalUnmatched,
+      errors: allErrors,
+      unmatchedFiles: allUnmatchedFiles,
+      total: accepted.length,
+    });
+    toast.success(`${totalMatched} of ${accepted.length} images matched to products.`);
+    setUploading(false);
+    setProgress(0);
+    loadProducts();
+    loadStats();
   }, []);
 
   const imageZone = useDropzone({
@@ -223,9 +264,12 @@ export default function AdminPage() {
       "application/x-zip-compressed": [".zip"],
       "application/x-zip": [".zip"],
       "application/octet-stream": [".zip"],
+      "image/jpeg": [".jpg", ".jpeg"],
+      "image/png": [".png"],
+      "image/webp": [".webp"],
     },
     maxSize: 100 * 1024 * 1024, // 100 MB
-    multiple: false,
+    multiple: true,
     disabled: uploading,
   });
 
@@ -717,7 +761,7 @@ export default function AdminPage() {
           <div className="admin-card">
             <h3>Bulk Image Upload (ZIP)</h3>
             <p className="admin-hint">
-              Upload a <strong>.zip</strong> file containing product images.
+              Upload a <strong>.zip</strong> archive or drag individual images.
               Name each file with the product SKU — e.g. <code>GK5757.jpg</code>, <code>FY6503.png</code>.
               The system matches filenames to existing products automatically (case-insensitive).
             </p>
@@ -735,10 +779,10 @@ export default function AdminPage() {
                     : "⏳ Matching images to products & uploading to cloud…"
                   : uploading
                     ? `Uploading… ${progress}%`
-                    : "Drop your .zip image archive here, or click to browse"}
+                    : "Drop .zip archive or images here, or click to browse"}
               </p>
               <span className="dropzone-hint">
-                Supports .jpg, .png, .webp inside a .zip file — up to 100 MB
+                Supports .zip archive or individual .jpg, .png, .webp images — up to 100 MB
               </span>
             </div>
 

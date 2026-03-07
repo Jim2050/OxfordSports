@@ -8,7 +8,6 @@ import {
   getTotalQuantity,
   getSizes,
   getMOQInfo,
-  getProRata,
 } from "../../api/api";
 import { useCart } from "../../context/CartContext";
 
@@ -144,18 +143,7 @@ export default function ProductCard({ product }) {
           {product.color && <span className="info-tag">{product.color}</span>}
         </div>
 
-        {/* ── MOQ info ── */}
-        {totalQty > 0 && mustBuyAll && (
-          <p className="moq-badge">Must buy all {totalQty} {totalQty === 1 ? "unit" : "units"}</p>
-        )}
-        {totalQty > 0 && !mustBuyAll && totalQty >= threshold && (
-          <p className="moq-info">Min order: individual sizes selectable</p>
-        )}
 
-        {/* ── Pro rata ── */}
-        {proRata > 0 && (
-          <p className="pro-rata">Avg. {proRata} per size</p>
-        )}
 
         {/* ── Available Sizes (R7 / #12) ── */}
         {hasSizes && (
@@ -198,13 +186,25 @@ export default function ProductCard({ product }) {
         {/* ── Stock info — dark blue (R4) ── */}
         {totalQty > 0 && <p className="stock-info">{totalQty} in stock</p>}
 
-        {/* ── ORDER THIS ITEM — RED button (R10 / #13 / #19) ── */}
-        <Link
-          to={detailUrl}
-          className={`btn btn-order-item${totalQty === 0 ? " disabled" : ""}`}
-        >
-          {totalQty === 0 ? "SOLD OUT" : "ORDER THIS ITEM"}
-        </Link>
+        {/* ── ORDER THIS ITEM + Heart (R10 / #13 / #19) ── */}
+        <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
+          <Link
+            to={detailUrl}
+            className={`btn btn-order-item${totalQty === 0 ? " disabled" : ""}`}
+            style={{ flex: 1 }}
+          >
+            {totalQty === 0 ? "SOLD OUT" : "ORDER THIS ITEM"}
+          </Link>
+          {totalQty > 0 && (
+            <button
+              className={`btn-wishlist${added ? " added" : ""}${alreadyInCart ? " in-cart" : ""}`}
+              onClick={alreadyInCart ? handleCartClick : handleHeartClick}
+              title={alreadyInCart ? "View cart" : "Add to cart"}
+            >
+              {alreadyInCart ? "✓" : "♡"}
+            </button>
+          )}
+        </div>
       </div>
     </div>
   );

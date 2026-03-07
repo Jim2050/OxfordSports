@@ -8,7 +8,6 @@ import {
   getTotalQuantity,
   getSizes,
   getMOQInfo,
-  getProRata,
 } from "../../api/api";
 import { useCart } from "../../context/CartContext";
 import API from "../../api/axiosInstance";
@@ -19,13 +18,13 @@ export default function ProductPage() {
   const { sku } = useParams();
   const [product, setProduct] = useState(null);
   const [loading, setLoading] = useState(true);
-  // Multi-size order: { [size]: qty }
-  const [sizeQtys, setSizeQtys] = useState({});
+  // Total qty the customer wants to order
+  const [orderQty, setOrderQty] = useState(1);
   const { addToCart, isInCart, openDrawer } = useCart();
 
   useEffect(() => {
     setLoading(true);
-    setSizeQtys({});
+    setOrderQty(1);
     API.get(`/products/${encodeURIComponent(sku)}`)
       .then((r) => setProduct(r.data))
       .catch(() => setProduct(null))
@@ -74,63 +73,34 @@ export default function ProductPage() {
   const hasSizes = productSizes.length > 0;
   const isOneSize =
     productSizes.length === 1 && productSizes[0].size === "ONE SIZE";
-  const { mustBuyAll, threshold } = getMOQInfo(product);
-  const proRata = getProRata(product);
+  const { mustBuyAll } = getMOQInfo(product);
 
-  // Total items selected across all sizes
-  const totalSelected = Object.values(sizeQtys).reduce((sum, q) => sum + q, 0);
+  // Check if any variant is in cart
+  const anySizeInCart = productSizes.some((s) => isInCart(product.sku, s.size));
 
-  const updateSizeQty = (size, val) => {
-    setSizeQtys((prev) => {
-      const next = { ...prev };
-      if (val <= 0) {
-        delete next[size];
-      } else {
-        next[size] = val;
-      }
-      return next;
-    });
-  };
-
-  const handleAddAllToCart = () => {
-    // mustBuyAll → add entire lot (all sizes, all qty)
+  /**
+   * Add to cart handler:
+   * - mustBuyAll → buy entire lot, all sizes, all quantities (no editing)
+   * - otherwise  → user picks a total qty, sizes distributed by pro rata on backend
+   */
+  const handleAddToCart = () => {
     if (mustBuyAll) {
+      // Add every size at its full quantity, mark as lot item
       productSizes.forEach((s) => {
-        if (s.quantity > 0) addToCart(product, s.size, s.quantity);
+        if (s.quantity > 0) addToCart(product, s.size, s.quantity, true);
       });
       toast.success(`Entire lot of ${product.name} added to cart!`);
       return;
     }
 
-    if (hasSizes && !isOneSize && totalSelected === 0) {
-      toast.error("Select at least one size and quantity.");
+    // Single total-qty ordering  
+    if (orderQty <= 0) {
+      toast.error("Enter a quantity.");
       return;
     }
-
-    if (isOneSize || !hasSizes) {
-      const oneQty = sizeQtys["ONE SIZE"] || sizeQtys[""] || 1;
-      addToCart(product, productSizes[0]?.size || "", oneQty);
-      toast.success(`${product.name} added to cart!`);
-      return;
-    }
-
-    // Add each selected size to cart
-    let addedCount = 0;
-    for (const [size, q] of Object.entries(sizeQtys)) {
-      if (q > 0) {
-        addToCart(product, size, q);
-        addedCount++;
-      }
-    }
-    if (addedCount > 0) {
-      toast.success(
-        `${addedCount} size${addedCount > 1 ? "s" : ""} of ${product.name} added to cart!`,
-      );
-    }
+    addToCart(product, isOneSize ? productSizes[0].size : "", orderQty);
+    toast.success(`${orderQty} × ${product.name} added to cart!`);
   };
-
-  // Check if any variant is in cart
-  const anySizeInCart = productSizes.some((s) => isInCart(product.sku, s.size));
 
   return (
     <>
@@ -199,138 +169,47 @@ export default function ProductPage() {
               </p>
             )}
 
-            {/* ── MOQ notice ── */}
-            {totalQty > 0 && mustBuyAll && (
-              <div className="moq-notice">
-                <strong>Wholesale lot:</strong> This item has fewer than {threshold} units
-                and must be purchased as a complete lot ({totalQty} units).
-              </div>
-            )}
-
-            {/* ── Pro rata ── */}
-            {proRata > 0 && hasSizes && !isOneSize && (
-              <p style={{ color: "#6b7280", fontSize: "0.85rem", marginBottom: "1rem" }}>
-                Pro rata: avg. <strong>{proRata}</strong> units per size
-              </p>
-            )}
-
             {product.description && (
               <p style={{ marginBottom: "1.5rem", lineHeight: 1.7 }}>
                 {product.description}
               </p>
             )}
 
-            {/* ── Multi-size order grid (TASK 5 — Wholesale Grouping View) ── */}
-            {hasSizes && !isOneSize && !mustBuyAll ? (
-              <div className="size-order-section">
-                <strong
-                  style={{
-                    display: "block",
-                    marginBottom: "0.75rem",
-                    fontSize: "1.05rem",
-                  }}
-                >
-                  Select Sizes &amp; Quantities:
-                </strong>
-                <div className="size-order-grid">
-                  <div className="size-order-header">
-                    <span>Size</span>
-                    <span>Available</span>
-                    <span>Order Qty</span>
-                  </div>
-                  {productSizes.map((s) => {
-                    const stock = s.quantity || 0;
-                    const outOfStock = stock === 0;
-                    const currentQty = sizeQtys[s.size] || 0;
-                    const inCartForSize = isInCart(product.sku, s.size);
-
-                    return (
-                      <div
-                        key={s.size}
-                        className={`size-order-row${outOfStock ? " out-of-stock" : ""}${currentQty > 0 ? " selected" : ""}${inCartForSize ? " in-cart" : ""}`}
-                      >
-                        <span className="size-order-label">{s.size}</span>
-                        <span
-                          className={`size-order-stock${outOfStock ? " zero" : ""}`}
-                        >
-                          {outOfStock ? "Sold Out" : stock}
-                        </span>
-                        <div className="size-order-qty">
-                          {outOfStock ? (
-                            <span
-                              style={{ color: "#9ca3af", fontSize: "0.85rem" }}
-                            >
-                              —
-                            </span>
-                          ) : (
-                            <>
-                              <button
-                                className="cart-qty-btn"
-                                onClick={() =>
-                                  updateSizeQty(
-                                    s.size,
-                                    Math.max(0, currentQty - 1),
-                                  )
-                                }
-                                disabled={currentQty <= 0}
-                              >
-                                −
-                              </button>
-                              <input
-                                type="number"
-                                min="0"
-                                max={stock > 0 ? stock : 9999}
-                                value={currentQty}
-                                onChange={(e) => {
-                                  const v = parseInt(e.target.value) || 0;
-                                  updateSizeQty(
-                                    s.size,
-                                    stock > 0
-                                      ? Math.min(v, stock)
-                                      : Math.max(0, v),
-                                  );
-                                }}
-                                className="qty-input-sm"
-                              />
-                              <button
-                                className="cart-qty-btn"
-                                onClick={() =>
-                                  updateSizeQty(
-                                    s.size,
-                                    stock > 0
-                                      ? Math.min(currentQty + 1, stock)
-                                      : currentQty + 1,
-                                  )
-                                }
-                                disabled={stock > 0 && currentQty >= stock}
-                              >
-                                +
-                              </button>
-                              {inCartForSize && (
-                                <span className="in-cart-badge">In Cart</span>
-                              )}
-                            </>
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })}
+            {/* ── Sizes at a glance (read-only) ── */}
+            {hasSizes && !isOneSize && (
+              <div className="sizes-section" style={{ marginBottom: "1rem" }}>
+                <span className="sizes-header">
+                  Available Sizes ({totalQty} units)
+                </span>
+                <div className="sizes-preview">
+                  {productSizes.map((s) => (
+                    <span
+                      key={s.size}
+                      className={`size-tag${s.quantity === 0 ? " out-of-stock" : ""}`}
+                    >
+                      {s.size}
+                      {s.quantity > 0 ? ` (${s.quantity})` : ""}
+                    </span>
+                  ))}
                 </div>
-                {totalSelected > 0 && (
-                  <p
-                    style={{
-                      marginTop: "0.75rem",
-                      fontWeight: 600,
-                      color: "#1a1281",
-                    }}
-                  >
-                    {totalSelected} item{totalSelected > 1 ? "s" : ""} selected
-                    — £{(totalSelected * finalPrice).toFixed(2)} subtotal
-                  </p>
-                )}
+              </div>
+            )}
+
+            {/* ── Order section ── */}
+            {mustBuyAll ? (
+              /* Lot item — single "Buy Entire Lot" button, no qty editing */
+              <div style={{ marginBottom: "1.5rem" }}>
+                <p style={{
+                  color: "#0f2d5c",
+                  fontWeight: 600,
+                  fontSize: "0.95rem",
+                  marginBottom: "0.75rem",
+                }}>
+                  This item is sold as a complete lot ({totalQty} units).
+                </p>
               </div>
             ) : (
-              /* One-size or no-size products: simple quantity picker */
+              /* Normal item — total quantity picker only */
               <div
                 style={{
                   marginBottom: "1.5rem",
@@ -343,16 +222,8 @@ export default function ProductPage() {
                 <div className="qty-selector">
                   <button
                     className="cart-qty-btn"
-                    onClick={() =>
-                      updateSizeQty(
-                        productSizes[0]?.size || "",
-                        Math.max(
-                          1,
-                          (sizeQtys[productSizes[0]?.size || ""] || 1) - 1,
-                        ),
-                      )
-                    }
-                    disabled={(sizeQtys[productSizes[0]?.size || ""] || 1) <= 1}
+                    onClick={() => setOrderQty((q) => Math.max(1, q - 1))}
+                    disabled={orderQty <= 1}
                   >
                     −
                   </button>
@@ -360,29 +231,21 @@ export default function ProductPage() {
                     type="number"
                     min="1"
                     max={totalQty > 0 ? totalQty : 9999}
-                    value={sizeQtys[productSizes[0]?.size || ""] || 1}
+                    value={orderQty}
                     onChange={(e) => {
                       const v = parseInt(e.target.value) || 1;
-                      updateSizeQty(
-                        productSizes[0]?.size || "",
-                        totalQty > 0 ? Math.min(v, totalQty) : Math.max(1, v),
-                      );
+                      setOrderQty(totalQty > 0 ? Math.min(v, totalQty) : Math.max(1, v));
                     }}
                     className="qty-input"
                   />
                   <button
                     className="cart-qty-btn"
-                    onClick={() => {
-                      const cur = sizeQtys[productSizes[0]?.size || ""] || 1;
-                      updateSizeQty(
-                        productSizes[0]?.size || "",
-                        totalQty > 0 ? Math.min(cur + 1, totalQty) : cur + 1,
-                      );
-                    }}
-                    disabled={
-                      totalQty > 0 &&
-                      (sizeQtys[productSizes[0]?.size || ""] || 1) >= totalQty
+                    onClick={() =>
+                      setOrderQty((q) =>
+                        totalQty > 0 ? Math.min(q + 1, totalQty) : q + 1,
+                      )
                     }
+                    disabled={totalQty > 0 && orderQty >= totalQty}
                   >
                     +
                   </button>
@@ -406,14 +269,12 @@ export default function ProductPage() {
             >
               <button
                 className="btn btn-accent btn-lg"
-                onClick={handleAddAllToCart}
+                onClick={handleAddToCart}
                 disabled={totalQty === 0}
               >
                 {mustBuyAll
                   ? `Buy Entire Lot (${totalQty} units) — £${(totalQty * finalPrice).toFixed(2)}`
-                  : hasSizes && !isOneSize
-                    ? `Add ${totalSelected || 0} Item${totalSelected !== 1 ? "s" : ""} to Cart`
-                    : "Add to Cart"}
+                  : "Add to Cart"}
               </button>
               {anySizeInCart && (
                 <button className="btn btn-primary btn-lg" onClick={openDrawer}>

@@ -159,6 +159,33 @@ ol {
   pointer-events: none;
 }
 
+/* ── Wishlist / heart button ── */
+.btn-wishlist {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  min-width: 38px;
+  border-radius: var(--radius-sm);
+  border: 2px solid var(--accent);
+  background: #fff;
+  color: var(--accent);
+  font-size: 1.15rem;
+  cursor: pointer;
+  transition: var(--transition);
+  line-height: 1;
+}
+.btn-wishlist:hover {
+  background: #fef2f2;
+  transform: translateY(-1px);
+}
+.btn-wishlist.added,
+.btn-wishlist.in-cart {
+  background: var(--accent);
+  color: #fff;
+}
+
 /* ── MOQ badges ── */
 .moq-badge {
   background: #fef2f2;

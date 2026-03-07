@@ -112,39 +112,54 @@ export default function CartDrawer() {
                       </span>
                     </div>
                     <div className="cart-item-controls">
-                      <button
-                        className="cart-qty-btn"
-                        onClick={() =>
-                          item.quantity <= 1
-                            ? removeFromCart(item.sku, item.size)
-                            : updateQuantity(
-                                item.sku,
-                                item.size,
-                                item.quantity - 1,
-                              )
-                        }
-                      >
-                        −
-                      </button>
-                      <span className="cart-qty-val">{item.quantity}</span>
-                      <button
-                        className="cart-qty-btn"
-                        onClick={() =>
-                          updateQuantity(item.sku, item.size, item.quantity + 1)
-                        }
-                        disabled={
-                          item.maxStock > 0 && item.quantity >= item.maxStock
-                        }
-                      >
-                        +
-                      </button>
-                      <button
-                        className="cart-remove-btn"
-                        onClick={() => removeFromCart(item.sku, item.size)}
-                        title="Remove"
-                      >
-                        🗑
-                      </button>
+                      {item.lotItem ? (
+                        <span
+                          style={{
+                            fontSize: "0.75rem",
+                            color: "#6b7280",
+                            fontWeight: 600,
+                            whiteSpace: "nowrap",
+                          }}
+                        >
+                          Lot \u00d7 {item.quantity}
+                        </span>
+                      ) : (
+                        <>
+                          <button
+                            className="cart-qty-btn"
+                            onClick={() =>
+                              item.quantity <= 1
+                                ? removeFromCart(item.sku, item.size)
+                                : updateQuantity(
+                                    item.sku,
+                                    item.size,
+                                    item.quantity - 1,
+                                  )
+                            }
+                          >
+                            −
+                          </button>
+                          <span className="cart-qty-val">{item.quantity}</span>
+                          <button
+                            className="cart-qty-btn"
+                            onClick={() =>
+                              updateQuantity(item.sku, item.size, item.quantity + 1)
+                            }
+                            disabled={
+                              item.maxStock > 0 && item.quantity >= item.maxStock
+                            }
+                          >
+                            +
+                          </button>
+                          <button
+                            className="cart-remove-btn"
+                            onClick={() => removeFromCart(item.sku, item.size)}
+                            title="Remove"
+                          >
+                            🗑
+                          </button>
+                        </>
+                      )}
                     </div>
                   </div>
                 );

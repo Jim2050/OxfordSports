@@ -25,7 +25,8 @@ export default function Header() {
     { to: "/products?category=FOOTWEAR", label: "Footwear" },
     { to: "/products?category=CLOTHING", label: "Clothing" },
     { to: "/products?category=ACCESSORIES", label: "Accessories" },
-    { to: "/products?category=UNDER+%C2%A35", label: "Under £5" },
+    { to: "/products?category=B+GRADE", label: "B Grade" },
+    { to: "/under-5", label: "Under £5" },
     { to: "/products", label: "All Products" },
     { to: "/contact", label: "Contact" },
   ];

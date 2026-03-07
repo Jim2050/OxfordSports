@@ -54,8 +54,10 @@ export function CartProvider({ children }) {
     saveCart(items);
   }, [items]);
 
-  /** Add product to cart (or increase qty if already present). */
-  const addToCart = useCallback((product, size = "", qty = 1) => {
+  /** Add product to cart (or increase qty if already present).
+   *  Pass lotItem = true for wholesale lots that must not be edited in cart.
+   */
+  const addToCart = useCallback((product, size = "", qty = 1, lotItem = false) => {
     setItems((prev) => {
       const key = cartKey(product.sku, size);
       const idx = prev.findIndex((i) => cartKey(i.sku, i.size) === key);
@@ -90,6 +92,7 @@ export function CartProvider({ children }) {
           quantity: maxStock > 0 ? Math.min(newQty, maxStock) : newQty,
           maxStock,
           price: itemPrice,
+          lotItem: updated[idx].lotItem || lotItem,
         };
         return updated;
       }
@@ -106,6 +109,7 @@ export function CartProvider({ children }) {
           rrp: Number(product.rrp) || 0,
           imageUrl: product.imageUrl || product.image || "",
           maxStock,
+          lotItem,
         },
       ];
     });
