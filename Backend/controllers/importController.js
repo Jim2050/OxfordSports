@@ -1041,10 +1041,6 @@ exports.uploadImages = async (req, res) => {
               folder: "oxford-sports/products",
               public_id: product.sku,
               overwrite: true,
-              transformation: [
-                { width: 800, crop: "limit" },
-                { quality: "auto", fetch_format: "auto" },
-              ],
             });
 
             imageUrl = upload.secure_url;
