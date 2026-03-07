@@ -137,7 +137,12 @@ export default function AdminPage() {
   });
 
   /* ── Image ZIP Dropzone ── */
-  const onDropImages = useCallback(async (accepted) => {
+  const onDropImages = useCallback(async (accepted, rejected) => {
+    if (rejected?.length > 0) {
+      const reasons = rejected[0]?.errors?.map((e) => e.message).join(", ") || "Unknown reason";
+      toast.error(`File rejected: ${reasons}`);
+      return;
+    }
     const file = accepted[0];
     if (!file) return;
     setUploading(true);
@@ -171,7 +176,10 @@ export default function AdminPage() {
     accept: {
       "application/zip": [".zip"],
       "application/x-zip-compressed": [".zip"],
+      "application/x-zip": [".zip"],
+      "application/octet-stream": [".zip"],
     },
+    maxSize: 100 * 1024 * 1024, // 100 MB
     multiple: false,
     disabled: uploading,
   });
