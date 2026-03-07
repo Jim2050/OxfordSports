@@ -1025,9 +1025,8 @@ exports.uploadImages = async (req, res) => {
         let imageUrl = "";
         let imagePublicId = "";
 
-        const cloudinaryEnabled =
-          process.env.CLOUDINARY_CLOUD_NAME &&
-          process.env.CLOUDINARY_CLOUD_NAME !== "your_cloud_name";
+        const cName = process.env.CLOUDINARY_CLOUD_NAME || "ddxl5rbsq";
+        const cloudinaryEnabled = !!cName && cName !== "your_cloud_name";
 
         if (cloudinaryEnabled) {
           try {

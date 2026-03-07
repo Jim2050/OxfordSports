@@ -13,13 +13,13 @@ if (missingEnv.length > 0) {
 }
 
 // Warn about optional but important vars
-if (
-  !process.env.CLOUDINARY_CLOUD_NAME ||
-  process.env.CLOUDINARY_CLOUD_NAME === "your_cloud_name"
-) {
+const cloudName = process.env.CLOUDINARY_CLOUD_NAME || "ddxl5rbsq";
+if (cloudName === "your_cloud_name") {
   console.warn(
     "⚠️   CLOUDINARY_CLOUD_NAME not set — images will be stored locally in /uploads/products/",
   );
+} else {
+  console.log(`✅  Cloudinary configured (cloud: ${cloudName})`);
 }
 if (!process.env.CLIENT_ORIGIN) {
   console.warn(
@@ -94,9 +94,8 @@ app.use("/api/contact", contactRoutes);
 app.get("/api/health", async (_req, res) => {
   const Product = require("./models/Product");
   const count = await Product.countDocuments().catch(() => 0);
-  const cloudinaryConfigured =
-    !!process.env.CLOUDINARY_CLOUD_NAME &&
-    process.env.CLOUDINARY_CLOUD_NAME !== "your_cloud_name";
+  const cName = process.env.CLOUDINARY_CLOUD_NAME || "ddxl5rbsq";
+  const cloudinaryConfigured = !!cName && cName !== "your_cloud_name";
   res.json({
     status: "ok",
     products: count,
