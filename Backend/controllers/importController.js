@@ -1079,12 +1079,21 @@ async function processImageBatch(imagesToProcess, filePath, tempExtractDir, job 
     const results = await Promise.allSettled(
       batch.map(async (img) => {
         let product = skuMap.get(img.stem);
+        // Try splitting on dash (e.g. "GK5757-001" → "GK5757")
         if (!product && img.stem.includes("-")) {
           product = skuMap.get(img.stem.split("-")[0]);
         }
+        // Try stripping spaces/underscores/dashes
         if (!product) {
           const cleanStem = img.stem.replace(/[\s_-]/g, "");
           product = cleanSkuMap.get(cleanStem);
+        }
+        // Try stripping trailing letters (e.g. "DH2860B" → "DH2860", "JP3701B" → "JP3701")
+        if (!product) {
+          const baseStem = img.stem.replace(/[A-Z]+$/i, "");
+          if (baseStem !== img.stem) {
+            product = skuMap.get(baseStem) || cleanSkuMap.get(baseStem.replace(/[\s_-]/g, ""));
+          }
         }
         if (!product) {
           return { status: "unmatched", filename: img.filename, stem: img.stem };
