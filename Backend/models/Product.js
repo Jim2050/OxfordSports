@@ -102,14 +102,13 @@ const productSchema = new mongoose.Schema(
 );
 
 // ── Pre-save: compute totalQuantity from sizes array ──
-productSchema.pre("save", function (next) {
+productSchema.pre("save", function () {
   if (Array.isArray(this.sizes)) {
     this.totalQuantity = this.sizes.reduce(
       (sum, s) => sum + (s.quantity || 0),
       0,
     );
   }
-  next();
 });
 
 // ── Text index for full-text search ──

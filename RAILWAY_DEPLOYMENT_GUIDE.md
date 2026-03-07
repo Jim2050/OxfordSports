@@ -18,9 +18,9 @@ ADMIN_EMAIL=admin@oxfordsports.net
 ADMIN_PASSWORD=Godaddy1971turbs*
 
 # ── CLOUDINARY (Image Storage) ──
-CLOUDINARY_CLOUD_NAME=dxsxoqiq3
-CLOUDINARY_API_KEY=431986497367911
-CLOUDINARY_API_SECRET=0mREQCXhMvbi8Ze1Ob5NsAqQZ1M
+CLOUDINARY_CLOUD_NAME=<your_cloud_name>
+CLOUDINARY_API_KEY=<your_api_key>
+CLOUDINARY_API_SECRET=<your_api_secret>
 
 # ── EMAIL (Optional - if you use SMTP) ──
 SMTP_HOST=smtp.gmail.com

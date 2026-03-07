@@ -525,11 +525,11 @@ Total peak: ~120 MB — well within 512 MB typical server limit
 | PORT                  | ✅     | 5000                                                |
 | NODE_ENV              | ✅     | development (change to `production` for deploy)     |
 | MONGO_URI             | ✅     | Atlas SRV string                                    |
-| JWT_SECRET            | ✅     | `oxford-sports-jwt-secret-2026`                     |
+| JWT_SECRET            | ✅     | `<your_jwt_secret>`                                 |
 | ADMIN_EMAIL           | ✅     | `admin@oxfordsports.net`                            |
 | ADMIN_PASSWORD        | ✅     | Set                                                 |
-| CLOUDINARY_CLOUD_NAME | ✅     | `dxsxoqiq3` (FIXED — was empty)                     |
-| CLOUDINARY_API_KEY    | ✅     | `431986497367911` (FIXED — was empty)               |
+| CLOUDINARY_CLOUD_NAME | ✅     | `<your_cloud_name>` (FIXED — was empty)              |
+| CLOUDINARY_API_KEY    | ✅     | `<your_api_key>` (FIXED — was empty)                |
 | CLOUDINARY_API_SECRET | ✅     | Set (FIXED — was empty)                             |
 | SMTP_USER             | ⚠️     | Empty — contact form will fail without Gmail SMTP   |
 | SMTP_PASS             | ⚠️     | Empty — contact form will fail without Gmail SMTP   |

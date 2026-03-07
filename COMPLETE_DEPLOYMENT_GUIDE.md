@@ -29,13 +29,13 @@ Click "**+ New Variable**" and add each of these:
 | ----------------------- | --------------------------------------------------------------------------------- |
 | `NODE_ENV`              | `production`                                                                      |
 | `PORT`                  | `5000`                                                                            |
-| `MONGO_URI`             | `mongodb+srv://bhuttokashifali957:mongodb%4012@cluster0.puflo.mongodb.net/Oxford` |
-| `JWT_SECRET`            | `oxford-sports-jwt-secret-2026`                                                   |
+| `MONGO_URI`             | `<your_mongo_uri>`                                                                |
+| `JWT_SECRET`            | `<your_jwt_secret>`                                                               |
 | `ADMIN_EMAIL`           | `admin@oxfordsports.net`                                                          |
-| `ADMIN_PASSWORD`        | `Godaddy1971turbs*`                                                               |
-| `CLOUDINARY_CLOUD_NAME` | `dxsxoqiq3`                                                                       |
-| `CLOUDINARY_API_KEY`    | `431986497367911`                                                                 |
-| `CLOUDINARY_API_SECRET` | `0mREQCXhMvbi8Ze1Ob5NsAqQZ1M`                                                     |
+| `ADMIN_PASSWORD`        | `<your_admin_password>`                                                           |
+| `CLOUDINARY_CLOUD_NAME` | `<your_cloud_name>`                                                               |
+| `CLOUDINARY_API_KEY`    | `<your_api_key>`                                                                  |
+| `CLOUDINARY_API_SECRET` | `<your_api_secret>`                                                               |
 | `CONTACT_EMAIL_TO`      | `sales@oxfordsports.net`                                                          |
 | `CLIENT_ORIGIN`         | `https://YOUR-NETLIFY-SITE.netlify.app`                                           |
 
