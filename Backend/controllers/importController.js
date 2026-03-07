@@ -984,99 +984,117 @@ exports.uploadImages = async (req, res) => {
         .json({ error: "Upload a .zip archive or an image file." });
     }
 
+    // ── Pre-fetch all products with SKUs into a map for O(1) lookups ──
+    const allProducts = await Product.find({}, "sku imagePublicId").lean();
+    const skuMap = new Map(); // uppercase SKU → product doc
+    const cleanSkuMap = new Map(); // stripped SKU → product doc (fallback)
+    for (const p of allProducts) {
+      const upper = p.sku.toUpperCase();
+      skuMap.set(upper, p);
+      cleanSkuMap.set(upper.replace(/[\s_-]/g, ""), p);
+    }
+
     let matched = 0;
     let unmatched = 0;
     const unmatchedFiles = [];
     const errors = [];
 
-    for (const img of imagesToProcess) {
-      try {
-        // Find product by SKU — case-insensitive to handle mixed-case filenames
-        let product = await Product.findOne({
-          sku: { $regex: new RegExp(`^${img.stem.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`, "i") },
-        });
+    const cName = process.env.CLOUDINARY_CLOUD_NAME || "";
+    const cloudinaryEnabled = !!cName && cName !== "your_cloud_name";
 
-        // Try partial match: filename might be "KC0689-BLK" → try stripping suffix
-        if (!product && img.stem.includes("-")) {
-          const baseSku = img.stem.split("-")[0];
-          product = await Product.findOne({
-            sku: { $regex: new RegExp(`^${baseSku.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`, "i") },
-          });
-        }
+    // ── Process images in parallel batches of 10 ──
+    const BATCH_SIZE = 10;
+    const bulkOps = [];
 
-        // Try without any dashes/underscores/spaces (e.g. "GK 5757" → "GK5757")
-        if (!product) {
-          const cleanStem = img.stem.replace(/[\s_-]/g, "");
-          if (cleanStem !== img.stem) {
-            product = await Product.findOne({
-              sku: { $regex: new RegExp(`^${cleanStem.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`, "i") },
-            });
+    for (let i = 0; i < imagesToProcess.length; i += BATCH_SIZE) {
+      const batch = imagesToProcess.slice(i, i + BATCH_SIZE);
+
+      const results = await Promise.allSettled(
+        batch.map(async (img) => {
+          // Find product by SKU using in-memory map
+          let product = skuMap.get(img.stem);
+
+          // Try partial match: "KC0689-BLK" → "KC0689"
+          if (!product && img.stem.includes("-")) {
+            product = skuMap.get(img.stem.split("-")[0]);
           }
-        }
 
-        if (!product) {
-          unmatched++;
-          unmatchedFiles.push(img.filename);
-          console.log(`[IMAGE] No match for "${img.filename}" (stem: "${img.stem}")`);
-          continue;
-        }
+          // Try cleaned stem (strip dashes/underscores/spaces)
+          if (!product) {
+            const cleanStem = img.stem.replace(/[\s_-]/g, "");
+            product = cleanSkuMap.get(cleanStem);
+          }
 
-        // Upload to Cloudinary (with local fallback)
-        let imageUrl = "";
-        let imagePublicId = "";
+          if (!product) {
+            return { status: "unmatched", filename: img.filename, stem: img.stem };
+          }
 
-        const cName = process.env.CLOUDINARY_CLOUD_NAME || "";
-        const cloudinaryEnabled = !!cName && cName !== "your_cloud_name";
+          // Upload to Cloudinary
+          let imageUrl = "";
+          let imagePublicId = "";
 
-        if (cloudinaryEnabled) {
-          try {
+          if (cloudinaryEnabled) {
             // Delete old image if exists
             if (product.imagePublicId) {
-              await cloudinary.uploader
-                .destroy(product.imagePublicId)
-                .catch(() => {});
+              await cloudinary.uploader.destroy(product.imagePublicId).catch(() => {});
             }
-
             const upload = await cloudinary.uploader.upload(img.path, {
               folder: "oxford-sports/products",
               public_id: product.sku,
               overwrite: true,
             });
-
             imageUrl = upload.secure_url;
             imagePublicId = upload.public_id;
-          } catch (cloudErr) {
-            // Cloudinary failed — fall back to local storage
-            console.error(`[IMAGE] Cloudinary upload failed for ${img.filename}: ${cloudErr.message} — saving locally`);
+          } else {
             const uploadsDir = path.join(__dirname, "..", "uploads", "products");
             fs.mkdirSync(uploadsDir, { recursive: true });
             const destFilename = `${product.sku}${path.extname(img.filename)}`;
-            const destPath = path.join(uploadsDir, destFilename);
-            fs.copyFileSync(img.path, destPath);
+            fs.copyFileSync(img.path, path.join(uploadsDir, destFilename));
             imageUrl = `/uploads/products/${destFilename}`;
           }
-        } else {
-          // ── No Cloudinary: save to local /uploads/products/ ──
-          const uploadsDir = path.join(__dirname, "..", "uploads", "products");
-          fs.mkdirSync(uploadsDir, { recursive: true });
-          const destFilename = `${product.sku}${path.extname(img.filename)}`;
-          const destPath = path.join(uploadsDir, destFilename);
-          fs.copyFileSync(img.path, destPath);
-          imageUrl = `/uploads/products/${destFilename}`;
-        }
 
-        // Update product
-        product.imageUrl = imageUrl;
-        if (imagePublicId) product.imagePublicId = imagePublicId;
-        await product.save();
-        matched++;
-        debug(
-          `[IMAGE] Matched ${img.filename} → ${product.sku} | URL: ${imageUrl.substring(0, 80)}...`,
-        );
-      } catch (imgErr) {
-        console.error(`[IMAGE] Error processing ${img.filename}: ${imgErr.message}`);
-        errors.push(`${img.filename}: ${imgErr.message}`);
+          return { status: "matched", sku: product.sku, imageUrl, imagePublicId };
+        })
+      );
+
+      for (const r of results) {
+        if (r.status === "fulfilled") {
+          const val = r.value;
+          if (val.status === "matched") {
+            matched++;
+            const updateFields = { imageUrl: val.imageUrl };
+            if (val.imagePublicId) updateFields.imagePublicId = val.imagePublicId;
+            bulkOps.push({
+              updateOne: {
+                filter: { sku: val.sku },
+                update: { $set: updateFields },
+              },
+            });
+          } else {
+            unmatched++;
+            unmatchedFiles.push(val.filename);
+          }
+        } else {
+          // Promise rejected — Cloudinary or other error
+          const imgFile = batch[results.indexOf(r)]?.filename || "unknown";
+          errors.push(`${imgFile}: ${r.reason?.message || "upload failed"}`);
+        }
       }
+
+      // Flush bulk ops every 100
+      if (bulkOps.length >= 100) {
+        await Product.bulkWrite(bulkOps).catch((e) =>
+          console.error("[IMAGE] bulkWrite error:", e.message)
+        );
+        bulkOps.length = 0;
+      }
+    }
+
+    // Final flush
+    if (bulkOps.length > 0) {
+      await Product.bulkWrite(bulkOps).catch((e) =>
+        console.error("[IMAGE] bulkWrite error:", e.message)
+      );
     }
 
     // Cleanup temp files

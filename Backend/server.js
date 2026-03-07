@@ -76,7 +76,7 @@ app.use("/api/admin/import-products", (_req, res, next) => {
   next();
 });
 app.use("/api/admin/upload-images", (_req, res, next) => {
-  res.setTimeout(300000);
+  res.setTimeout(1800000); // 30 min for large image batches
   next();
 });
 
