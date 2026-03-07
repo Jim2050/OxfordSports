@@ -66,7 +66,8 @@ export default function Header() {
 
   return (
     <header className="header">
-      <div className="container header-inner">
+      {/* ── Top row: Logo + Search + Auth + Cart ── */}
+      <div className="container header-top">
         <Link to="/" className="logo-container">
           <img src="/logo.jpeg" alt="Oxford Sports Logo" className="logo-img" />
           <span className="logo-text">
@@ -74,7 +75,7 @@ export default function Header() {
           </span>
         </Link>
 
-        {/* Search bar in header */}
+        {/* Search bar */}
         <form className="header-search" onSubmit={handleSearch}>
           <input
             type="text"
@@ -86,21 +87,7 @@ export default function Header() {
           <button type="submit" aria-label="Search">🔍</button>
         </form>
 
-        <nav className={`nav${open ? " open" : ""}`}>
-          {links.map((l) => (
-            <Link
-              key={l.to}
-              to={l.to}
-              className={
-                l.to.includes("?")
-                  ? pathname + search === l.to ? "active" : ""
-                  : pathname === l.to ? "active" : ""
-              }
-              onClick={(e) => handleNavClick(e, l.to)}
-            >
-              {l.label}
-            </Link>
-          ))}
+        <div className="header-actions">
           {isAuthenticated ? (
             <button
               className="btn btn-sm"
@@ -124,22 +111,22 @@ export default function Header() {
               Register / Sign In
             </Link>
           )}
-        </nav>
 
-        {/* Cart icon with badge */}
-        <button
-          className="cart-icon-btn"
-          onClick={openDrawer}
-          aria-label="Shopping cart"
-          title="Shopping cart"
-        >
-          🛒
-          {itemCount > 0 && (
-            <span className="cart-badge">
-              {itemCount > 99 ? "99+" : itemCount}
-            </span>
-          )}
-        </button>
+          {/* Cart icon with badge */}
+          <button
+            className="cart-icon-btn"
+            onClick={openDrawer}
+            aria-label="Shopping cart"
+            title="Shopping cart"
+          >
+            🛒
+            {itemCount > 0 && (
+              <span className="cart-badge">
+                {itemCount > 99 ? "99+" : itemCount}
+              </span>
+            )}
+          </button>
+        </div>
 
         <button
           className="burger"
@@ -150,6 +137,28 @@ export default function Header() {
           <span />
           <span />
         </button>
+      </div>
+
+      {/* ── Bottom row: Navigation links ── */}
+      <div className="header-nav-row">
+        <div className="container">
+          <nav className={`nav${open ? " open" : ""}`}>
+            {links.map((l) => (
+              <Link
+                key={l.to}
+                to={l.to}
+                className={
+                  l.to.includes("?")
+                    ? pathname + search === l.to ? "active" : ""
+                    : pathname === l.to ? "active" : ""
+                }
+                onClick={(e) => handleNavClick(e, l.to)}
+              >
+                {l.label}
+              </Link>
+            ))}
+          </nav>
+        </div>
       </div>
     </header>
   );
