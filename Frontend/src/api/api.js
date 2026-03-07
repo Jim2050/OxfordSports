@@ -141,6 +141,7 @@ export const uploadExcel = (file, onProgress) => {
   return API.post("/admin/import-products", form, {
     headers: { "Content-Type": "multipart/form-data", ...adminHeaders() },
     onUploadProgress: onProgress,
+    timeout: 300000, // 5 min — matches backend timeout for large imports
   }).then((r) => r.data);
 };
 
@@ -150,6 +151,7 @@ export const uploadImages = (file, onProgress) => {
   return API.post("/admin/upload-images", form, {
     headers: { "Content-Type": "multipart/form-data", ...adminHeaders() },
     onUploadProgress: onProgress,
+    timeout: 300000, // 5 min — matches backend timeout for large ZIP processing
   }).then((r) => r.data);
 };
 

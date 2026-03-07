@@ -34,6 +34,7 @@ export default function AdminPage() {
   const [imageResult, setImageResult] = useState(null);
   const [uploading, setUploading] = useState(false);
   const [progress, setProgress] = useState(0);
+  const [serverProcessing, setServerProcessing] = useState(false);
   const [tab, setTab] = useState("excel");
   const [searchQuery, setSearchQuery] = useState("");
   const [editingSku, setEditingSku] = useState(null);
@@ -95,10 +96,15 @@ export default function AdminPage() {
     }
     setUploading(true);
     setProgress(0);
+    setServerProcessing(false);
     setExcelResult(null);
     try {
       const res = await uploadExcel(file, (e) => {
-        if (e.total) setProgress(Math.round((e.loaded * 100) / e.total));
+        if (e.total) {
+          const pct = Math.round((e.loaded * 100) / e.total);
+          setProgress(pct);
+          if (pct >= 100) setServerProcessing(true);
+        }
       });
       setExcelResult(res);
       toast.success(
@@ -113,6 +119,7 @@ export default function AdminPage() {
     } finally {
       setUploading(false);
       setProgress(0);
+      setServerProcessing(false);
     }
   }, []);
 
@@ -135,10 +142,15 @@ export default function AdminPage() {
     if (!file) return;
     setUploading(true);
     setProgress(0);
+    setServerProcessing(false);
     setImageResult(null);
     try {
       const res = await uploadImages(file, (e) => {
-        if (e.total) setProgress(Math.round((e.loaded * 100) / e.total));
+        if (e.total) {
+          const pct = Math.round((e.loaded * 100) / e.total);
+          setProgress(pct);
+          if (pct >= 100) setServerProcessing(true);
+        }
       });
       setImageResult(res);
       toast.success(`${res.matched ?? 0} images matched to products.`);
@@ -150,6 +162,7 @@ export default function AdminPage() {
     } finally {
       setUploading(false);
       setProgress(0);
+      setServerProcessing(false);
     }
   }, []);
 
@@ -450,49 +463,58 @@ export default function AdminPage() {
               📥 Export CSV
             </button>
           )}
-          <button
-            className="btn btn-sm btn-outline"
-            title="Set brand = adidas on all products with empty brand"
-            onClick={async () => {
-              if (
-                !window.confirm(
-                  'Set brand to "adidas" on all products with an empty brand field?',
-                )
-              )
-                return;
-              try {
-                const r = await fixBrands();
-                toast.success(r.message || `Fixed ${r.updated} products.`);
-                loadStats();
-              } catch {
-                toast.error("Brand fix failed.");
-              }
-            }}
-          >
-            🏷️ Fix Brands
-          </button>
-          <button
-            className="btn btn-sm btn-outline"
-            title="One-time migration: auto-detect Rugby/Football/Footwear subcategories from product names"
-            onClick={async () => {
-              if (
-                !window.confirm(
-                  "Scan all products and auto-assign subcategories (Rugby / Football / Footwear) from product names? Safe to run multiple times.",
-                )
-              )
-                return;
-              try {
-                const r = await fixSubcategories();
-                toast.success(r.message || `Fixed ${r.updated} products.`);
-                loadStats();
-              } catch {
-                toast.error("Subcategory fix failed.");
-              }
-            }}
-          >
-            🔧 Fix Subcategories
-          </button>
         </div>
+
+        {/* Utility tools — collapsed by default */}
+        <details className="admin-utilities" style={{ marginBottom: "1.5rem" }}>
+          <summary style={{ cursor: "pointer", fontSize: "0.85rem", color: "#6b7280", fontWeight: 600 }}>
+            🔧 Utility Tools
+          </summary>
+          <div style={{ display: "flex", gap: "0.5rem", marginTop: "0.5rem", flexWrap: "wrap" }}>
+            <button
+              className="btn btn-sm btn-outline"
+              title="Set brand = adidas on all products with empty brand"
+              onClick={async () => {
+                if (
+                  !window.confirm(
+                    'Set brand to "adidas" on all products with an empty brand field?',
+                  )
+                )
+                  return;
+                try {
+                  const r = await fixBrands();
+                  toast.success(r.message || `Fixed ${r.updated} products.`);
+                  loadStats();
+                } catch {
+                  toast.error("Brand fix failed.");
+                }
+              }}
+            >
+              🏷️ Fix Brands
+            </button>
+            <button
+              className="btn btn-sm btn-outline"
+              title="One-time migration: auto-detect Rugby/Football/Footwear subcategories from product names"
+              onClick={async () => {
+                if (
+                  !window.confirm(
+                    "Scan all products and auto-assign subcategories (Rugby / Football / Footwear) from product names? Safe to run multiple times.",
+                  )
+                )
+                  return;
+                try {
+                  const r = await fixSubcategories();
+                  toast.success(r.message || `Fixed ${r.updated} products.`);
+                  loadStats();
+                } catch {
+                  toast.error("Subcategory fix failed.");
+                }
+              }}
+            >
+              🔧 Fix Subcategories
+            </button>
+          </div>
+        </details>
 
         {/* ── Excel Tab ── */}
         {tab === "excel" && (
@@ -508,26 +530,33 @@ export default function AdminPage() {
 
             <div
               {...excelZone.getRootProps()}
-              className={`dropzone${excelZone.isDragActive ? " active" : ""}`}
+              className={`dropzone${excelZone.isDragActive ? " active" : ""}${uploading ? " disabled" : ""}`}
             >
               <input {...excelZone.getInputProps()} />
               <div className="icon">📄</div>
               <p>
-                {uploading
-                  ? "Uploading…"
-                  : "Drop your Excel file here, or click to browse"}
+                {serverProcessing
+                  ? "⏳ Processing on server — parsing sheets, consolidating SKUs…"
+                  : uploading
+                    ? `Uploading… ${progress}%`
+                    : "Drop your Excel file here, or click to browse"}
               </p>
               <span className="dropzone-hint">
-                Supports .xlsx, .xls, .csv — up to 50MB
+                Supports .xlsx, .xls, .csv — up to 50 MB
               </span>
             </div>
 
             {uploading && (
-              <div className="progress-bar">
-                <div
-                  className="progress-bar-fill"
-                  style={{ width: `${progress}%` }}
-                />
+              <div className="progress-wrap">
+                <div className="progress-bar">
+                  <div
+                    className={`progress-bar-fill${serverProcessing ? " pulsing" : ""}`}
+                    style={{ width: `${progress}%` }}
+                  />
+                </div>
+                <span className="progress-text">
+                  {serverProcessing ? "Processing…" : `${progress}%`}
+                </span>
               </div>
             )}
 
@@ -642,26 +671,33 @@ export default function AdminPage() {
 
             <div
               {...imageZone.getRootProps()}
-              className={`dropzone${imageZone.isDragActive ? " active" : ""}`}
+              className={`dropzone${imageZone.isDragActive ? " active" : ""}${uploading ? " disabled" : ""}`}
             >
               <input {...imageZone.getInputProps()} />
               <div className="icon">🖼️</div>
               <p>
-                {uploading
-                  ? "Processing images…"
-                  : "Drop your .zip image archive here, or click to browse"}
+                {serverProcessing
+                  ? "⏳ Matching images to products & uploading to cloud…"
+                  : uploading
+                    ? `Uploading… ${progress}%`
+                    : "Drop your .zip image archive here, or click to browse"}
               </p>
               <span className="dropzone-hint">
-                Supports .jpg, .png, .webp inside a .zip file
+                Supports .jpg, .png, .webp inside a .zip file — up to 100 MB
               </span>
             </div>
 
             {uploading && (
-              <div className="progress-bar">
-                <div
-                  className="progress-bar-fill"
-                  style={{ width: `${progress}%` }}
-                />
+              <div className="progress-wrap">
+                <div className="progress-bar">
+                  <div
+                    className={`progress-bar-fill${serverProcessing ? " pulsing" : ""}`}
+                    style={{ width: `${progress}%` }}
+                  />
+                </div>
+                <span className="progress-text">
+                  {serverProcessing ? "Processing…" : `${progress}%`}
+                </span>
               </div>
             )}
 
