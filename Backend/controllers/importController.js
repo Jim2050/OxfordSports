@@ -991,22 +991,37 @@ exports.uploadImages = async (req, res) => {
 
     for (const img of imagesToProcess) {
       try {
-        // Find product by SKU (exact or partial match)
-        let product = await Product.findOne({ sku: img.stem });
+        // Find product by SKU — case-insensitive to handle mixed-case filenames
+        let product = await Product.findOne({
+          sku: { $regex: new RegExp(`^${img.stem.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`, "i") },
+        });
 
         // Try partial match: filename might be "KC0689-BLK" → try stripping suffix
         if (!product && img.stem.includes("-")) {
           const baseSku = img.stem.split("-")[0];
-          product = await Product.findOne({ sku: baseSku });
+          product = await Product.findOne({
+            sku: { $regex: new RegExp(`^${baseSku.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`, "i") },
+          });
+        }
+
+        // Try without any dashes/underscores/spaces (e.g. "GK 5757" → "GK5757")
+        if (!product) {
+          const cleanStem = img.stem.replace(/[\s_-]/g, "");
+          if (cleanStem !== img.stem) {
+            product = await Product.findOne({
+              sku: { $regex: new RegExp(`^${cleanStem.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`, "i") },
+            });
+          }
         }
 
         if (!product) {
           unmatched++;
           unmatchedFiles.push(img.filename);
+          console.log(`[IMAGE] No match for "${img.filename}" (stem: "${img.stem}")`);
           continue;
         }
 
-        // Upload to Cloudinary
+        // Upload to Cloudinary (with local fallback)
         let imageUrl = "";
         let imagePublicId = "";
 
@@ -1015,27 +1030,38 @@ exports.uploadImages = async (req, res) => {
           process.env.CLOUDINARY_CLOUD_NAME !== "your_cloud_name";
 
         if (cloudinaryEnabled) {
-          // Delete old image if exists
-          if (product.imagePublicId) {
-            await cloudinary.uploader
-              .destroy(product.imagePublicId)
-              .catch(() => {});
+          try {
+            // Delete old image if exists
+            if (product.imagePublicId) {
+              await cloudinary.uploader
+                .destroy(product.imagePublicId)
+                .catch(() => {});
+            }
+
+            const upload = await cloudinary.uploader.upload(img.path, {
+              folder: "oxford-sports/products",
+              public_id: product.sku,
+              overwrite: true,
+              transformation: [
+                { width: 800, crop: "limit" },
+                { quality: "auto", fetch_format: "auto" },
+              ],
+            });
+
+            imageUrl = upload.secure_url;
+            imagePublicId = upload.public_id;
+          } catch (cloudErr) {
+            // Cloudinary failed — fall back to local storage
+            console.error(`[IMAGE] Cloudinary upload failed for ${img.filename}: ${cloudErr.message} — saving locally`);
+            const uploadsDir = path.join(__dirname, "..", "uploads", "products");
+            fs.mkdirSync(uploadsDir, { recursive: true });
+            const destFilename = `${product.sku}${path.extname(img.filename)}`;
+            const destPath = path.join(uploadsDir, destFilename);
+            fs.copyFileSync(img.path, destPath);
+            imageUrl = `/uploads/products/${destFilename}`;
           }
-
-          const upload = await cloudinary.uploader.upload(img.path, {
-            folder: "oxford-sports/products",
-            public_id: product.sku,
-            overwrite: true,
-            transformation: [
-              { width: 800, crop: "limit" },
-              { quality: "auto", fetch_format: "auto" },
-            ],
-          });
-
-          imageUrl = upload.secure_url;
-          imagePublicId = upload.public_id;
         } else {
-          // ── Fallback: save to local /uploads/products/ ──
+          // ── No Cloudinary: save to local /uploads/products/ ──
           const uploadsDir = path.join(__dirname, "..", "uploads", "products");
           fs.mkdirSync(uploadsDir, { recursive: true });
           const destFilename = `${product.sku}${path.extname(img.filename)}`;
@@ -1053,6 +1079,7 @@ exports.uploadImages = async (req, res) => {
           `[IMAGE] Matched ${img.filename} → ${product.sku} | URL: ${imageUrl.substring(0, 80)}...`,
         );
       } catch (imgErr) {
+        console.error(`[IMAGE] Error processing ${img.filename}: ${imgErr.message}`);
         errors.push(`${img.filename}: ${imgErr.message}`);
       }
     }

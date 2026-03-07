@@ -665,8 +665,8 @@ export default function AdminPage() {
             <h3>Bulk Image Upload (ZIP)</h3>
             <p className="admin-hint">
               Upload a <strong>.zip</strong> file containing product images.
-              Filenames must match the SKU (e.g., <code>ADI-RM-001.jpg</code>).
-              Images are auto-matched to existing products.
+              Name each file with the product SKU — e.g. <code>GK5757.jpg</code>, <code>FY6503.png</code>.
+              The system matches filenames to existing products automatically (case-insensitive).
             </p>
 
             <div
@@ -702,21 +702,26 @@ export default function AdminPage() {
             )}
 
             {imageResult && (
-              <div className="import-result success">
-                <strong>Image Match Summary</strong>
+              <div className={`import-result ${imageResult.errors?.length > 0 ? "warning" : "success"}`}>
+                <strong>Image Upload Summary</strong>
                 <div className="import-stats">
                   <span className="stat-green">
-                    ✅ {imageResult.matched ?? 0} matched
+                    ✅ {imageResult.matched ?? 0} matched & uploaded
                   </span>
                   <span className="stat-red">
-                    ❓ {imageResult.unmatched ?? 0} unmatched
+                    ❓ {imageResult.unmatched ?? 0} unmatched (no product with that SKU)
                   </span>
+                  {imageResult.errors?.length > 0 && (
+                    <span className="stat-red">
+                      ❌ {imageResult.errors.length} upload error(s)
+                    </span>
+                  )}
                 </div>
                 {imageResult.unmatchedFiles &&
                   imageResult.unmatchedFiles.length > 0 && (
                     <details style={{ marginTop: "0.75rem" }}>
                       <summary style={{ cursor: "pointer", fontWeight: 600 }}>
-                        View unmatched files
+                        View {imageResult.unmatchedFiles.length} unmatched file(s) — no matching SKU found in database
                       </summary>
                       <ul style={{ marginTop: "0.5rem", fontSize: "0.85rem" }}>
                         {imageResult.unmatchedFiles.map((f, i) => (
@@ -725,6 +730,20 @@ export default function AdminPage() {
                       </ul>
                     </details>
                   )}
+                {imageResult.errors?.length > 0 && (
+                  <details style={{ marginTop: "0.5rem" }}>
+                    <summary
+                      style={{ cursor: "pointer", fontWeight: 600, color: "#991b1b" }}
+                    >
+                      View {imageResult.errors.length} error(s) — images matched but failed to save
+                    </summary>
+                    <ul style={{ marginTop: "0.5rem", fontSize: "0.85rem" }}>
+                      {imageResult.errors.map((e, i) => (
+                        <li key={i} style={{ color: "#991b1b" }}>{e}</li>
+                      ))}
+                    </ul>
+                  </details>
+                )}
               </div>
             )}
           </div>
