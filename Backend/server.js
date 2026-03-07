@@ -94,7 +94,15 @@ app.use("/api/contact", contactRoutes);
 app.get("/api/health", async (_req, res) => {
   const Product = require("./models/Product");
   const count = await Product.countDocuments().catch(() => 0);
-  res.json({ status: "ok", products: count, db: "mongodb" });
+  const cloudinaryConfigured =
+    !!process.env.CLOUDINARY_CLOUD_NAME &&
+    process.env.CLOUDINARY_CLOUD_NAME !== "your_cloud_name";
+  res.json({
+    status: "ok",
+    products: count,
+    db: "mongodb",
+    cloudinary: cloudinaryConfigured ? "configured" : "NOT configured — images will save locally (ephemeral)",
+  });
 });
 
 // ── Root route ──
