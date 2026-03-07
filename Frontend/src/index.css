@@ -27,6 +27,10 @@
   box-sizing: border-box;
 }
 
+html, body {
+  overflow-x: hidden;
+}
+
 body {
   font-family:
     "Inter",
@@ -266,10 +270,12 @@ ol {
 .header-nav-row {
   background: rgba(255, 255, 255, 0.06);
   border-top: 1px solid rgba(255, 255, 255, 0.08);
+  overflow-x: hidden;
 }
 
 .header-nav-row .nav {
   justify-content: center;
+  flex-wrap: wrap;
 }
 
 .logo img {
@@ -313,16 +319,17 @@ ol {
 .nav {
   display: flex;
   align-items: center;
-  gap: 0.15rem;
+  gap: 0.1rem;
   position: relative;
+  flex-wrap: wrap;
 }
 
 /* ── Nav links (flat + parent links) ── */
 .nav-link {
   color: rgba(255, 255, 255, 0.85);
-  padding: 0.6rem 0.75rem;
+  padding: 0.5rem 0.6rem;
   border-radius: var(--radius-sm);
-  font-size: 0.88rem;
+  font-size: 0.82rem;
   font-weight: 600;
   transition: var(--transition);
   white-space: nowrap;
@@ -365,7 +372,7 @@ ol {
   position: absolute;
   top: 100%;
   left: 0;
-  min-width: 220px;
+  min-width: 210px;
   background: var(--bg-dark, #0f0d2e);
   border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: var(--radius);
@@ -375,10 +382,15 @@ ol {
   max-height: 70vh;
   overflow-y: auto;
 }
+/* Prevent right-side dropdowns from going off-screen */
+.nav-item:nth-last-child(-n+4) .nav-dropdown {
+  left: auto;
+  right: 0;
+}
 /* Two-column layout for large lists (>9 items) */
 .nav-dropdown.two-col {
-  min-width: 400px;
-  display: none;          /* still hidden by default */
+  min-width: 380px;
+  display: none;
   flex-wrap: wrap;
 }
 .nav-dropdown.two-col .dropdown-link {
@@ -1658,12 +1670,21 @@ ol {
 .product-detail {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 3rem;
+  gap: 2.5rem;
   align-items: start;
+}
+
+.product-detail-img {
+  position: relative;
+  max-height: 500px;
+  overflow: hidden;
+  border-radius: var(--radius);
 }
 
 .product-detail-img img {
   width: 100%;
+  max-height: 500px;
+  object-fit: contain;
   border-radius: var(--radius);
   box-shadow: var(--shadow);
   background: var(--bg-section);
@@ -1691,6 +1712,7 @@ ol {
     z-index: 99;
     background: var(--bg-dark);
     border-top: 1px solid rgba(255, 255, 255, 0.1);
+    overflow-x: hidden;
   }
 
   .nav {
@@ -1701,8 +1723,10 @@ ol {
     flex-direction: column;
     padding: 0.75rem 1rem;
     gap: 0.15rem;
-    max-height: 75vh;
+    max-height: 80vh;
     overflow-y: auto;
+    overflow-x: hidden;
+    flex-wrap: nowrap;
   }
   .nav.open .nav-link {
     padding: 0.7rem 1rem;
@@ -1786,6 +1810,11 @@ ol {
     gap: 1.5rem;
   }
 
+  .product-detail-img,
+  .product-detail-img img {
+    max-height: 350px;
+  }
+
   .size-order-section {
     padding: 0.75rem;
   }
@@ -1837,6 +1866,10 @@ ol {
   }
   .category-grid {
     grid-template-columns: 1fr;
+  }
+  .product-detail-img,
+  .product-detail-img img {
+    max-height: 280px;
   }
 }
 
