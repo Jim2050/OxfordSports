@@ -270,7 +270,6 @@ ol {
 .header-nav-row {
   background: rgba(255, 255, 255, 0.06);
   border-top: 1px solid rgba(255, 255, 255, 0.08);
-  overflow-x: hidden;
 }
 
 .header-nav-row .nav {
@@ -1712,7 +1711,6 @@ ol {
     z-index: 99;
     background: var(--bg-dark);
     border-top: 1px solid rgba(255, 255, 255, 0.1);
-    overflow-x: hidden;
   }
 
   .nav {
@@ -1750,6 +1748,8 @@ ol {
     font-size: 0.85rem;
   }
   .nav-dropdown {
+    display: flex;
+    flex-direction: column;
     position: static;
     min-width: 0;
     box-shadow: none;
@@ -1758,12 +1758,10 @@ ol {
     background: rgba(255, 255, 255, 0.04);
     max-height: 0;
     overflow: hidden;
-    transition: max-height 0.3s ease;
+    transition: max-height 0.3s ease, padding 0.3s ease;
     padding: 0;
   }
   .nav-item.dropdown-open > .nav-dropdown {
-    display: flex;
-    flex-direction: column;
     max-height: 600px;
     padding: 0.25rem 0;
   }
