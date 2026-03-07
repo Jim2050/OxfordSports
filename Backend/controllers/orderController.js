@@ -1,5 +1,6 @@
 const Order = require("../models/Order");
 const Product = require("../models/Product");
+const nodemailer = require("nodemailer");
 
 // ══════════════════════════════════════════
 //  Member: Place an order (from cart)
@@ -152,6 +153,8 @@ exports.placeOrder = async (req, res) => {
       customerName: req.user.name,
       customerEmail: req.user.email,
       customerCompany: req.user.company || "",
+      customerPhone: req.user.mobileNumber || "",
+      deliveryAddress: req.user.deliveryAddress || "",
       items: orderItems,
       totalAmount,
       notes: notes || "",
@@ -164,11 +167,110 @@ exports.placeOrder = async (req, res) => {
       );
     }
 
+    // ── Send order confirmation email (non-blocking) ──
+    sendOrderEmail(order).catch((err) =>
+      console.error("Order email error:", err.message),
+    );
+
     res.status(201).json({ success: true, order });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 };
+
+/**
+ * Send order confirmation email to admin + customer.
+ */
+async function sendOrderEmail(order) {
+  const smtpUser = process.env.SMTP_USER;
+  const smtpPass = process.env.SMTP_PASS;
+  if (!smtpUser || !smtpPass) {
+    console.log(`[ORDER EMAIL] SMTP not configured — skipping email for ${order.orderNumber}`);
+    console.log(`  Customer: ${order.customerName} <${order.customerEmail}>`);
+    console.log(`  Phone: ${order.customerPhone || "N/A"}`);
+    console.log(`  Address: ${order.deliveryAddress || "N/A"}`);
+    console.log(`  Total: £${order.totalAmount.toFixed(2)}`);
+    console.log(`  Items: ${order.items.length}`);
+    return;
+  }
+
+  const transporter = nodemailer.createTransport({
+    host: process.env.SMTP_HOST || "smtp.gmail.com",
+    port: parseInt(process.env.SMTP_PORT || "587"),
+    secure: false,
+    auth: { user: smtpUser, pass: smtpPass },
+  });
+
+  const adminEmail = process.env.CONTACT_EMAIL_TO || "sales@oxfordsports.net";
+
+  const itemRows = order.items
+    .map(
+      (i) =>
+        `<tr>
+          <td style="padding:6px 10px;border:1px solid #e5e7eb;">${i.name}</td>
+          <td style="padding:6px 10px;border:1px solid #e5e7eb;">${i.sku}</td>
+          <td style="padding:6px 10px;border:1px solid #e5e7eb;">${i.size || "—"}</td>
+          <td style="padding:6px 10px;border:1px solid #e5e7eb;text-align:center;">${i.quantity}</td>
+          <td style="padding:6px 10px;border:1px solid #e5e7eb;text-align:right;">£${i.unitPrice.toFixed(2)}</td>
+          <td style="padding:6px 10px;border:1px solid #e5e7eb;text-align:right;">£${i.lineTotal.toFixed(2)}</td>
+        </tr>`,
+    )
+    .join("");
+
+  const html = `
+    <div style="font-family:Arial,sans-serif;max-width:650px;margin:0 auto;">
+      <h2 style="color:#1a1281;">Oxford Sports — Order Confirmation</h2>
+      <p><strong>Order Number:</strong> ${order.orderNumber}</p>
+      <p><strong>Date:</strong> ${new Date(order.createdAt).toLocaleDateString("en-GB")}</p>
+      <hr style="border:1px solid #e5e7eb;">
+      <h3>Customer Details</h3>
+      <p><strong>Name:</strong> ${order.customerName}</p>
+      <p><strong>Email:</strong> ${order.customerEmail}</p>
+      <p><strong>Company:</strong> ${order.customerCompany || "—"}</p>
+      <p><strong>Phone:</strong> ${order.customerPhone || "—"}</p>
+      <p><strong>Delivery Address:</strong> ${order.deliveryAddress || "—"}</p>
+      ${order.notes ? `<p><strong>Notes:</strong> ${order.notes}</p>` : ""}
+      <hr style="border:1px solid #e5e7eb;">
+      <h3>Order Items</h3>
+      <table style="border-collapse:collapse;width:100%;font-size:0.9rem;">
+        <thead>
+          <tr style="background:#f3f4f6;">
+            <th style="padding:8px 10px;border:1px solid #e5e7eb;text-align:left;">Product</th>
+            <th style="padding:8px 10px;border:1px solid #e5e7eb;text-align:left;">SKU</th>
+            <th style="padding:8px 10px;border:1px solid #e5e7eb;text-align:left;">Size</th>
+            <th style="padding:8px 10px;border:1px solid #e5e7eb;text-align:center;">Qty</th>
+            <th style="padding:8px 10px;border:1px solid #e5e7eb;text-align:right;">Unit Price</th>
+            <th style="padding:8px 10px;border:1px solid #e5e7eb;text-align:right;">Line Total</th>
+          </tr>
+        </thead>
+        <tbody>${itemRows}</tbody>
+      </table>
+      <p style="text-align:right;font-size:1.1rem;margin-top:1rem;"><strong>Order Total: £${order.totalAmount.toFixed(2)}</strong></p>
+      <hr style="border:1px solid #e5e7eb;">
+      <p style="color:#6b7280;font-size:0.85rem;">This is an automated confirmation from Oxford Sports. If you have any questions, please reply to this email or contact us at ${adminEmail}.</p>
+    </div>
+  `;
+
+  const subject = `Order ${order.orderNumber} — £${order.totalAmount.toFixed(2)} — ${order.customerName}`;
+
+  // Send to admin
+  await transporter.sendMail({
+    from: `"Oxford Sports" <${smtpUser}>`,
+    to: adminEmail,
+    subject: `[NEW ORDER] ${subject}`,
+    html,
+  });
+
+  // Send confirmation to customer
+  if (order.customerEmail) {
+    await transporter.sendMail({
+      from: `"Oxford Sports" <${smtpUser}>`,
+      to: order.customerEmail,
+      subject: `Order Confirmed — ${order.orderNumber}`,
+      html,
+    });
+  }
+}
 
 // ══════════════════════════════════════════
 //  Member: View own orders
@@ -288,6 +390,8 @@ exports.exportOrders = async (req, res) => {
       "Customer Name",
       "Company",
       "Email",
+      "Phone",
+      "Delivery Address",
       "Product Name",
       "SKU",
       "Size",
@@ -310,6 +414,8 @@ exports.exportOrders = async (req, res) => {
             `"${(order.customerName || "").replace(/"/g, '""')}"`,
             `"${(order.customerCompany || "").replace(/"/g, '""')}"`,
             `"${order.customerEmail}"`,
+            `"${(order.customerPhone || "").replace(/"/g, '""')}"`,
+            `"${(order.deliveryAddress || "").replace(/"/g, '""')}"`,
             `"${(item.name || "").replace(/"/g, '""')}"`,
             `"${item.sku}"`,
             `"${item.size || ""}"`,

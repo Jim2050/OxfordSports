@@ -38,6 +38,8 @@ const orderSchema = new mongoose.Schema(
     customerName: { type: String, required: true },
     customerEmail: { type: String, required: true },
     customerCompany: { type: String, default: "" },
+    customerPhone: { type: String, default: "" },
+    deliveryAddress: { type: String, default: "" },
     items: {
       type: [orderItemSchema],
       validate: [(v) => v.length > 0, "Order must contain at least one item."],
