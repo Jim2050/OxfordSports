@@ -9,12 +9,12 @@ export default function AllProductsPage() {
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState(searchParams.get("search") || "");
-  const [brand, setBrand] = useState("");
+  const [brand, setBrand] = useState(searchParams.get("brand") || "");
   const [category, setCategory] = useState(searchParams.get("category") || "");
   const [minPrice, setMinPrice] = useState("");
   const [maxPrice, setMaxPrice] = useState("");
   const [brands, setBrands] = useState([]);
-  const [subcategory, setSubcategory] = useState("");
+  const [subcategory, setSubcategory] = useState(searchParams.get("subcategory") || "");
   const [subcategories, setSubcategories] = useState([]);
 
   // Load brands on mount
@@ -24,19 +24,24 @@ export default function AllProductsPage() {
       .catch(() => {});
   }, []);
 
-  // Sync category from URL when navigating
+  // Sync ALL filter params from URL when navigating (e.g. nav dropdown links)
   useEffect(() => {
     const urlCat = searchParams.get("category") || "";
     const urlSearch = searchParams.get("search") || "";
+    const urlSubcat = searchParams.get("subcategory") || "";
+    const urlBrand = searchParams.get("brand") || "";
     if (urlCat !== category) setCategory(urlCat);
     if (urlSearch !== search) setSearch(urlSearch);
+    if (urlSubcat !== subcategory) setSubcategory(urlSubcat);
+    if (urlBrand !== brand) setBrand(urlBrand);
   }, [searchParams]);
 
-  // Load subcategories when category changes
+  // Load subcategory OPTIONS when category changes (for the dropdown filter)
   useEffect(() => {
-    setSubcategory("");
     if (!category) {
       setSubcategories([]);
+      // Only reset subcategory if URL doesn't have one
+      if (!searchParams.get("subcategory")) setSubcategory("");
       return;
     }
     fetchSubcategories(category)
