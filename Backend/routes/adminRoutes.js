@@ -31,6 +31,7 @@ const {
   importProducts,
   uploadImages: uploadImagesCtrl,
   getImportBatches,
+  getImageUploadStatus,
   resolveImages,
   fixPrices,
 } = require("../controllers/importController");
@@ -56,6 +57,7 @@ router.get("/categories", getCategories);
 // Import / Export
 router.post("/import-products", uploadExcel, importProducts);
 router.post("/upload-images", uploadZip, uploadImagesCtrl);
+router.get("/image-upload-status/:jobId", getImageUploadStatus);
 router.get("/import-batches", getImportBatches);
 router.get("/export", exportProducts);
 

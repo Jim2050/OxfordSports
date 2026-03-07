@@ -933,8 +933,12 @@ exports.importProducts = async (req, res) => {
 /**
  * POST /api/admin/upload-images
  * Accept a ZIP of images. Filenames must match product SKUs.
- * Uploads each to Cloudinary and links to the product.
+ * Responds immediately with a jobId, processes in background.
  */
+
+// In-memory job tracker
+const imageJobs = new Map();
+
 exports.uploadImages = async (req, res) => {
   const filePath = req.file?.path;
 
@@ -947,13 +951,13 @@ exports.uploadImages = async (req, res) => {
     const ALLOWED_IMG = new Set([".jpg", ".jpeg", ".png", ".webp", ".gif"]);
 
     let imagesToProcess = [];
+    let tempExtractDir = null;
 
     if (ext === ".zip") {
-      // ── Extract ZIP ──
       const zip = new AdmZip(filePath);
       const entries = zip.getEntries();
-      const tempDir = path.join(path.dirname(filePath), `images-${Date.now()}`);
-      fs.mkdirSync(tempDir, { recursive: true });
+      tempExtractDir = path.join(path.dirname(filePath), `images-${Date.now()}`);
+      fs.mkdirSync(tempExtractDir, { recursive: true });
 
       for (const entry of entries) {
         if (entry.isDirectory) continue;
@@ -962,7 +966,7 @@ exports.uploadImages = async (req, res) => {
         const imgExt = path.extname(filename).toLowerCase();
         if (!ALLOWED_IMG.has(imgExt)) continue;
 
-        const outPath = path.join(tempDir, filename);
+        const outPath = path.join(tempExtractDir, filename);
         fs.writeFileSync(outPath, entry.getData());
         imagesToProcess.push({
           path: outPath,
@@ -971,7 +975,6 @@ exports.uploadImages = async (req, res) => {
         });
       }
     } else if (ALLOWED_IMG.has(ext)) {
-      // Single image file
       imagesToProcess.push({
         path: filePath,
         filename: req.file.originalname,
@@ -984,135 +987,210 @@ exports.uploadImages = async (req, res) => {
         .json({ error: "Upload a .zip archive or an image file." });
     }
 
-    // ── Pre-fetch all products with SKUs into a map for O(1) lookups ──
-    const allProducts = await Product.find({}, "sku imagePublicId").lean();
-    const skuMap = new Map(); // uppercase SKU → product doc
-    const cleanSkuMap = new Map(); // stripped SKU → product doc (fallback)
-    for (const p of allProducts) {
-      const upper = p.sku.toUpperCase();
-      skuMap.set(upper, p);
-      cleanSkuMap.set(upper.replace(/[\s_-]/g, ""), p);
+    if (imagesToProcess.length === 0) {
+      cleanup(filePath);
+      return res.status(400).json({ error: "No valid image files found in the archive." });
     }
 
-    let matched = 0;
-    let unmatched = 0;
-    const unmatchedFiles = [];
-    const errors = [];
-
-    const cName = process.env.CLOUDINARY_CLOUD_NAME || "";
-    const cloudinaryEnabled = !!cName && cName !== "your_cloud_name";
-
-    // ── Process images in parallel batches of 10 ──
-    const BATCH_SIZE = 10;
-    const bulkOps = [];
-
-    for (let i = 0; i < imagesToProcess.length; i += BATCH_SIZE) {
-      const batch = imagesToProcess.slice(i, i + BATCH_SIZE);
-
-      const results = await Promise.allSettled(
-        batch.map(async (img) => {
-          // Find product by SKU using in-memory map
-          let product = skuMap.get(img.stem);
-
-          // Try partial match: "KC0689-BLK" → "KC0689"
-          if (!product && img.stem.includes("-")) {
-            product = skuMap.get(img.stem.split("-")[0]);
-          }
-
-          // Try cleaned stem (strip dashes/underscores/spaces)
-          if (!product) {
-            const cleanStem = img.stem.replace(/[\s_-]/g, "");
-            product = cleanSkuMap.get(cleanStem);
-          }
-
-          if (!product) {
-            return { status: "unmatched", filename: img.filename, stem: img.stem };
-          }
-
-          // Upload to Cloudinary
-          let imageUrl = "";
-          let imagePublicId = "";
-
-          if (cloudinaryEnabled) {
-            // Delete old image if exists
-            if (product.imagePublicId) {
-              await cloudinary.uploader.destroy(product.imagePublicId).catch(() => {});
-            }
-            const upload = await cloudinary.uploader.upload(img.path, {
-              folder: "oxford-sports/products",
-              public_id: product.sku,
-              overwrite: true,
-            });
-            imageUrl = upload.secure_url;
-            imagePublicId = upload.public_id;
-          } else {
-            const uploadsDir = path.join(__dirname, "..", "uploads", "products");
-            fs.mkdirSync(uploadsDir, { recursive: true });
-            const destFilename = `${product.sku}${path.extname(img.filename)}`;
-            fs.copyFileSync(img.path, path.join(uploadsDir, destFilename));
-            imageUrl = `/uploads/products/${destFilename}`;
-          }
-
-          return { status: "matched", sku: product.sku, imageUrl, imagePublicId };
-        })
-      );
-
-      for (const r of results) {
-        if (r.status === "fulfilled") {
-          const val = r.value;
-          if (val.status === "matched") {
-            matched++;
-            const updateFields = { imageUrl: val.imageUrl };
-            if (val.imagePublicId) updateFields.imagePublicId = val.imagePublicId;
-            bulkOps.push({
-              updateOne: {
-                filter: { sku: val.sku },
-                update: { $set: updateFields },
-              },
-            });
-          } else {
-            unmatched++;
-            unmatchedFiles.push(val.filename);
-          }
-        } else {
-          // Promise rejected — Cloudinary or other error
-          const imgFile = batch[results.indexOf(r)]?.filename || "unknown";
-          errors.push(`${imgFile}: ${r.reason?.message || "upload failed"}`);
-        }
-      }
-
-      // Flush bulk ops every 100
-      if (bulkOps.length >= 100) {
-        await Product.bulkWrite(bulkOps).catch((e) =>
-          console.error("[IMAGE] bulkWrite error:", e.message)
-        );
-        bulkOps.length = 0;
-      }
+    // For small batches (≤20 images), process synchronously and return result directly
+    if (imagesToProcess.length <= 20) {
+      const result = await processImageBatch(imagesToProcess, filePath, tempExtractDir);
+      return res.json(result);
     }
 
-    // Final flush
-    if (bulkOps.length > 0) {
-      await Product.bulkWrite(bulkOps).catch((e) =>
-        console.error("[IMAGE] bulkWrite error:", e.message)
-      );
-    }
+    // For large batches, respond immediately and process in background
+    const jobId = `img-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const job = {
+      id: jobId,
+      status: "processing",
+      total: imagesToProcess.length,
+      processed: 0,
+      matched: 0,
+      unmatched: 0,
+      errors: [],
+      unmatchedFiles: [],
+      startedAt: new Date(),
+    };
+    imageJobs.set(jobId, job);
 
-    // Cleanup temp files
-    cleanup(filePath);
-    // If ZIP was extracted, cleanup extracted dir
-    const tempDir = imagesToProcess[0]?.path
-      ? path.dirname(imagesToProcess[0].path)
-      : null;
-    if (tempDir && tempDir.includes("images-")) {
-      fs.rmSync(tempDir, { recursive: true, force: true });
-    }
+    // Respond immediately
+    res.json({
+      jobId,
+      status: "processing",
+      total: imagesToProcess.length,
+      message: `Processing ${imagesToProcess.length} images in the background. Poll /api/admin/image-upload-status/${jobId} for progress.`,
+    });
 
-    res.json({ matched, unmatched, unmatchedFiles, errors });
+    // Process in background (fire-and-forget)
+    processImageBatch(imagesToProcess, filePath, tempExtractDir, job)
+      .then((result) => {
+        job.status = "complete";
+        job.matched = result.matched;
+        job.unmatched = result.unmatched;
+        job.errors = result.errors;
+        job.unmatchedFiles = result.unmatchedFiles;
+        job.completedAt = new Date();
+        console.log(`[IMAGE JOB ${jobId}] Complete — ${result.matched} matched, ${result.unmatched} unmatched, ${result.errors.length} errors`);
+        // Auto-cleanup job data after 1 hour
+        setTimeout(() => imageJobs.delete(jobId), 3600000);
+      })
+      .catch((err) => {
+        job.status = "failed";
+        job.errors.push(err.message);
+        console.error(`[IMAGE JOB ${jobId}] Failed:`, err.message);
+        setTimeout(() => imageJobs.delete(jobId), 3600000);
+      });
+
   } catch (err) {
     console.error("Image upload error:", err);
     cleanup(filePath);
     res.status(500).json({ error: `Image processing failed: ${err.message}` });
   }
+};
+
+/**
+ * Process a batch of images — shared by sync and async paths.
+ * If `job` is provided, updates progress in real-time.
+ */
+async function processImageBatch(imagesToProcess, filePath, tempExtractDir, job = null) {
+  // Pre-fetch all SKUs into memory for O(1) lookups
+  const allProducts = await Product.find({}, "sku imagePublicId").lean();
+  const skuMap = new Map();
+  const cleanSkuMap = new Map();
+  for (const p of allProducts) {
+    const upper = p.sku.toUpperCase();
+    skuMap.set(upper, p);
+    cleanSkuMap.set(upper.replace(/[\s_-]/g, ""), p);
+  }
+
+  let matched = 0;
+  let unmatched = 0;
+  const unmatchedFiles = [];
+  const errors = [];
+
+  const cName = process.env.CLOUDINARY_CLOUD_NAME || "";
+  const cloudinaryEnabled = !!cName && cName !== "your_cloud_name";
+  const BATCH_SIZE = 10;
+  const bulkOps = [];
+
+  for (let i = 0; i < imagesToProcess.length; i += BATCH_SIZE) {
+    const batch = imagesToProcess.slice(i, i + BATCH_SIZE);
+
+    const results = await Promise.allSettled(
+      batch.map(async (img) => {
+        let product = skuMap.get(img.stem);
+        if (!product && img.stem.includes("-")) {
+          product = skuMap.get(img.stem.split("-")[0]);
+        }
+        if (!product) {
+          const cleanStem = img.stem.replace(/[\s_-]/g, "");
+          product = cleanSkuMap.get(cleanStem);
+        }
+        if (!product) {
+          return { status: "unmatched", filename: img.filename, stem: img.stem };
+        }
+
+        let imageUrl = "";
+        let imagePublicId = "";
+
+        if (cloudinaryEnabled) {
+          if (product.imagePublicId) {
+            await cloudinary.uploader.destroy(product.imagePublicId).catch(() => {});
+          }
+          const upload = await cloudinary.uploader.upload(img.path, {
+            folder: "oxford-sports/products",
+            public_id: product.sku,
+            overwrite: true,
+          });
+          imageUrl = upload.secure_url;
+          imagePublicId = upload.public_id;
+        } else {
+          const uploadsDir = path.join(__dirname, "..", "uploads", "products");
+          fs.mkdirSync(uploadsDir, { recursive: true });
+          const destFilename = `${product.sku}${path.extname(img.filename)}`;
+          fs.copyFileSync(img.path, path.join(uploadsDir, destFilename));
+          imageUrl = `/uploads/products/${destFilename}`;
+        }
+
+        return { status: "matched", sku: product.sku, imageUrl, imagePublicId };
+      })
+    );
+
+    for (const r of results) {
+      if (r.status === "fulfilled") {
+        const val = r.value;
+        if (val.status === "matched") {
+          matched++;
+          const updateFields = { imageUrl: val.imageUrl };
+          if (val.imagePublicId) updateFields.imagePublicId = val.imagePublicId;
+          bulkOps.push({
+            updateOne: {
+              filter: { sku: val.sku },
+              update: { $set: updateFields },
+            },
+          });
+        } else {
+          unmatched++;
+          unmatchedFiles.push(val.filename);
+        }
+      } else {
+        const imgFile = batch[results.indexOf(r)]?.filename || "unknown";
+        errors.push(`${imgFile}: ${r.reason?.message || "upload failed"}`);
+      }
+    }
+
+    // Update job progress if tracking
+    if (job) {
+      job.processed = Math.min(i + BATCH_SIZE, imagesToProcess.length);
+      job.matched = matched;
+      job.unmatched = unmatched;
+    }
+
+    // Flush bulk ops every 100
+    if (bulkOps.length >= 100) {
+      await Product.bulkWrite(bulkOps).catch((e) =>
+        console.error("[IMAGE] bulkWrite error:", e.message)
+      );
+      bulkOps.length = 0;
+    }
+  }
+
+  if (bulkOps.length > 0) {
+    await Product.bulkWrite(bulkOps).catch((e) =>
+      console.error("[IMAGE] bulkWrite error:", e.message)
+    );
+  }
+
+  // Cleanup
+  cleanup(filePath);
+  if (tempExtractDir && fs.existsSync(tempExtractDir)) {
+    fs.rmSync(tempExtractDir, { recursive: true, force: true });
+  }
+
+  return { matched, unmatched, unmatchedFiles, errors };
+}
+
+/**
+ * GET /api/admin/image-upload-status/:jobId
+ * Poll for background image upload progress.
+ */
+exports.getImageUploadStatus = (_req, res) => {
+  const { jobId } = _req.params;
+  const job = imageJobs.get(jobId);
+  if (!job) {
+    return res.status(404).json({ error: "Job not found or expired." });
+  }
+  res.json({
+    jobId: job.id,
+    status: job.status,
+    total: job.total,
+    processed: job.processed,
+    matched: job.matched,
+    unmatched: job.unmatched,
+    errors: job.errors,
+    unmatchedFiles: job.status === "complete" ? job.unmatchedFiles : [],
+    percent: job.total > 0 ? Math.round((job.processed / job.total) * 100) : 0,
+  });
 };
 
 /**

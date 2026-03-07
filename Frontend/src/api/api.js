@@ -151,9 +151,14 @@ export const uploadImages = (file, onProgress) => {
   return API.post("/admin/upload-images", form, {
     headers: { "Content-Type": "multipart/form-data", ...adminHeaders() },
     onUploadProgress: onProgress,
-    timeout: 1800000, // 30 min — large ZIP files with 2000+ images
+    timeout: 120000, // 2 min for upload + initial response
   }).then((r) => r.data);
 };
+
+export const getImageUploadStatus = (jobId) =>
+  API.get(`/admin/image-upload-status/${jobId}`, {
+    headers: adminHeaders(),
+  }).then((r) => r.data);
 
 export const resolveImages = (limit = 100) =>
   API.post(

@@ -6,6 +6,7 @@ import { isTokenValid } from "../../api/axiosInstance";
 import {
   uploadExcel,
   uploadImages,
+  getImageUploadStatus,
   fetchProducts,
   deleteProduct,
   deleteAllProducts,
@@ -157,14 +158,58 @@ export default function AdminPage() {
           if (pct >= 100) setServerProcessing(true);
         }
       });
-      setImageResult(res);
-      toast.success(`${res.matched ?? 0} images matched to products.`);
-      loadProducts();
-      loadStats();
+
+      // If backend returned a jobId, poll for progress
+      if (res.jobId) {
+        toast.success(`Processing ${res.total} images in the background…`);
+        const jobId = res.jobId;
+        const poll = setInterval(async () => {
+          try {
+            const status = await getImageUploadStatus(jobId);
+            setProgress(status.percent || 0);
+            setImageResult({
+              matched: status.matched,
+              unmatched: status.unmatched,
+              errors: status.errors,
+              unmatchedFiles: status.unmatchedFiles,
+              total: status.total,
+              processed: status.processed,
+              status: status.status,
+            });
+
+            if (status.status === "complete" || status.status === "failed") {
+              clearInterval(poll);
+              setUploading(false);
+              setProgress(0);
+              setServerProcessing(false);
+              if (status.status === "complete") {
+                toast.success(`Done! ${status.matched} images matched to products.`);
+              } else {
+                toast.error("Image processing failed. Check errors below.");
+              }
+              loadProducts();
+              loadStats();
+            }
+          } catch {
+            clearInterval(poll);
+            setUploading(false);
+            setProgress(0);
+            setServerProcessing(false);
+          }
+        }, 3000); // Poll every 3 seconds
+      } else {
+        // Small batch — result returned directly
+        setImageResult(res);
+        toast.success(`${res.matched ?? 0} images matched to products.`);
+        setUploading(false);
+        setProgress(0);
+        setServerProcessing(false);
+        loadProducts();
+        loadStats();
+      }
     } catch (err) {
       const msg = err?.response?.data?.error || "Image upload failed.";
       toast.error(msg);
-    } finally {
       setUploading(false);
       setProgress(0);
       setServerProcessing(false);
@@ -685,7 +730,9 @@ export default function AdminPage() {
               <div className="icon">🖼️</div>
               <p>
                 {serverProcessing
-                  ? "⏳ Matching images to products & uploading to cloud…"
+                  ? imageResult?.status === "processing"
+                    ? `⏳ Processing images… ${imageResult.processed ?? 0} / ${imageResult.total ?? "?"} (${progress}%)`
+                    : "⏳ Matching images to products & uploading to cloud…"
                   : uploading
                     ? `Uploading… ${progress}%`
                     : "Drop your .zip image archive here, or click to browse"}
@@ -704,7 +751,9 @@ export default function AdminPage() {
                   />
                 </div>
                 <span className="progress-text">
-                  {serverProcessing ? "Processing…" : `${progress}%`}
+                  {serverProcessing
+                    ? `${imageResult?.processed ?? 0} / ${imageResult?.total ?? "?"} images — ${imageResult?.matched ?? 0} matched (${progress}%)`
+                    : `${progress}%`}
                 </span>
               </div>
             )}
