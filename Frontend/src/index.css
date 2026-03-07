@@ -569,8 +569,9 @@ ol {
 .product-card-img {
   width: 100%;
   height: 260px;
-  object-fit: cover;
-  background: var(--bg-section);
+  object-fit: contain;
+  background: #fff;
+  padding: 0.5rem;
 }
 
 .product-card-body {
