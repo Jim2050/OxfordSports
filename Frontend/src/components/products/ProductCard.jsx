@@ -28,8 +28,7 @@ export default function ProductCard({ product }) {
   const { addToCart, isInCart, openDrawer } = useCart();
   const productSizes = getSizes(product);
   const hasSizes = productSizes.length > 0;
-  const { mustBuyAll, threshold } = getMOQInfo(product);
-  const proRata = getProRata(product);
+  const { mustBuyAll } = getMOQInfo(product);
 
   const [added, setAdded] = useState(false);
 
