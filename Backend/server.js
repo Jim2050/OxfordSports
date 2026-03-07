@@ -47,6 +47,9 @@ const { notFound, errorHandler } = require("./middleware/errorMiddleware");
 const app = express();
 const PORT = process.env.PORT || 5000;
 
+// ── Trust proxy (Railway runs behind a reverse proxy) ──
+app.set("trust proxy", 1);
+
 // ── Ensure upload directories exist ──
 const UPLOADS_DIR = path.join(__dirname, "uploads");
 if (!fs.existsSync(UPLOADS_DIR)) fs.mkdirSync(UPLOADS_DIR, { recursive: true });
