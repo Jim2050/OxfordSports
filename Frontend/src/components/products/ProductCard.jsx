@@ -149,7 +149,7 @@ export default function ProductCard({ product }) {
           <div className="sizes-section">
             <span className="sizes-header">
               Available Sizes ({totalQty}{" "}
-              {totalQty === 1 ? "unit" : "units"})
+              {totalQty === 1 ? "unit" : "units"}) — Sold pro rata from sizes below
             </span>
             <div className="sizes-preview">
               {productSizes.slice(0, 10).map((s) => (
@@ -186,7 +186,7 @@ export default function ProductCard({ product }) {
         {totalQty > 0 && <p className="stock-info">{totalQty} in stock</p>}
 
         {/* ── ORDER THIS ITEM + Heart (R10 / #13 / #19) ── */}
-        <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
+        <div style={{ display: "flex", gap: "0.5rem", alignItems: "center", marginTop: "auto" }}>
           <Link
             to={detailUrl}
             className={`btn btn-order-item${totalQty === 0 ? " disabled" : ""}`}

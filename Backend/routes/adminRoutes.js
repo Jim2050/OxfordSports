@@ -7,6 +7,24 @@ const express = require("express");
 const router = express.Router();
 const { protect, adminOnly } = require("../middleware/authMiddleware");
 const { uploadExcel, uploadZip } = require("../middleware/uploadMiddleware");
+const multer = require("multer");
+const path = require("path");
+const fs = require("fs");
+const TEMP_DIR = path.join(__dirname, "..", "uploads", "temp");
+if (!fs.existsSync(TEMP_DIR)) fs.mkdirSync(TEMP_DIR, { recursive: true });
+const singleImageUpload = multer({
+  storage: multer.diskStorage({
+    destination: (_req, _file, cb) => cb(null, TEMP_DIR),
+    filename: (_req, file, cb) => cb(null, `${Date.now()}-${file.originalname}`),
+  }),
+  limits: { fileSize: 10 * 1024 * 1024 },
+  fileFilter: (_req, file, cb) => {
+    const allowed = [".jpg", ".jpeg", ".png", ".webp", ".gif"];
+    const ext = path.extname(file.originalname).toLowerCase();
+    if (allowed.includes(ext)) return cb(null, true);
+    cb(new Error("Only image files are allowed."));
+  },
+}).single("image");
 
 const {
   adminLogin,
@@ -19,6 +37,8 @@ const {
   getStats,
   fixSubcategories,
   fixBrands,
+  uploadProductImage,
+  bulkRecategorize,
 } = require("../controllers/adminController");
 
 const {
@@ -47,7 +67,9 @@ router.get("/stats", getStats);
 
 // Product CRUD
 router.post("/products", addProduct);
+router.put("/products/bulk-recategorize", bulkRecategorize);
 router.put("/products/:sku", updateProduct);
+router.post("/products/:sku/upload-image", singleImageUpload, uploadProductImage);
 router.delete("/products/:sku", deleteProduct);
 router.delete("/products", deleteAllProducts);
 

@@ -110,6 +110,8 @@ export function CartProvider({ children }) {
           imageUrl: product.imageUrl || product.image || "",
           maxStock,
           lotItem,
+          category: product.category || "",
+          moqStep: (product.category || "").toUpperCase() === "FOOTWEAR" ? 12 : 1,
         },
       ];
     });

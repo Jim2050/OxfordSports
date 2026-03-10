@@ -10,6 +10,7 @@ export default function RegisterPage() {
     name: "",
     email: "",
     password: "",
+    confirmPassword: "",
     company: "",
     mobileNumber: "",
     deliveryAddress: "",
@@ -29,6 +30,14 @@ export default function RegisterPage() {
       if (mode === "register") {
         if (!form.name || !form.email || !form.password) {
           toast.error("Name, email, and password are required.");
+          return;
+        }
+        if (form.password !== form.confirmPassword) {
+          toast.error("Passwords do not match.");
+          return;
+        }
+        if (!form.mobileNumber || !form.deliveryAddress) {
+          toast.error("Mobile number and delivery address are required.");
           return;
         }
         await register(form.name, form.email, form.password, form.company, form.mobileNumber, form.deliveryAddress);
@@ -143,7 +152,7 @@ export default function RegisterPage() {
                   />
                 </div>
                 <div className="form-field">
-                  <label htmlFor="mobileNumber">Mobile Number (optional)</label>
+                  <label htmlFor="mobileNumber">Mobile Number *</label>
                   <input
                     id="mobileNumber"
                     name="mobileNumber"
@@ -151,10 +160,11 @@ export default function RegisterPage() {
                     value={form.mobileNumber}
                     onChange={handle}
                     placeholder="07700 123456"
+                    required
                   />
                 </div>
                 <div className="form-field">
-                  <label htmlFor="deliveryAddress">Delivery Address (optional)</label>
+                  <label htmlFor="deliveryAddress">Delivery Address *</label>
                   <textarea
                     id="deliveryAddress"
                     name="deliveryAddress"
@@ -163,6 +173,7 @@ export default function RegisterPage() {
                     placeholder="Full delivery address"
                     rows={3}
                     style={{ resize: "vertical" }}
+                    required
                   />
                 </div>
               </>
@@ -194,6 +205,22 @@ export default function RegisterPage() {
                 minLength={mode === "register" ? 6 : undefined}
               />
             </div>
+
+            {mode === "register" && (
+              <div className="form-field">
+                <label htmlFor="confirmPassword">Confirm Password *</label>
+                <input
+                  id="confirmPassword"
+                  name="confirmPassword"
+                  type="password"
+                  value={form.confirmPassword}
+                  onChange={handle}
+                  placeholder="Re-enter your password"
+                  required
+                  minLength={6}
+                />
+              </div>
+            )}
 
             <button
               type="submit"

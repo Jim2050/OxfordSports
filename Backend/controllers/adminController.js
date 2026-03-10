@@ -2,6 +2,8 @@ const User = require("../models/User");
 const Product = require("../models/Product");
 const Category = require("../models/Category");
 const generateToken = require("../utils/generateToken");
+const cloudinary = require("../config/cloudinary");
+const fs = require("fs");
 
 /**
  * POST /api/admin/login
@@ -447,6 +449,90 @@ exports.getStats = async (_req, res) => {
       brands,
       colorCount: colors.length,
       recentBatches,
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+/**
+ * POST /api/admin/products/:sku/upload-image
+ * Upload a single image for a product (via Cloudinary).
+ * Expects multipart form with file field "image".
+ */
+exports.uploadProductImage = async (req, res) => {
+  try {
+    const sku = req.params.sku.toUpperCase();
+    const product = await Product.findOne({ sku });
+    if (!product) {
+      return res.status(404).json({ error: "Product not found." });
+    }
+
+    if (!req.file) {
+      return res.status(400).json({ error: "No image file provided." });
+    }
+
+    // Upload to Cloudinary
+    const result = await cloudinary.uploader.upload(req.file.path, {
+      folder: "oxford-sports",
+      public_id: sku.replace(/[^a-zA-Z0-9_-]/g, "_"),
+      overwrite: true,
+      transformation: [{ width: 800, height: 800, crop: "limit", quality: "auto" }],
+    });
+
+    // Clean up temp file
+    try { fs.unlinkSync(req.file.path); } catch {}
+
+    // Update product
+    product.imageUrl = result.secure_url;
+    product.imagePublicId = result.public_id;
+    await product.save();
+
+    res.json({
+      success: true,
+      imageUrl: result.secure_url,
+      product,
+    });
+  } catch (err) {
+    // Clean up temp file on error
+    if (req.file?.path) try { fs.unlinkSync(req.file.path); } catch {}
+    res.status(500).json({ error: err.message });
+  }
+};
+
+/**
+ * PUT /api/admin/products/bulk-recategorize
+ * Move products from one category to another, or recategorize a list of SKUs.
+ * Body: { skus: ["SKU1","SKU2"], category: "NEW_CAT", subcategory: "NEW_SUB" }
+ * OR: { fromCategory: "OLD_CAT", category: "NEW_CAT", subcategory: "NEW_SUB" }
+ */
+exports.bulkRecategorize = async (req, res) => {
+  try {
+    const { skus, fromCategory, category, subcategory } = req.body;
+
+    if (!category && !subcategory) {
+      return res.status(400).json({ error: "Provide at least category or subcategory." });
+    }
+
+    let filter = {};
+    if (skus && Array.isArray(skus) && skus.length > 0) {
+      filter.sku = { $in: skus.map(s => s.toUpperCase()) };
+    } else if (fromCategory) {
+      filter.category = { $regex: `^${fromCategory}$`, $options: "i" };
+    } else {
+      return res.status(400).json({ error: "Provide skus array or fromCategory." });
+    }
+
+    const update = {};
+    if (category) update.category = category;
+    if (subcategory) update.subcategory = subcategory;
+
+    const result = await Product.updateMany(filter, { $set: update });
+
+    res.json({
+      success: true,
+      updated: result.modifiedCount,
+      message: `${result.modifiedCount} products recategorized.`,
     });
   } catch (err) {
     res.status(500).json({ error: err.message });

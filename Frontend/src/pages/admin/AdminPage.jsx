@@ -17,6 +17,9 @@ import {
   fetchAdminStats,
   fixSubcategories,
   fixBrands,
+  uploadProductImage,
+  bulkRecategorize,
+  fetchCategories,
 } from "../../api/api";
 
 export default function AdminPage() {
@@ -54,11 +57,16 @@ export default function AdminPage() {
     quantity: "",
   });
   const [formLoading, setFormLoading] = useState(false);
+  const [productImageFile, setProductImageFile] = useState(null);
+  const [productImagePreview, setProductImagePreview] = useState(null);
+  const [categoryList, setCategoryList] = useState([]);
+  const [subcategoryList, setSubcategoryList] = useState([]);
 
   useEffect(() => {
     if (authed) {
       loadProducts();
       loadStats();
+      loadCategories();
     }
 
     // Listen for 401-triggered auto-logout from the axios interceptor
@@ -73,6 +81,15 @@ export default function AdminPage() {
   const loadStats = () => {
     fetchAdminStats()
       .then(setStats)
+      .catch(() => {});
+  };
+
+  const loadCategories = () => {
+    fetchCategories()
+      .then((data) => {
+        setCategoryList(data.productCategories || []);
+        setSubcategoryList(data.subcategories || []);
+      })
       .catch(() => {});
   };
 
@@ -320,6 +337,8 @@ export default function AdminPage() {
       quantity: "",
     });
     setEditingSku(null);
+    setProductImageFile(null);
+    setProductImagePreview(null);
   };
 
   const startEdit = (product) => {
@@ -350,6 +369,8 @@ export default function AdminPage() {
       quantity: qtyStr,
     });
     setEditingSku(product.sku);
+    setProductImageFile(null);
+    setProductImagePreview(resolveImageUrl(product.imageUrl || product.image) || null);
     setTab("addproduct");
   };
 
@@ -369,13 +390,27 @@ export default function AdminPage() {
 
     setFormLoading(true);
     try {
+      let savedProduct;
       if (editingSku) {
-        await updateProduct(editingSku, productForm);
+        const res = await updateProduct(editingSku, productForm);
+        savedProduct = res.product;
         toast.success("Product updated.");
       } else {
-        await addProduct(productForm);
+        const res = await addProduct(productForm);
+        savedProduct = res.product;
         toast.success("Product added.");
       }
+
+      // Upload image if one was dragged onto the form
+      if (productImageFile && savedProduct?.sku) {
+        try {
+          await uploadProductImage(savedProduct.sku, productImageFile);
+          toast.success("Image uploaded successfully.");
+        } catch (imgErr) {
+          toast.error("Product saved but image upload failed: " + (imgErr?.response?.data?.error || imgErr.message));
+        }
+      }
+
       resetForm();
       loadProducts();
       loadStats();
@@ -609,6 +644,33 @@ export default function AdminPage() {
               }}
             >
               🔧 Fix Subcategories
+            </button>
+            <button
+              className="btn btn-sm btn-outline"
+              title="Move all products from one category to another"
+              onClick={async () => {
+                const from = window.prompt("Move FROM category (e.g. CLOTHING):");
+                if (!from) return;
+                const to = window.prompt("Move TO category (e.g. LICENSED TEAM CLOTHING):");
+                if (!to) return;
+                const sub = window.prompt("Set subcategory (optional, leave blank to keep existing):");
+                if (!window.confirm(`Move all "${from}" products to "${to}"${sub ? ` / "${sub}"` : ""}?`)) return;
+                try {
+                  const r = await bulkRecategorize({
+                    fromCategory: from,
+                    category: to,
+                    ...(sub ? { subcategory: sub } : {}),
+                  });
+                  toast.success(r.message || `Recategorized ${r.updated} products.`);
+                  loadProducts();
+                  loadStats();
+                  loadCategories();
+                } catch (err) {
+                  toast.error(err?.response?.data?.error || "Recategorize failed.");
+                }
+              }}
+            >
+              📁 Bulk Recategorize
             </button>
           </div>
         </details>
@@ -901,8 +963,19 @@ export default function AdminPage() {
                   name="category"
                   value={productForm.category}
                   onChange={handleFormChange}
-                  placeholder="e.g. Football"
+                  placeholder="e.g. FOOTWEAR, CLOTHING"
+                  list="category-list"
                 />
+                <datalist id="category-list">
+                  {categoryList.map((c) => (
+                    <option key={c} value={c} />
+                  ))}
+                  <option value="FOOTWEAR" />
+                  <option value="CLOTHING" />
+                  <option value="ACCESSORIES" />
+                  <option value="LICENSED TEAM CLOTHING" />
+                  <option value="B GRADE" />
+                </datalist>
               </div>
               <div className="form-field">
                 <label>Subcategory</label>
@@ -911,7 +984,13 @@ export default function AdminPage() {
                   value={productForm.subcategory}
                   onChange={handleFormChange}
                   placeholder="e.g. Real Madrid"
+                  list="subcategory-list"
                 />
+                <datalist id="subcategory-list">
+                  {subcategoryList.map((s) => (
+                    <option key={s} value={s} />
+                  ))}
+                </datalist>
               </div>
               <div className="form-field">
                 <label>Brand</label>
@@ -966,22 +1045,92 @@ export default function AdminPage() {
                 />
               </div>
               <div className="form-field">
-                <label>Sizes</label>
+                <label>Sizes (comma-separated, with qty per size: 8:50, 9:40, 10:30)</label>
                 <input
                   name="sizes"
                   value={productForm.sizes}
                   onChange={handleFormChange}
-                  placeholder="S, M, L, XL"
+                  placeholder="S, M, L, XL  or  8:50, 9:40, 10:30"
                 />
+                <span style={{ fontSize: "0.75rem", color: "#6b7280" }}>
+                  Use "size:qty" format for per-size quantities, or just sizes with a total quantity below.
+                </span>
               </div>
               <div className="form-field">
-                <label>Quantity</label>
+                <label>Total Quantity</label>
                 <input
                   name="quantity"
                   value={productForm.quantity}
                   onChange={handleFormChange}
                   placeholder="e.g. 100"
                 />
+              </div>
+
+              {/* ── Image drag-and-drop ── */}
+              <div className="form-field" style={{ gridColumn: "1 / -1" }}>
+                <label>Product Image</label>
+                <div
+                  onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); }}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    const file = e.dataTransfer.files?.[0];
+                    if (file && file.type.startsWith("image/")) {
+                      setProductImageFile(file);
+                      setProductImagePreview(URL.createObjectURL(file));
+                    } else {
+                      toast.error("Please drop an image file.");
+                    }
+                  }}
+                  onClick={() => {
+                    const input = document.createElement("input");
+                    input.type = "file";
+                    input.accept = "image/*";
+                    input.onchange = (e) => {
+                      const file = e.target.files?.[0];
+                      if (file) {
+                        setProductImageFile(file);
+                        setProductImagePreview(URL.createObjectURL(file));
+                      }
+                    };
+                    input.click();
+                  }}
+                  style={{
+                    border: "2px dashed #d1d5db",
+                    borderRadius: "8px",
+                    padding: "1.5rem",
+                    textAlign: "center",
+                    cursor: "pointer",
+                    background: productImagePreview ? "#f0fdf4" : "#f9fafb",
+                    transition: "all 0.2s",
+                    minHeight: "100px",
+                    display: "flex",
+                    flexDirection: "column",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    gap: "0.5rem",
+                  }}
+                >
+                  {productImagePreview ? (
+                    <>
+                      <img
+                        src={productImagePreview}
+                        alt="Preview"
+                        style={{ maxHeight: "120px", maxWidth: "100%", objectFit: "contain", borderRadius: "4px" }}
+                      />
+                      <span style={{ fontSize: "0.8rem", color: "#059669" }}>
+                        {productImageFile ? productImageFile.name : "Current image"} — Click or drag to replace
+                      </span>
+                    </>
+                  ) : (
+                    <>
+                      <span style={{ fontSize: "2rem" }}>📷</span>
+                      <span style={{ fontSize: "0.85rem", color: "#6b7280" }}>
+                        Drag &amp; drop an image here, or click to browse
+                      </span>
+                    </>
+                  )}
+                </div>
               </div>
               <div
                 style={{

@@ -26,7 +26,12 @@ export default function ProductPage() {
     setLoading(true);
     setOrderQty(1);
     API.get(`/products/${encodeURIComponent(sku)}`)
-      .then((r) => setProduct(r.data))
+      .then((r) => {
+        setProduct(r.data);
+        // Set initial qty to match MOQ step (footwear = 12)
+        const cat = (r.data?.category || "").toUpperCase();
+        setOrderQty(cat === "FOOTWEAR" ? 12 : 1);
+      })
       .catch(() => setProduct(null))
       .finally(() => setLoading(false));
   }, [sku]);
@@ -74,6 +79,10 @@ export default function ProductPage() {
   const isOneSize =
     productSizes.length === 1 && productSizes[0].size === "ONE SIZE";
   const { mustBuyAll } = getMOQInfo(product);
+
+  // Quantity step: footwear orders in multiples of 12
+  const isFootwear = (product.category || "").toUpperCase() === "FOOTWEAR";
+  const qtyStep = isFootwear ? 12 : 1;
 
   // Check if any variant is in cart
   const anySizeInCart = productSizes.some((s) => isInCart(product.sku, s.size));
@@ -179,7 +188,7 @@ export default function ProductPage() {
             {hasSizes && !isOneSize && (
               <div className="sizes-section" style={{ marginBottom: "1rem" }}>
                 <span className="sizes-header">
-                  Available Sizes ({totalQty} units)
+                  Available Sizes ({totalQty} units) — Sold pro rata from sizes below
                 </span>
                 <div className="sizes-preview">
                   {productSizes.map((s) => (
@@ -197,7 +206,7 @@ export default function ProductPage() {
 
             {/* ── Order section ── */}
             {mustBuyAll ? (
-              /* Lot item — single "Buy Entire Lot" button, no qty editing */
+              /* Lot item — single "Add To Order" button, no qty editing */
               <div style={{ marginBottom: "1.5rem" }}>
                 <p style={{
                   color: "#0f2d5c",
@@ -222,19 +231,21 @@ export default function ProductPage() {
                 <div className="qty-selector">
                   <button
                     className="cart-qty-btn"
-                    onClick={() => setOrderQty((q) => Math.max(1, q - 1))}
-                    disabled={orderQty <= 1}
+                    onClick={() => setOrderQty((q) => Math.max(qtyStep, q - qtyStep))}
+                    disabled={orderQty <= qtyStep}
                   >
                     −
                   </button>
                   <input
                     type="number"
-                    min="1"
+                    min={qtyStep}
                     max={totalQty > 0 ? totalQty : 9999}
+                    step={qtyStep}
                     value={orderQty}
                     onChange={(e) => {
-                      const v = parseInt(e.target.value) || 1;
-                      setOrderQty(totalQty > 0 ? Math.min(v, totalQty) : Math.max(1, v));
+                      const v = parseInt(e.target.value) || qtyStep;
+                      const rounded = Math.max(qtyStep, Math.round(v / qtyStep) * qtyStep);
+                      setOrderQty(totalQty > 0 ? Math.min(rounded, totalQty) : rounded);
                     }}
                     className="qty-input"
                   />
@@ -242,7 +253,7 @@ export default function ProductPage() {
                     className="cart-qty-btn"
                     onClick={() =>
                       setOrderQty((q) =>
-                        totalQty > 0 ? Math.min(q + 1, totalQty) : q + 1,
+                        totalQty > 0 ? Math.min(q + qtyStep, totalQty) : q + qtyStep,
                       )
                     }
                     disabled={totalQty > 0 && orderQty >= totalQty}
@@ -252,7 +263,7 @@ export default function ProductPage() {
                 </div>
                 {totalQty > 0 && (
                   <span style={{ fontSize: "0.85rem", color: "#6b7280" }}>
-                    {totalQty} available
+                    {totalQty} available{isFootwear ? " (multiples of 12)" : ""}
                   </span>
                 )}
               </div>
@@ -273,8 +284,8 @@ export default function ProductPage() {
                 disabled={totalQty === 0}
               >
                 {mustBuyAll
-                  ? `Buy Entire Lot (${totalQty} units) — £${(totalQty * finalPrice).toFixed(2)}`
-                  : "Add to Cart"}
+                  ? `Add To Order (${totalQty} units) — £${(totalQty * finalPrice).toFixed(2)}`
+                  : "Add To Order"}
               </button>
               {anySizeInCart && (
                 <button className="btn btn-primary btn-lg" onClick={openDrawer}>

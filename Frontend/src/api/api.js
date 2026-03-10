@@ -335,3 +335,20 @@ export function getProRata(product) {
 export const fetchSubcategories = (categoryName) =>
   API.get("/products/subcategories", { params: { category: categoryName } }).then((r) => r.data);
 
+/** Upload a single product image. */
+export const uploadProductImage = (sku, file, onProgress) => {
+  const form = new FormData();
+  form.append("image", file);
+  return API.post(`/admin/products/${encodeURIComponent(sku)}/upload-image`, form, {
+    headers: { "Content-Type": "multipart/form-data", ...adminHeaders() },
+    onUploadProgress: onProgress,
+    timeout: 60000,
+  }).then((r) => r.data);
+};
+
+/** Bulk recategorize products. */
+export const bulkRecategorize = (data) =>
+  API.put("/admin/products/bulk-recategorize", data, {
+    headers: adminHeaders(),
+  }).then((r) => r.data);
+

@@ -2,7 +2,7 @@ import { useState } from "react";
 import toast from "react-hot-toast";
 import { useCart } from "../../context/CartContext";
 import { useAuth } from "../../context/AuthContext";
-import { resolveImageUrl, MIN_CART_TOTAL } from "../../api/api";
+import { resolveImageUrl, MIN_CART_TOTAL, getMOQInfo } from "../../api/api";
 import API from "../../api/axiosInstance";
 import { buildOrderMailto } from "../../utils/buildOrderMailto";
 
@@ -127,24 +127,25 @@ export default function CartDrawer() {
                         <>
                           <button
                             className="cart-qty-btn"
-                            onClick={() =>
-                              item.quantity <= 1
-                                ? removeFromCart(item.sku, item.size)
-                                : updateQuantity(
-                                    item.sku,
-                                    item.size,
-                                    item.quantity - 1,
-                                  )
-                            }
+                            onClick={() => {
+                              const step = item.moqStep || 1;
+                              const newQty = item.quantity - step;
+                              if (newQty < step) {
+                                removeFromCart(item.sku, item.size);
+                              } else {
+                                updateQuantity(item.sku, item.size, newQty);
+                              }
+                            }}
                           >
                             −
                           </button>
                           <span className="cart-qty-val">{item.quantity}</span>
                           <button
                             className="cart-qty-btn"
-                            onClick={() =>
-                              updateQuantity(item.sku, item.size, item.quantity + 1)
-                            }
+                            onClick={() => {
+                              const step = item.moqStep || 1;
+                              updateQuantity(item.sku, item.size, item.quantity + step);
+                            }}
                             disabled={
                               item.maxStock > 0 && item.quantity >= item.maxStock
                             }
