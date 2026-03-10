@@ -150,6 +150,9 @@ export default function ProductCard({ product }) {
             <span className="sizes-header">
               Available Sizes ({totalQty}{" "}
               {totalQty === 1 ? "unit" : "units"}) — Sold pro rata from sizes below
+              {productSizes.filter(s => s.quantity > 0).length > 1 && (
+                <span className="pro-rata-avg"> (~{(totalQty / productSizes.filter(s => s.quantity > 0).length).toFixed(0)} avg per size)</span>
+              )}
             </span>
             <div className="sizes-preview">
               {productSizes.slice(0, 10).map((s) => (

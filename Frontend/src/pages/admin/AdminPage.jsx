@@ -20,6 +20,8 @@ import {
   uploadProductImage,
   bulkRecategorize,
   fetchCategories,
+  fetchDeletedBatches,
+  restoreProducts,
 } from "../../api/api";
 
 export default function AdminPage() {
@@ -302,21 +304,56 @@ export default function AdminPage() {
     }
   };
 
-  /* ── Clear all products ── */
+  /* ── Clear all products (with safety confirmation) ── */
   const handleClearAll = async () => {
-    if (
-      !window.confirm(
-        `Are you sure you want to delete ALL ${(stats?.total ?? products.length).toLocaleString()} products? This cannot be undone.`,
-      )
-    )
+    const count = stats?.total ?? products.length;
+    const confirmCode = `DELETE-ALL-${count}`;
+    const typed = window.prompt(
+      `⚠️ DANGER: This will delete ALL ${count.toLocaleString()} products.\n\nA backup will be saved so you can restore later.\n\nTo confirm, type exactly:\n${confirmCode}`,
+    );
+    if (!typed || typed.trim() !== confirmCode) {
+      if (typed !== null) toast.error("Confirmation code did not match. No products deleted.");
       return;
+    }
     try {
-      await deleteAllProducts();
-      toast.success("All products cleared.");
+      const result = await deleteAllProducts(confirmCode);
+      toast.success(result.message || "All products cleared. Backup saved.");
       setProducts([]);
       loadStats();
-    } catch {
-      toast.error("Failed to clear products.");
+    } catch (err) {
+      toast.error(err?.response?.data?.error || "Failed to clear products.");
+    }
+  };
+
+  /* ── Restore products from backup ── */
+  const handleRestore = async () => {
+    try {
+      const data = await fetchDeletedBatches();
+      const batches = (data.batches || []).filter(b => !b.restored);
+      if (batches.length === 0) {
+        toast("No backup batches available to restore.");
+        return;
+      }
+      const list = batches.map((b, i) =>
+        `${i + 1}. ${b.reason} — ${b.count} products (${new Date(b.createdAt).toLocaleDateString()})`
+      ).join("\n");
+      const choice = window.prompt(
+        `Available backups:\n\n${list}\n\nEnter the number to restore (1-${batches.length}):`,
+      );
+      if (!choice) return;
+      const idx = parseInt(choice, 10) - 1;
+      if (isNaN(idx) || idx < 0 || idx >= batches.length) {
+        toast.error("Invalid selection.");
+        return;
+      }
+      const batch = batches[idx];
+      if (!window.confirm(`Restore ${batch.count} products from "${batch.reason}"?\n\nExisting products with same SKU will be skipped.`)) return;
+      const result = await restoreProducts(batch._id);
+      toast.success(result.message || `Restored ${result.restored} products.`);
+      loadProducts();
+      loadStats();
+    } catch (err) {
+      toast.error(err?.response?.data?.error || "Failed to restore products.");
     }
   };
 
@@ -1191,6 +1228,17 @@ export default function AdminPage() {
                   🗑️ Clear All
                 </button>
               )}
+              <button
+                className="btn btn-sm"
+                style={{
+                  background: "#0e7490",
+                  color: "#fff",
+                  fontSize: "0.8rem",
+                }}
+                onClick={handleRestore}
+              >
+                ♻️ Restore Products
+              </button>
             </div>
 
             {/* Search within products */}

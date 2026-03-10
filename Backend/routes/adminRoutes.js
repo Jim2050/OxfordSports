@@ -39,6 +39,8 @@ const {
   fixBrands,
   uploadProductImage,
   bulkRecategorize,
+  getDeletedBatches,
+  restoreProducts,
 } = require("../controllers/adminController");
 
 const {
@@ -75,6 +77,10 @@ router.delete("/products", deleteAllProducts);
 
 // Categories
 router.get("/categories", getCategories);
+
+// Deleted product backups & restore
+router.get("/deleted-batches", getDeletedBatches);
+router.post("/restore-products/:batchId", restoreProducts);
 
 // Import / Export
 router.post("/import-products", uploadExcel, importProducts);

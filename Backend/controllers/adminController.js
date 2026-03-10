@@ -1,6 +1,7 @@
 const User = require("../models/User");
 const Product = require("../models/Product");
 const Category = require("../models/Category");
+const DeletedProductBatch = require("../models/DeletedProductBatch");
 const generateToken = require("../utils/generateToken");
 const cloudinary = require("../config/cloudinary");
 const fs = require("fs");
@@ -236,19 +237,28 @@ exports.updateProduct = async (req, res) => {
 
 /**
  * DELETE /api/admin/products/:sku
- * Delete a single product by SKU.
+ * Soft-delete a single product by SKU (backs up before removing).
  */
 exports.deleteProduct = async (req, res) => {
   try {
-    const result = await Product.findOneAndDelete({
-      sku: req.params.sku.toUpperCase(),
-    });
+    const sku = req.params.sku.toUpperCase();
+    const product = await Product.findOne({ sku }).lean();
 
-    if (!result) {
+    if (!product) {
       return res.status(404).json({ error: "Product not found." });
     }
 
-    res.json({ success: true, message: "Product deleted." });
+    // Backup the single product before deleting
+    await DeletedProductBatch.create({
+      deletedBy: req.user?._id,
+      reason: `Single product deleted: ${sku}`,
+      count: 1,
+      products: [product],
+    });
+
+    await Product.findOneAndDelete({ sku });
+
+    res.json({ success: true, message: `Product ${sku} deleted (backup saved).` });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -256,14 +266,118 @@ exports.deleteProduct = async (req, res) => {
 
 /**
  * DELETE /api/admin/products
- * Clear ALL products.
+ * Clear ALL products — requires confirmation code.
+ * Creates a full backup before deletion so products can be restored.
+ *
+ * Body: { confirmCode: "DELETE-ALL-<count>" }
+ * The frontend must send the exact confirmation code matching the product count.
  */
-exports.deleteAllProducts = async (_req, res) => {
+exports.deleteAllProducts = async (req, res) => {
   try {
+    const count = await Product.countDocuments({});
+
+    if (count === 0) {
+      return res.json({ success: true, message: "No products to delete." });
+    }
+
+    // Require confirmation code: "DELETE-ALL-<count>"
+    const expectedCode = `DELETE-ALL-${count}`;
+    const providedCode = (req.body?.confirmCode || "").trim();
+
+    if (providedCode !== expectedCode) {
+      return res.status(400).json({
+        error: `Safety check failed. To delete all ${count} products, send confirmCode: "${expectedCode}". This action creates a backup first.`,
+        expectedCode,
+        productCount: count,
+      });
+    }
+
+    // Create backup snapshot of ALL products
+    const allProducts = await Product.find({}).lean();
+    await DeletedProductBatch.create({
+      deletedBy: req.user?._id,
+      reason: `Bulk clear all — ${count} products`,
+      count,
+      products: allProducts,
+    });
+
+    // Now delete
     const result = await Product.deleteMany({});
     res.json({
       success: true,
-      message: `All products cleared (${result.deletedCount} removed).`,
+      message: `All ${result.deletedCount} products cleared. Backup saved — you can restore within 30 days.`,
+      backupCreated: true,
+      deletedCount: result.deletedCount,
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+/**
+ * GET /api/admin/deleted-batches
+ * List all backup batches available for restore.
+ */
+exports.getDeletedBatches = async (_req, res) => {
+  try {
+    const batches = await DeletedProductBatch.find({})
+      .select("reason count restored restoredAt createdAt")
+      .sort({ createdAt: -1 })
+      .limit(20)
+      .lean();
+    res.json({ batches });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+/**
+ * POST /api/admin/restore-products/:batchId
+ * Restore products from a deleted batch backup.
+ * This re-inserts all products from the backup snapshot.
+ * Skips products whose SKU already exists (to avoid duplicates).
+ */
+exports.restoreProducts = async (req, res) => {
+  try {
+    const batch = await DeletedProductBatch.findById(req.params.batchId);
+    if (!batch) {
+      return res.status(404).json({ error: "Backup batch not found." });
+    }
+    if (batch.restored) {
+      return res.status(400).json({ error: "This batch has already been restored." });
+    }
+
+    const products = batch.products || [];
+    let restored = 0;
+    let skipped = 0;
+
+    for (const p of products) {
+      // Remove MongoDB internal fields so we can re-insert cleanly
+      const { _id, __v, createdAt, updatedAt, ...productData } = p;
+      try {
+        await Product.create(productData);
+        restored++;
+      } catch (e) {
+        // Duplicate key (SKU already exists) — skip
+        if (e.code === 11000) {
+          skipped++;
+        } else {
+          skipped++;
+        }
+      }
+    }
+
+    // Mark batch as restored
+    batch.restored = true;
+    batch.restoredAt = new Date();
+    await batch.save();
+
+    res.json({
+      success: true,
+      message: `Restored ${restored} products (${skipped} skipped — already exist).`,
+      restored,
+      skipped,
+      total: products.length,
     });
   } catch (err) {
     res.status(500).json({ error: err.message });

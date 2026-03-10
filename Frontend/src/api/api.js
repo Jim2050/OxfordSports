@@ -97,13 +97,22 @@ export const deleteProduct = (sku) =>
     headers: adminHeaders(),
   }).then((r) => r.data);
 
-export const deleteAllProducts = () =>
-  API.delete("/admin/products", { headers: adminHeaders() }).then(
-    (r) => r.data,
-  );
+export const deleteAllProducts = (confirmCode) =>
+  API.delete("/admin/products", {
+    headers: adminHeaders(),
+    data: { confirmCode },
+  }).then((r) => r.data);
 
 export const fetchCategories = () =>
   API.get("/admin/categories", { headers: adminHeaders() }).then((r) => r.data);
+
+/** Fetch backup batches available for restore */
+export const fetchDeletedBatches = () =>
+  API.get("/admin/deleted-batches", { headers: adminHeaders() }).then((r) => r.data);
+
+/** Restore products from a backup batch */
+export const restoreProducts = (batchId) =>
+  API.post(`/admin/restore-products/${batchId}`, {}, { headers: adminHeaders() }).then((r) => r.data);
 
 export const addProduct = (data) =>
   API.post("/admin/products", data, { headers: adminHeaders() }).then(
