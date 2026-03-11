@@ -871,6 +871,60 @@ exports.importProducts = async (req, res) => {
         }
       }
 
+      // 2b. Clothing-specific subcategories (matches nav menu)
+      if (!productData.subcategory && productData.category === "CLOTHING") {
+        if (/\b(JSY|JERSEY|SHIRT|POLO|TEE|T-SHIRT|T SHIRT|SS TEE|LS TEE|GRAPHIC TEE|TOP|CROP TOP|TANK)\b/.test(combined)) {
+          productData.subcategory = "Shirts";
+        } else if (/\bSHO\b|\b(SHORTS|SHORT)\b/.test(combined)) {
+          productData.subcategory = "Shorts";
+        } else if (/\b(JKT|JACKET|COAT|PARKA|WINDBREAKER|ANORAK|GILLET|GILET|PADDED|BOMBER)\b/.test(combined)) {
+          productData.subcategory = "Jackets & Coats";
+        } else if (/\b(HOOD|HOODIE|HOODY|SWEAT|SWT|CREW SWEAT|PULLOVER|FLEECE)\b|\bHD\b/.test(combined)) {
+          productData.subcategory = "Hoods & Sweaters";
+        } else if (/\b(SOCK|SOCKS|GLOVE|GLOVES)\b/.test(combined)) {
+          productData.subcategory = "Socks & Gloves";
+        } else if (/\b(HAT|HATS|CAP|CAPS|BEANIE|HEADBAND|HEADWEAR)\b/.test(combined)) {
+          productData.subcategory = "Hats & Caps";
+        } else if (/\b(TRACKSUIT|JOGGER|JOGGERS|TRACK PANT|TRACK PANTS|TRG PNT|TRK PNT|PANTS|PES JKT|FIREBIRD)\b|\bPT\b|\bTT\b/.test(combined)) {
+          productData.subcategory = "Tracksuits & Joggers";
+        } else if (/\b(SWIM|BIKINI|SWIMMING|SWIM SHORT)\b/.test(combined)) {
+          productData.subcategory = "Swimwear";
+        } else if (/\b(LEGGING|LEGGINGS|TIGHT|TIGHTS)\b/.test(combined)) {
+          productData.subcategory = "Leggings";
+        } else if (/\b(VEST|BRA|BRAS|CROP)\b/.test(combined)) {
+          productData.subcategory = "Vests & Bras";
+        } else {
+          productData.subcategory = "Shirts"; // default clothing subcategory
+        }
+      }
+
+      // 2c. Accessories-specific subcategories (matches nav menu)
+      if (!productData.subcategory && productData.category === "ACCESSORIES") {
+        if (/\b(BALL|BALLS|FOOTBALL|MATCH BALL|TRAINING BALL)\b/.test(combined)) {
+          productData.subcategory = "Balls";
+        } else if (/\b(BAG|BAGS|BACKPACK|HOLDALL|DUFFEL|RUCKSACK|GYMSACK|GYM SACK|TOTE)\b/.test(combined)) {
+          productData.subcategory = "Bags & Holdalls";
+        } else if (/\b(HAT|HATS|CAP|CAPS|BEANIE|HEADBAND|HEADWEAR)\b/.test(combined)) {
+          productData.subcategory = "Headwear";
+        } else if (/\b(GLOVE|GLOVES|GOALKEEPER|GK)\b/.test(combined)) {
+          productData.subcategory = "Gloves";
+        } else if (/\b(RACKET|BAT|RACQUET|PADDLE)\b/.test(combined)) {
+          productData.subcategory = "Rackets & Bats";
+        } else if (/\b(TOWEL|TOWELS)\b/.test(combined)) {
+          productData.subcategory = "Sports Towels";
+        } else if (/\b(SHIN|GUARD|GUARDS|PAD|PADS|PROTECTIVE|ANKLE)\b/.test(combined)) {
+          productData.subcategory = "Protective Gear";
+        } else if (/\b(SUNGLASS|SUNGLASSES|EYEWEAR)\b/.test(combined)) {
+          productData.subcategory = "Sunglasses";
+        } else if (/\b(WATCH|MONITOR|TRACKER|FITNESS BAND)\b/.test(combined)) {
+          productData.subcategory = "Watches Monitors";
+        } else if (/\b(SOCK|SOCKS)\b/.test(combined)) {
+          productData.subcategory = "Socks & Gloves"; // socks in accessories go here
+        } else if (/\b(BOTTLE|WATER)\b/.test(combined)) {
+          productData.subcategory = "Bags & Holdalls"; // bottles grouped with bags
+        }
+      }
+
       if (!productData.subcategory) {
         // Check for team/country first (most specific)
         for (const [key, subcat] of Object.entries(TEAM_MAP)) {
