@@ -997,12 +997,13 @@ exports.importProducts = async (req, res) => {
 
       // ── Image URL: store only direct image URLs ──
       // Google/Bing search URLs saved to _pendingImageQuery for auto-resolution
+      // IMPORTANT: Do NOT set imageUrl to "" — it would overwrite images uploaded via ZIP
       const rawImageUrl = row.imageUrl ? String(row.imageUrl).trim() : "";
       if (isDirectImageUrl(rawImageUrl)) {
         productData.imageUrl = rawImageUrl;
       } else if (isValidImageUrl(rawImageUrl)) {
         // HTTP URL but not a direct image (Google search link) — queue for resolution
-        productData.imageUrl = "";
+        // Don't touch imageUrl — preserve any existing Cloudinary image
         productData._pendingImageQuery = rawImageUrl;
         if (i < 5) {
           debug(
@@ -1010,7 +1011,7 @@ exports.importProducts = async (req, res) => {
           );
         }
       } else {
-        productData.imageUrl = "";
+        // No valid image in Excel — do NOT overwrite existing imageUrl
         if (rawImageUrl && i < 5) {
           debug(
             `[IMPORT] Row ${i + 1} imageUrl is not a valid URL: "${rawImageUrl}" — use ZIP image upload`,
@@ -1029,10 +1030,28 @@ exports.importProducts = async (req, res) => {
         delete productData._pendingImageQuery;
       }
 
+      // Separate image fields — only $set them when Excel provides a valid URL
+      // Otherwise use $setOnInsert so existing images survive re-imports
+      const hasExcelImage = !!productData.imageUrl;
+      const imageFields = {};
+      if (hasExcelImage) {
+        imageFields.imageUrl = productData.imageUrl;
+      }
+      delete productData.imageUrl; // remove from main $set
+
+      const updateOp = { $set: productData };
+      if (!hasExcelImage) {
+        // Only set imageUrl on brand-new products (upsert insert)
+        updateOp.$setOnInsert = { imageUrl: "", imagePublicId: "" };
+      } else {
+        // Excel provided a valid direct image URL — overwrite
+        updateOp.$set.imageUrl = imageFields.imageUrl;
+      }
+
       operations.push({
         updateOne: {
           filter: { sku },
-          update: { $set: productData },
+          update: updateOp,
           upsert: true,
         },
       });

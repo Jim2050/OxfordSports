@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { useSearchParams } from "react-router-dom";
 import ProductGrid from "../../components/products/ProductGrid";
 import SearchBar from "../../components/products/SearchBar";
@@ -78,6 +78,17 @@ export default function AllProductsPage() {
   };
 
   const hasFilters = brand || minPrice || maxPrice || search || category || subcategory;
+
+  // Go to Top button visibility
+  const [showGoTop, setShowGoTop] = useState(false);
+  useEffect(() => {
+    const onScroll = () => setShowGoTop(window.scrollY > 600);
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => window.removeEventListener("scroll", onScroll);
+  }, []);
+  const scrollToTop = useCallback(() => {
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }, []);
 
   const pageTitle = category ? category : "All Products";
 
@@ -199,6 +210,18 @@ export default function AllProductsPage() {
           )}
         </div>
       </section>
+
+      {/* Go to Top button */}
+      {showGoTop && (
+        <button
+          onClick={scrollToTop}
+          className="go-to-top-btn"
+          aria-label="Scroll to top"
+          title="Back to top"
+        >
+          ↑ Top
+        </button>
+      )}
     </>
   );
 }
