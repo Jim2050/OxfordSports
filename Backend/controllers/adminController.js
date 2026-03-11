@@ -418,13 +418,39 @@ exports.getCategories = async (_req, res) => {
  */
 exports.fixSubcategories = async (_req, res) => {
   try {
-    const RUGBY_RE = /rugby/i;
-    const FOOTBALL_RE =
-      /\bfootball\b|soccer|\bfc\b|\bf\.c\.|premier league|champions league/i;
-    const FOOTWEAR_RE =
-      /\bboot\b|\bboots\b|\btrainer\b|\btrainers\b|\bshoe\b|\bshoes\b|footwear|sneaker|running/i;
+    // ── Footwear subcategory rules (must match nav menu) ──
+    const FOOTBALL_BOOTS_RE = /\b(NEMEZIZ|COPA|PREDATOR|SPEEDFLOW|X SPEEDPORTAL|X CRAZYFAST|PREDSTRIKE|SOCCER SHOE|FOOTBALL BOOT)\b|\b(FG|SG|TF|AG|FxG|MG|HG)\b/i;
+    const RUGBY_BOOTS_RE = /\b(RUGBY|KAKARI|MALICE|FLANKER)\b/i;
+    const GOLF_SHOES_RE = /\b(GOLF|CODECHAOS|ZG21|TOUR360|S2G|SOLARMOTION|REBELCROSS)\b/i;
+    const TENNIS_SHOES_RE = /\b(TENNIS|PADEL|BARRICADE|COURTJAM|SOLEMATCH|GAMECOURT|COURTFLASH|DEFIANT)\b/i;
+    const BEACH_RE = /\b(SLIDE|SLIDES|SANDAL|SANDALS|FLIP FLOP|FLIP FLOPS|SHOWER|ADILETTE|COMFORT SLIDE)\b/i;
+    const SPECIALIST_RE = /\b(TERREX|HIKING|TRAIL|OUTDOOR|WALKING)\b/i;
 
-    // Fetch all products with empty/missing subcategory in batches
+    // ── Team / sport subcategory rules ──
+    const TEAM_MAP = {
+      "MUFC": "Manchester United", "MAN UTD": "Manchester United",
+      "AFC": "Arsenal", "ARSENAL": "Arsenal",
+      "CFC": "Chelsea", "CHELSEA": "Chelsea",
+      "LFC": "Liverpool", "LIVERPOOL": "Liverpool",
+      "MCFC": "Manchester City", "MAN CITY": "Manchester City",
+      "THFC": "Tottenham", "SPURS": "Tottenham",
+      "LCFC": "Leicester", "NUFC": "Newcastle",
+      "LUFC": "Leeds", "WHUFC": "West Ham",
+      "REAL MADRID": "Real Madrid", "BAYERN": "Bayern Munich",
+      "JUVENTUS": "Juventus", "JUVE": "Juventus",
+      "ALL BLACKS": "New Zealand Rugby", "FFR": "France Rugby",
+      "WRU": "Wales Rugby", "SRU": "Scotland Rugby",
+      "IRFU": "Ireland Rugby",
+    };
+    const SPORT_MAP = {
+      "RUGBY": "Rugby", "FOOTBALL": "Football", "SOCCER": "Football",
+      "TENNIS": "Tennis", "GOLF": "Golf", "RUNNING": "Running",
+      "BASKETBALL": "Basketball", "CRICKET": "Cricket",
+      "HOCKEY": "Hockey", "BOXING": "Boxing",
+      "SWIMMING": "Swimming", "GYM": "Training", "TRAINING": "Training",
+      "YOGA": "Yoga", "FITNESS": "Training",
+    };
+
     let updated = 0;
     const BATCH = 500;
     let skip = 0;
@@ -432,8 +458,11 @@ exports.fixSubcategories = async (_req, res) => {
 
     while (hasMore) {
       const products = await Product.find(
-        { subcategory: { $in: ["", null] } },
-        { _id: 1, name: 1, description: 1 },
+        { $or: [
+          { subcategory: { $in: ["", null] } },
+          { subcategory: "Footwear" },  // old bad value from previous fix
+        ]},
+        { _id: 1, name: 1, description: 1, sku: 1, category: 1 },
       )
         .skip(skip)
         .limit(BATCH)
@@ -446,15 +475,34 @@ exports.fixSubcategories = async (_req, res) => {
 
       const bulkOps = [];
       for (const p of products) {
-        const haystack = (
-          (p.name || "") +
-          " " +
-          (p.description || "")
-        ).toLowerCase();
+        const combined = `${p.name || ""} ${p.description || ""} ${p.sku || ""}`.toUpperCase();
+        const catUpper = (p.category || "").toUpperCase();
         let sub = "";
-        if (RUGBY_RE.test(haystack)) sub = "Rugby";
-        else if (FOOTBALL_RE.test(haystack)) sub = "Football";
-        else if (FOOTWEAR_RE.test(haystack)) sub = "Footwear";
+
+        // Footwear-specific subcategories
+        if (catUpper === "FOOTWEAR") {
+          if (FOOTBALL_BOOTS_RE.test(combined)) sub = "Football Boots";
+          else if (RUGBY_BOOTS_RE.test(combined)) sub = "Rugby Boots";
+          else if (GOLF_SHOES_RE.test(combined)) sub = "Golf Shoes";
+          else if (TENNIS_SHOES_RE.test(combined)) sub = "Tennis / Padel Shoes";
+          else if (BEACH_RE.test(combined)) sub = "Beach Footwear";
+          else if (SPECIALIST_RE.test(combined)) sub = "Specialist Footwear";
+          else sub = "Trainers"; // default footwear subcategory
+        }
+
+        // Team/country subcategories
+        if (!sub) {
+          for (const [key, subcat] of Object.entries(TEAM_MAP)) {
+            if (combined.includes(key)) { sub = subcat; break; }
+          }
+        }
+
+        // Sport keyword subcategories
+        if (!sub) {
+          for (const [key, subcat] of Object.entries(SPORT_MAP)) {
+            if (new RegExp(`\\b${key}\\b`).test(combined)) { sub = subcat; break; }
+          }
+        }
 
         if (sub) {
           bulkOps.push({

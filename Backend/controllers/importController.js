@@ -851,6 +851,26 @@ exports.importProducts = async (req, res) => {
       }
 
       // ── Step 2: Auto-assign subcategory if missing ──
+
+      // 2a. Footwear-specific subcategories (matches nav menu)
+      if (!productData.subcategory && productData.category === "FOOTWEAR") {
+        if (FOOTWEAR_STUDS.test(combined) || /\b(NEMEZIZ|COPA|PREDATOR|SPEEDFLOW|SOCCER SHOE|FOOTBALL BOOT|X SPEEDPORTAL|X CRAZYFAST|PREDSTRIKE)\b/.test(combined)) {
+          productData.subcategory = "Football Boots";
+        } else if (/\b(RUGBY|KAKARI|MALICE|FLANKER)\b/.test(combined)) {
+          productData.subcategory = "Rugby Boots";
+        } else if (/\b(GOLF|CODECHAOS|ZG21|TOUR360|S2G|SOLARMOTION|REBELCROSS)\b/.test(combined)) {
+          productData.subcategory = "Golf Shoes";
+        } else if (/\b(TENNIS|PADEL|BARRICADE|COURTJAM|SOLEMATCH|GAMECOURT|COURTFLASH|DEFIANT)\b/.test(combined)) {
+          productData.subcategory = "Tennis / Padel Shoes";
+        } else if (/\b(SLIDE|SLIDES|SANDAL|SANDALS|FLIP FLOP|FLIP FLOPS|SHOWER|ADILETTE|COMFORT SLIDE)\b/.test(combined)) {
+          productData.subcategory = "Beach Footwear";
+        } else if (/\b(TERREX|HIKING|TRAIL|OUTDOOR|WALKING)\b/.test(combined)) {
+          productData.subcategory = "Specialist Footwear";
+        } else {
+          productData.subcategory = "Trainers";
+        }
+      }
+
       if (!productData.subcategory) {
         // Check for team/country first (most specific)
         for (const [key, subcat] of Object.entries(TEAM_MAP)) {
