@@ -31,6 +31,7 @@ const COLUMN_MAP = {
     "style code",
     "ref",
     "reference",
+    "product", // Feb adidas export uses "Product" for SKU codes
   ],
   name: [
     "style",
@@ -41,7 +42,6 @@ const COLUMN_MAP = {
     "title",
     "item",
     "description name",
-    "product",
     "item name",
     "item description",
   ],
@@ -208,7 +208,98 @@ function detectMapping(headers) {
     if (imgH) mapping.imageUrl = imgH;
   }
 
+  // ── Post-mapping fixup: if sku+description mapped but no name, use description as name ──
+  // Handles Feb adidas format where "Description" column contains the actual product name
+  if (mapping.sku && mapping.description && !mapping.name) {
+    mapping.name = mapping.description;
+    delete mapping.description;
+  }
+
   return { mapping, unmappedHeaders };
+}
+
+/**
+ * Detect parent-child SKU relationships and normalize rows.
+ * Handles Firebird/adidas export where IF6180 is parent summary,
+ * IF6180GRY122 etc. are per-size child rows.
+ * Skips parent summary rows, maps children to parent SKU,
+ * and extracts size from name/description when no size column.
+ */
+function normalizeParentChildSkus(rows, hasSizeMapping) {
+  if (rows.length === 0 || hasSizeMapping) return rows;
+
+  // Collect all SKUs
+  const allSkus = [
+    ...new Set(
+      rows
+        .map((r) => (r.sku ? String(r.sku).trim().toUpperCase() : ""))
+        .filter(Boolean),
+    ),
+  ];
+
+  // Find parent SKUs: a SKU that is a prefix of at least 2 other longer SKUs
+  const parentSkus = new Map(); // parentSku -> parent row data (for name)
+  for (const sku of allSkus) {
+    const children = allSkus.filter(
+      (s) => s !== sku && s.startsWith(sku) && s.length > sku.length,
+    );
+    if (children.length >= 2) {
+      // Find the parent row to get its clean name
+      const parentRow = rows.find(
+        (r) => String(r.sku || "").trim().toUpperCase() === sku,
+      );
+      parentSkus.set(sku, {
+        name: parentRow ? String(parentRow.name || "").trim() : "",
+      });
+    }
+  }
+
+  if (parentSkus.size === 0) return rows;
+
+  debug(
+    `[IMPORT] Parent-child SKU pattern detected: ${parentSkus.size} parent(s): ${[...parentSkus.keys()].slice(0, 5).join(", ")}`,
+  );
+
+  const result = [];
+  for (const row of rows) {
+    const sku = row.sku ? String(row.sku).trim().toUpperCase() : "";
+
+    // Skip parent/summary rows (they have aggregate qty, not per-size)
+    if (parentSkus.has(sku)) continue;
+
+    // Check if this is a child of a parent
+    let matched = false;
+    for (const [parentSku, parentInfo] of parentSkus) {
+      if (sku.startsWith(parentSku) && sku.length > parentSku.length) {
+        // Replace child SKU with parent SKU for consolidation
+        row.sku = parentSku;
+
+        // Extract size from name/description (e.g. "adiFOM SUPERSTAR Grey UK 3.5")
+        if (!row.sizes || String(row.sizes).trim() === "") {
+          const text = String(row.name || "");
+          const sizeMatch = text.match(/UK\s+(\d+(?:\.\d+)?)/i);
+          if (sizeMatch) {
+            row.sizes = sizeMatch[1];
+          }
+        }
+
+        // Use parent's clean name instead of child's name+color+size string
+        if (parentInfo.name) {
+          row.name = parentInfo.name;
+        }
+
+        matched = true;
+        break;
+      }
+    }
+
+    result.push(row);
+  }
+
+  debug(
+    `[IMPORT] Parent-child normalization: ${rows.length} rows -> ${result.length} rows (${rows.length - result.length} parent summaries skipped)`,
+  );
+  return result;
 }
 
 /**
@@ -550,10 +641,19 @@ exports.importProducts = async (req, res) => {
         .json({ error: "Excel file is empty or could not be parsed." });
     }
 
+    // ── Normalize parent-child SKU patterns (Feb adidas format) ──
+    const hasSizeMapping = !!mapping.sizes;
+    const normalizedRows = normalizeParentChildSkus(rows, hasSizeMapping);
+    if (normalizedRows.length !== rows.length) {
+      debug(
+        `[IMPORT] Parent-child normalization reduced ${rows.length} -> ${normalizedRows.length} rows`,
+      );
+    }
+
     // ── Consolidate same-SKU rows (size merging) ──
-    const consolidated = consolidateBySku(rows);
+    const consolidated = consolidateBySku(normalizedRows);
     debug(
-      `[IMPORT] Consolidated ${rows.length} rows → ${consolidated.length} unique products`,
+      `[IMPORT] Consolidated ${normalizedRows.length} rows → ${consolidated.length} unique products`,
     );
 
     // ── Detect workbook-wide brand default ──
