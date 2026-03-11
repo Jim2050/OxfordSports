@@ -274,12 +274,22 @@ function normalizeParentChildSkus(rows, hasSizeMapping) {
         // Replace child SKU with parent SKU for consolidation
         row.sku = parentSku;
 
-        // Extract size from name/description (e.g. "adiFOM SUPERSTAR Grey UK 3.5")
+        // Extract size from name/description
+        // Handles: "...UK 3.5", "...XL", "...One Size", "...7-8Y"
         if (!row.sizes || String(row.sizes).trim() === "") {
           const text = String(row.name || "");
-          const sizeMatch = text.match(/UK\s+(\d+(?:\.\d+)?)/i);
-          if (sizeMatch) {
-            row.sizes = sizeMatch[1];
+          // Try UK size first (e.g. "UK 3.5")
+          const ukMatch = text.match(/UK\s+(\d+(?:\.\d+)?)/i);
+          if (ukMatch) {
+            row.sizes = ukMatch[1];
+          } else {
+            // Try standard sizes at end of string: XS, S, M, L, XL, XXL, XXXL, or age sizes like 7-8Y
+            const stdMatch = text.match(
+              /\b(XXXL|XXL|XL|XS|S|M|L|\d+-\d+Y)\s*$/i,
+            );
+            if (stdMatch) {
+              row.sizes = stdMatch[1].toUpperCase();
+            }
           }
         }
 
