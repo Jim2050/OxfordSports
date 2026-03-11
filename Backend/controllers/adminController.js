@@ -461,6 +461,7 @@ exports.fixSubcategories = async (_req, res) => {
         { $or: [
           { subcategory: { $in: ["", null] } },
           { subcategory: "Footwear" },  // old bad value from previous fix
+          { subcategory: "Rugby" },     // old generic value - should be "Rugby Boots" for footwear
         ]},
         { _id: 1, name: 1, description: 1, sku: 1, category: 1 },
       )
