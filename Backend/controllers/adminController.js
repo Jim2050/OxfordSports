@@ -426,6 +426,42 @@ exports.fixSubcategories = async (_req, res) => {
     const BEACH_RE = /\b(SLIDE|SLIDES|SANDAL|SANDALS|FLIP FLOP|FLIP FLOPS|SHOWER|ADILETTE|COMFORT SLIDE)\b/i;
     const SPECIALIST_RE = /\b(TERREX|HIKING|TRAIL|OUTDOOR|WALKING)\b/i;
 
+    // ── Category detection regexes ──
+    const FOOTWEAR_MODELS = /\b(SUPERSTAR|STAN SMITH|GAZELLE|SAMBA|CAMPUS|FORUM|NMD|ULTRA\s?BOOST|ULTRABOOST|YEEZY|OZWEEGO|ZX|CONTINENTAL|SUPERNOVA|PURE\s?BOOST|SOLAR\s?BOOST|RESPONSE|ADIZERO|ADISTAR|QUESTAR|DURAMO|GALAXY|RUNFALCON|LITE RACER|SWIFT RUN|MULTIX|NITE JOGGER|RETROPY|OZELIA|OZRAH|RIVALRY|DROPSET|DROPSTEP|STREETBALL|HOOPS|ENTRAP|TENSAUR|FORTARUN|RAPIDARUN|4DFWD|DAME|HARDEN|D\.O\.N\.|TRAE|ADILETTE|CLOUDFOAM)\b/i;
+    const FOOTWEAR_STUDS = /\b(FG|SG|AG|TF|FxG|MG|HG|IN|IC|FIRM GROUND|SOFT GROUND|TURF|INDOOR|ARTIFICIAL GROUND|MOULDED)\b/i;
+    const FOOTWEAR_KEYWORDS = /\b(SHOE|SHOES|BOOT|BOOTS|TRAINER|TRAINERS|SNEAKER|SNEAKERS|CLEAT|CLEATS|FOOTWEAR|SLIDER|SLIDERS|SLIDE|SANDAL|FLIP FLOP|RUNNING SHOE|FOOTBALL BOOT|RUGBY BOOT|GOLF SHOE|TENNIS SHOE)\b/i;
+    const CLOTHING_ABBREVS = /\b(JSY|JKT|SHO|TEE|HD|SWT|BRA|TIGHT|PT|TT)\b/i;
+    const CLOTHING_KEYWORDS = /\b(SHIRT|SHORTS|JACKET|HOODIE|HOODY|SWEATSHIRT|SWEATER|JERSEY|T-SHIRT|POLO|VEST|LEGGING|LEGGINGS|TIGHTS|CROP|PANTS|JOGGER|JOGGERS|TRACKSUIT|COAT|PARKA|WINDBREAKER|ANORAK|GILET|GILLET|FLEECE|PULLOVER|CREW|TANK|BIKINI|SWIMSUIT|COSTUME|SKIRT|DRESS|ONESIE|ROMPER|BODYSUIT|TROUSERS|SHORTS|RAINCOAT|TEE SHIRT|TRACK TOP|TRACK PANT)\b/i;
+    const ACCESSORIES_KEYWORDS = /\b(BAG|BAGS|BALL|BALLS|TOWEL|TOWELS|BOTTLE|BOTTLES|SHIN|SHIN GUARD|SHIN PAD|SHINGUARD|GLOVE|GLOVES|CAP|CAPS|HAT|HATS|SCARF|SCARVES|BEANIE|BEANIES|HEADBAND|WRISTBAND|ARMBAND|SOCK|SOCKS|BACKPACK|DUFFEL|DUFFLE|RUCKSACK|HOLDALL|WASHBAG|KEYRING|LANYARD|WALLET|PURSE|WATCH|SUNGLASSES|BELT)\b/i;
+    const GENDER_ONLY = /^(MENS?|WOMENS?|WOMEN|FEMALE|LADIES|JUNIOR|JUNIORS|KIDS|YOUTH|BOYS?|GIRLS?|UNISEX|INFANT|BABY|TODDLER)$/i;
+
+    // ── Old category → new category+subcategory mapping ──
+    const OLD_CAT_MAP = {
+      "football shorts": ["CLOTHING", "Shorts"], "shorts": ["CLOTHING", "Shorts"],
+      "t-shirts": ["CLOTHING", "Shirts"], "polo shirts": ["CLOTHING", "Shirts"],
+      "football shirts": ["CLOTHING", "Shirts"], "vests": ["CLOTHING", "Vests & Bras"],
+      "fitness and gym tops": ["CLOTHING", "Shirts"], "long dresses": ["CLOTHING", "Shirts"],
+      "track pants": ["CLOTHING", "Tracksuits & Joggers"], "track tops": ["CLOTHING", "Tracksuits & Joggers"],
+      "track jackets": ["CLOTHING", "Tracksuits & Joggers"], "tracksuits": ["CLOTHING", "Tracksuits & Joggers"],
+      "track and training pants": ["CLOTHING", "Tracksuits & Joggers"],
+      "three quarter pants": ["CLOTHING", "Tracksuits & Joggers"], "trousers": ["CLOTHING", "Tracksuits & Joggers"],
+      "hooded sweat": ["CLOTHING", "Hoods & Sweaters"], "crew sweat": ["CLOTHING", "Hoods & Sweaters"],
+      "fleece": ["CLOTHING", "Hoods & Sweaters"], "knitwear": ["CLOTHING", "Hoods & Sweaters"],
+      "coats": ["CLOTHING", "Jackets & Coats"], "jackets": ["CLOTHING", "Jackets & Coats"],
+      "lightweight jackets": ["CLOTHING", "Jackets & Coats"], "raincoats": ["CLOTHING", "Jackets & Coats"],
+      "gillet": ["CLOTHING", "Jackets & Coats"],
+      "bikini": ["CLOTHING", "Swimwear"], "swimming costumes": ["CLOTHING", "Swimwear"],
+      "swim shorts": ["CLOTHING", "Swimwear"],
+      "leggings": ["CLOTHING", "Leggings"], "long skirts": ["CLOTHING", "Leggings"],
+      "trainers": ["FOOTWEAR", "Trainers"], "running shoes": ["FOOTWEAR", "Trainers"],
+      "football boots": ["FOOTWEAR", "Football Boots"], "rugby boots": ["FOOTWEAR", "Rugby Boots"],
+      "beach shoes": ["FOOTWEAR", "Beach Footwear"], "golf shoes": ["FOOTWEAR", "Golf Shoes"],
+      "football socks": ["CLOTHING", "Socks & Gloves"], "adult's socks": ["CLOTHING", "Socks & Gloves"],
+      "football gloves": ["ACCESSORIES", "Gloves"], "casual bags": ["ACCESSORIES", "Bags & Holdalls"],
+      "peak caps": ["ACCESSORIES", "Headwear"], "football accessories": ["ACCESSORIES", "Protective Gear"],
+      "assorted accessories": ["ACCESSORIES", "Bags & Holdalls"], "mens belts": ["ACCESSORIES", "Bags & Holdalls"],
+    };
+
     // ── Team / sport subcategory rules ──
     const TEAM_MAP = {
       "MUFC": "Manchester United", "MAN UTD": "Manchester United",
@@ -440,7 +476,11 @@ exports.fixSubcategories = async (_req, res) => {
       "JUVENTUS": "Juventus", "JUVE": "Juventus",
       "ALL BLACKS": "New Zealand Rugby", "FFR": "France Rugby",
       "WRU": "Wales Rugby", "SRU": "Scotland Rugby",
-      "IRFU": "Ireland Rugby",
+      "IRFU": "Ireland Rugby", "AJAX": "Ajax",
+      "CELTIC": "Celtic", "RANGERS": "Rangers", "BENFICA": "Benfica",
+      "ARU": "Australia Rugby", "SARU": "South Africa Rugby",
+      "NZRU": "New Zealand Rugby", "WALLABIES": "Australia Rugby",
+      "SPRINGBOK": "South Africa Rugby",
     };
     const SPORT_MAP = {
       "RUGBY": "Rugby", "FOOTBALL": "Football", "SOCCER": "Football",
@@ -451,6 +491,13 @@ exports.fixSubcategories = async (_req, res) => {
       "YOGA": "Yoga", "FITNESS": "Training",
     };
 
+    function detectCategory(combined) {
+      if (FOOTWEAR_MODELS.test(combined) || FOOTWEAR_STUDS.test(combined) || FOOTWEAR_KEYWORDS.test(combined)) return "FOOTWEAR";
+      if (ACCESSORIES_KEYWORDS.test(combined)) return "ACCESSORIES";
+      if (CLOTHING_ABBREVS.test(combined) || CLOTHING_KEYWORDS.test(combined)) return "CLOTHING";
+      return "CLOTHING";
+    }
+
     let updated = 0;
     const BATCH = 500;
     let skip = 0;
@@ -460,10 +507,12 @@ exports.fixSubcategories = async (_req, res) => {
       const products = await Product.find(
         { $or: [
           { subcategory: { $in: ["", null] } },
-          { subcategory: "Footwear" },  // old bad value from previous fix
-          { subcategory: "Rugby" },     // old generic value - should be "Rugby Boots" for footwear
+          { subcategory: { $exists: false } },
+          { subcategory: "Footwear" },
+          { subcategory: "Rugby" },
+          { category: { $nin: ["FOOTWEAR", "CLOTHING", "ACCESSORIES"] } },
         ]},
-        { _id: 1, name: 1, description: 1, sku: 1, category: 1 },
+        { _id: 1, name: 1, description: 1, sku: 1, category: 1, subcategory: 1 },
       )
         .skip(skip)
         .limit(BATCH)
@@ -477,69 +526,94 @@ exports.fixSubcategories = async (_req, res) => {
       const bulkOps = [];
       for (const p of products) {
         const combined = `${p.name || ""} ${p.description || ""} ${p.sku || ""}`.toUpperCase();
-        const catUpper = (p.category || "").toUpperCase();
-        let sub = "";
+        let cat = (p.category || "").trim();
+        let sub = (p.subcategory || "").trim();
+        const updateFields = {};
 
-        // Footwear-specific subcategories
-        if (catUpper === "FOOTWEAR") {
-          if (FOOTBALL_BOOTS_RE.test(combined)) sub = "Football Boots";
-          else if (RUGBY_BOOTS_RE.test(combined)) sub = "Rugby Boots";
-          else if (GOLF_SHOES_RE.test(combined)) sub = "Golf Shoes";
-          else if (TENNIS_SHOES_RE.test(combined)) sub = "Tennis / Padel Shoes";
-          else if (BEACH_RE.test(combined)) sub = "Beach Footwear";
-          else if (SPECIALIST_RE.test(combined)) sub = "Specialist Footwear";
-          else sub = "Trainers"; // default footwear subcategory
+        // Step 1: Fix old/non-standard categories
+        const catLower = cat.toLowerCase();
+        if (OLD_CAT_MAP[catLower]) {
+          const [newCat, newSub] = OLD_CAT_MAP[catLower];
+          updateFields.category = newCat;
+          cat = newCat;
+          if (!sub) { updateFields.subcategory = newSub; sub = newSub; }
+        } else if (GENDER_ONLY.test(cat)) {
+          const newCat = detectCategory(combined);
+          updateFields.category = newCat;
+          cat = newCat;
+        } else if (!["FOOTWEAR", "CLOTHING", "ACCESSORIES"].includes(cat.toUpperCase())) {
+          const newCat = detectCategory(combined);
+          updateFields.category = newCat;
+          cat = newCat;
         }
 
-        // Clothing-specific subcategories
-        if (!sub && catUpper === "CLOTHING") {
-          if (/\b(JSY|JERSEY|SHIRT|POLO|TEE|T-SHIRT|T SHIRT|SS TEE|LS TEE|GRAPHIC TEE|TOP|CROP TOP|TANK)\b/.test(combined)) sub = "Shirts";
-          else if (/\bSHO\b|\b(SHORTS|SHORT)\b/.test(combined)) sub = "Shorts";
-          else if (/\b(JKT|JACKET|COAT|PARKA|WINDBREAKER|ANORAK|GILLET|GILET|PADDED|BOMBER)\b/.test(combined)) sub = "Jackets & Coats";
-          else if (/\b(HOOD|HOODIE|HOODY|SWEAT|SWT|CREW SWEAT|PULLOVER|FLEECE)\b|\bHD\b/.test(combined)) sub = "Hoods & Sweaters";
-          else if (/\b(SOCK|SOCKS|GLOVE|GLOVES)\b/.test(combined)) sub = "Socks & Gloves";
-          else if (/\b(HAT|HATS|CAP|CAPS|BEANIE|HEADBAND|HEADWEAR)\b/.test(combined)) sub = "Hats & Caps";
-          else if (/\b(TRACKSUIT|JOGGER|JOGGERS|TRACK PANT|TRACK PANTS|TRG PNT|TRK PNT|PANTS|PES JKT|FIREBIRD)\b|\bPT\b|\bTT\b/.test(combined)) sub = "Tracksuits & Joggers";
-          else if (/\b(SWIM|BIKINI|SWIMMING|SWIM SHORT)\b/.test(combined)) sub = "Swimwear";
-          else if (/\b(LEGGING|LEGGINGS|TIGHT|TIGHTS)\b/.test(combined)) sub = "Leggings";
-          else if (/\b(VEST|BRA|BRAS|CROP)\b/.test(combined)) sub = "Vests & Bras";
-          else sub = "Shirts"; // default clothing subcategory
-        }
+        const catUpper = cat.toUpperCase();
 
-        // Accessories-specific subcategories
-        if (!sub && catUpper === "ACCESSORIES") {
-          if (/\b(BALL|BALLS|FOOTBALL|MATCH BALL|TRAINING BALL)\b/.test(combined)) sub = "Balls";
-          else if (/\b(BAG|BAGS|BACKPACK|HOLDALL|DUFFEL|RUCKSACK|GYMSACK|GYM SACK|TOTE)\b/.test(combined)) sub = "Bags & Holdalls";
-          else if (/\b(HAT|HATS|CAP|CAPS|BEANIE|HEADBAND|HEADWEAR)\b/.test(combined)) sub = "Headwear";
-          else if (/\b(GLOVE|GLOVES|GOALKEEPER|GK)\b/.test(combined)) sub = "Gloves";
-          else if (/\b(RACKET|BAT|RACQUET|PADDLE)\b/.test(combined)) sub = "Rackets & Bats";
-          else if (/\b(TOWEL|TOWELS)\b/.test(combined)) sub = "Sports Towels";
-          else if (/\b(SHIN|GUARD|GUARDS|PAD|PADS|PROTECTIVE|ANKLE)\b/.test(combined)) sub = "Protective Gear";
-          else if (/\b(SUNGLASS|SUNGLASSES|EYEWEAR)\b/.test(combined)) sub = "Sunglasses";
-          else if (/\b(WATCH|MONITOR|TRACKER|FITNESS BAND)\b/.test(combined)) sub = "Watches Monitors";
-          else if (/\b(SOCK|SOCKS)\b/.test(combined)) sub = "Socks & Gloves";
-          else if (/\b(BOTTLE|WATER)\b/.test(combined)) sub = "Bags & Holdalls";
-        }
-
-        // Team/country subcategories
+        // Step 2: Fix subcategory if still empty
         if (!sub) {
-          for (const [key, subcat] of Object.entries(TEAM_MAP)) {
-            if (combined.includes(key)) { sub = subcat; break; }
+          // Footwear-specific subcategories
+          if (catUpper === "FOOTWEAR") {
+            if (FOOTBALL_BOOTS_RE.test(combined)) sub = "Football Boots";
+            else if (RUGBY_BOOTS_RE.test(combined)) sub = "Rugby Boots";
+            else if (GOLF_SHOES_RE.test(combined)) sub = "Golf Shoes";
+            else if (TENNIS_SHOES_RE.test(combined)) sub = "Tennis / Padel Shoes";
+            else if (BEACH_RE.test(combined)) sub = "Beach Footwear";
+            else if (SPECIALIST_RE.test(combined)) sub = "Specialist Footwear";
+            else sub = "Trainers";
           }
+
+          // Clothing-specific subcategories
+          if (!sub && catUpper === "CLOTHING") {
+            if (/\b(JSY|JERSEY|SHIRT|POLO|TEE|T-SHIRT|T SHIRT|SS TEE|LS TEE|GRAPHIC TEE|TOP|CROP TOP|TANK)\b/.test(combined)) sub = "Shirts";
+            else if (/\bSHO\b|\b(SHORTS|SHORT)\b/.test(combined)) sub = "Shorts";
+            else if (/\b(JKT|JACKET|COAT|PARKA|WINDBREAKER|ANORAK|GILLET|GILET|PADDED|BOMBER)\b/.test(combined)) sub = "Jackets & Coats";
+            else if (/\b(HOOD|HOODIE|HOODY|SWEAT|SWT|CREW SWEAT|PULLOVER|FLEECE)\b|\bHD\b/.test(combined)) sub = "Hoods & Sweaters";
+            else if (/\b(SOCK|SOCKS|GLOVE|GLOVES)\b/.test(combined)) sub = "Socks & Gloves";
+            else if (/\b(HAT|HATS|CAP|CAPS|BEANIE|HEADBAND|HEADWEAR)\b/.test(combined)) sub = "Hats & Caps";
+            else if (/\b(TRACKSUIT|JOGGER|JOGGERS|TRACK PANT|TRACK PANTS|TRG PNT|TRK PNT|PANTS|PES JKT|FIREBIRD)\b|\bPT\b|\bTT\b/.test(combined)) sub = "Tracksuits & Joggers";
+            else if (/\b(SWIM|BIKINI|SWIMMING|SWIM SHORT)\b/.test(combined)) sub = "Swimwear";
+            else if (/\b(LEGGING|LEGGINGS|TIGHT|TIGHTS)\b/.test(combined)) sub = "Leggings";
+            else if (/\b(VEST|BRA|BRAS|CROP)\b/.test(combined)) sub = "Vests & Bras";
+            else sub = "Shirts";
+          }
+
+          // Accessories-specific subcategories
+          if (!sub && catUpper === "ACCESSORIES") {
+            if (/\b(BALL|BALLS|FOOTBALL|MATCH BALL|TRAINING BALL)\b/.test(combined)) sub = "Balls";
+            else if (/\b(BAG|BAGS|BACKPACK|HOLDALL|DUFFEL|RUCKSACK|GYMSACK|GYM SACK|TOTE)\b/.test(combined)) sub = "Bags & Holdalls";
+            else if (/\b(HAT|HATS|CAP|CAPS|BEANIE|HEADBAND|HEADWEAR)\b/.test(combined)) sub = "Headwear";
+            else if (/\b(GLOVE|GLOVES|GOALKEEPER|GK)\b/.test(combined)) sub = "Gloves";
+            else if (/\b(RACKET|BAT|RACQUET|PADDLE)\b/.test(combined)) sub = "Rackets & Bats";
+            else if (/\b(TOWEL|TOWELS)\b/.test(combined)) sub = "Sports Towels";
+            else if (/\b(SHIN|GUARD|GUARDS|PAD|PADS|PROTECTIVE|ANKLE)\b/.test(combined)) sub = "Protective Gear";
+            else if (/\b(SUNGLASS|SUNGLASSES|EYEWEAR)\b/.test(combined)) sub = "Sunglasses";
+            else if (/\b(WATCH|MONITOR|TRACKER|FITNESS BAND)\b/.test(combined)) sub = "Watches Monitors";
+            else if (/\b(SOCK|SOCKS)\b/.test(combined)) sub = "Socks & Gloves";
+            else if (/\b(BOTTLE|WATER)\b/.test(combined)) sub = "Bags & Holdalls";
+          }
+
+          // Team/country subcategories
+          if (!sub) {
+            for (const [key, subcat] of Object.entries(TEAM_MAP)) {
+              if (combined.includes(key)) { sub = subcat; break; }
+            }
+          }
+
+          // Sport keyword subcategories
+          if (!sub) {
+            for (const [key, subcat] of Object.entries(SPORT_MAP)) {
+              if (new RegExp(`\\b${key}\\b`).test(combined)) { sub = subcat; break; }
+            }
+          }
+
+          if (sub) updateFields.subcategory = sub;
         }
 
-        // Sport keyword subcategories
-        if (!sub) {
-          for (const [key, subcat] of Object.entries(SPORT_MAP)) {
-            if (new RegExp(`\\b${key}\\b`).test(combined)) { sub = subcat; break; }
-          }
-        }
-
-        if (sub) {
+        if (Object.keys(updateFields).length > 0) {
           bulkOps.push({
             updateOne: {
               filter: { _id: p._id },
-              update: { $set: { subcategory: sub } },
+              update: { $set: updateFields },
             },
           });
         }
