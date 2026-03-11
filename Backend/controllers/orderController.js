@@ -171,7 +171,6 @@ exports.placeOrder = async (req, res) => {
     }
 
     const order = await Order.create({
-    const order = await Order.create({
       customer: req.user._id,
       customerName: req.user.name,
       customerEmail: req.user.email,
