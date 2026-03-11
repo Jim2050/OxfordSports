@@ -127,9 +127,10 @@ export default function AdminPage() {
         }
       });
       setExcelResult(res);
-      toast.success(
-        `Import complete: ${res.imported ?? 0} added, ${res.updated ?? 0} updated.`,
-      );
+      const parts = [`${res.imported ?? 0} added`, `${res.updated ?? 0} updated`];
+      if (res.failed > 0) parts.push(`${res.failed} failed`);
+      if (res.warnings > 0) parts.push(`${res.warnings} warnings`);
+      toast.success(`Import complete: ${parts.join(", ")}.`);
       loadProducts();
       loadStats();
     } catch (err) {

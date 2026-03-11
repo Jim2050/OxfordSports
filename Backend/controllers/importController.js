@@ -59,10 +59,12 @@ const COLUMN_MAP = {
     "trade (£)",
     "trade price (£)",
     "wholesale price",
+    "wholesale",
     "our price",
     "price",
     "unit price",
     "cost",
+    "cost price",
     "sell price",
     "sale",
     "sale price",
@@ -70,6 +72,24 @@ const COLUMN_MAP = {
     "price (£)",
     "price gbp",
     "gbp",
+    "net",
+    "nett",
+    "net price",
+    "nett price",
+    "landing",
+    "landing price",
+    "offer price",
+    "special price",
+    "special offer",
+    "clearance price",
+    "clearance",
+    "fob",
+    "fob price",
+    "ex vat",
+    "total",
+    "total price",
+    "amount",
+    "value",
   ],
   rrp: ["rrp", "retail price", "recommended retail price", "srp", "msrp"],
   category: [
@@ -196,7 +216,7 @@ function detectMapping(headers) {
     if (nameH && nameH !== mapping.sku) mapping.name = nameH;
   }
   if (!mapping.price) {
-    const priceH = headers.find((h) => /trade|price|cost|sale|£|gbp/i.test(h));
+    const priceH = headers.find((h) => /trade|price|cost|sale|£|gbp|net|landing|offer|fob|wholesale|total|amount|value/i.test(h));
     if (priceH) mapping.price = priceH;
   }
   if (!mapping.category) {
@@ -359,13 +379,26 @@ function parseExcelFile(filePath) {
         row[field] = raw[col] !== undefined ? raw[col] : "";
       }
 
-      // Fallback: if Trade mapped to price but was empty, try raw "Price" column
-      if (
-        (row.price === "" || row.price === undefined || row.price === null) &&
-        raw.Price !== undefined &&
-        raw.Price !== ""
-      ) {
-        row._rawPrice = raw.Price;
+      // Fallback: if mapped price column was empty, try other price-like columns
+      if (row.price === "" || row.price === undefined || row.price === null) {
+        const _priceRe = /price|trade|cost|sale|£|gbp|net|landing|offer|fob|wholesale|special|total|amount|value/i;
+        // First try exact "Price" key (common in adidas sheets)
+        if (raw.Price !== undefined && raw.Price !== "") {
+          row._rawPrice = raw.Price;
+        } else {
+          // Scan ALL other columns for any price-like header with a numeric value
+          const mappedCols = new Set(Object.values(currentMapping));
+          for (const hdr of headers) {
+            if (mappedCols.has(hdr) && hdr === currentMapping.price) continue;
+            if (_priceRe.test(hdr) && raw[hdr] !== undefined && raw[hdr] !== "" && raw[hdr] !== null) {
+              const testVal = parseFloat(String(raw[hdr]).replace(/[£$€,\s]/g, ""));
+              if (!isNaN(testVal) && testVal > 0) {
+                row._rawPrice = raw[hdr];
+                break;
+              }
+            }
+          }
+        }
       }
 
       allRows.push(row);
@@ -628,6 +661,8 @@ exports.importProducts = async (req, res) => {
       `[IMPORT] Sheet breakdown:`,
       sheetSummary.map((s) => `${s.name}(${s.rows})`).join(", "),
     );
+    // Log price column explicitly for debugging import failures
+    debug(`[IMPORT] Price column mapped to: "${mapping.price || 'NONE'}"  | RRP column: "${mapping.rrp || 'NONE'}"`);
     if (unmappedHeaders.length > 0) {
       debug(`[IMPORT] Unmapped headers:`, unmappedHeaders);
     }
@@ -707,6 +742,7 @@ exports.importProducts = async (req, res) => {
     let imported = 0;
     let updated = 0;
     let failed = 0;
+    let warnings = 0;
     const errors = [];
     const pendingImageProducts = [];
 
@@ -737,26 +773,33 @@ exports.importProducts = async (req, res) => {
         name = color ? `${sku} - ${color}` : sku;
       }
 
-      // ── Parse price using safe utility ──
+      // ── Parse price using safe utility with multiple fallbacks ──
       let rawPrice = row.price;
       if (rawPrice === "" || rawPrice === undefined || rawPrice === null) {
         rawPrice = row._rawPrice;
       }
-      const priceResult = parsePrice(rawPrice);
+      let priceResult = parsePrice(rawPrice);
+      const rrpResult = parsePrice(row.rrp);
+      const rrp = rrpResult.value || 0;
+
+      // Fallback 1: use RRP when trade/sale price is missing
+      if (priceResult.error && priceResult.value === null && rrp > 0) {
+        priceResult = { value: rrp, error: null };
+        warnings++;
+        if (i < 5) debug(`[IMPORT] Row ${i + 1} (${sku}): no trade price, using RRP £${rrp}`);
+      }
+      // Fallback 2: last resort — default to 0 with warning instead of failing
       if (priceResult.error && priceResult.value === null) {
-        // Price is missing or invalid — reject row, do NOT default to 0
-        failed++;
+        priceResult = { value: 0, error: null };
+        warnings++;
         errors.push({
           row: i + 1,
           sku,
-          reason: `Invalid price: ${priceResult.error} (raw: "${rawPrice}")`,
+          reason: `WARNING: No price found, defaulted to £0.00 — update manually`,
         });
-        continue;
+        if (i < 5) debug(`[IMPORT] Row ${i + 1} (${sku}): no price at all, defaulted to £0`);
       }
       const price = priceResult.value;
-
-      const rrpResult = parsePrice(row.rrp);
-      const rrp = rrpResult.value || 0;
 
       const productData = {
         sku,
@@ -1091,6 +1134,7 @@ exports.importProducts = async (req, res) => {
       imported,
       updated,
       failed,
+      warnings,
       imageResolved,
       imageFailed,
       imagePending: Math.max(0, pendingImageProducts.length - 50),
