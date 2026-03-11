@@ -810,8 +810,8 @@ exports.importProducts = async (req, res) => {
         brand: row.brand ? String(row.brand).trim() : brandDefault, // fallback to workbook-wide brand (e.g. "adidas")
         color: row.color ? String(row.color).trim() : "",
         barcode: (row.barcodes || []).join(", "),
-        salePrice: price,
-        rrp,
+        salePrice: +price.toFixed(2),
+        rrp: +rrp.toFixed(2),
         sizes: row.sizeEntries || [],
         totalQuantity: (row.sizeEntries || []).reduce(
           (sum, s) => sum + (s.quantity || 0),

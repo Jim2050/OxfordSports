@@ -148,6 +148,29 @@ exports.placeOrder = async (req, res) => {
       }
     }
 
+    // ── Deduct stock BEFORE creating order (atomic per-product) ──
+    const stockRollbacks = [];
+    try {
+      for (const op of stockUpdates) {
+        const result = await Product.bulkWrite([op], { ordered: true });
+        if (result.modifiedCount > 0) {
+          stockRollbacks.push(op);
+        }
+      }
+    } catch (stockErr) {
+      // Rollback any successful deductions
+      for (const op of stockRollbacks) {
+        const rollback = JSON.parse(JSON.stringify(op));
+        const inc = rollback.updateOne.update.$inc;
+        for (const key of Object.keys(inc)) {
+          inc[key] = -inc[key];
+        }
+        await Product.bulkWrite([rollback], { ordered: false }).catch(() => {});
+      }
+      return res.status(500).json({ error: "Stock deduction failed. Please try again." });
+    }
+
+    const order = await Order.create({
     const order = await Order.create({
       customer: req.user._id,
       customerName: req.user.name,
@@ -159,13 +182,6 @@ exports.placeOrder = async (req, res) => {
       totalAmount,
       notes: notes || "",
     });
-
-    // ── Deduct stock (best-effort — order is already saved) ──
-    if (stockUpdates.length > 0) {
-      await Product.bulkWrite(stockUpdates, { ordered: false }).catch((err) =>
-        console.error("Stock deduction error:", err.message),
-      );
-    }
 
     // ── Send order confirmation email (non-blocking) ──
     sendOrderEmail(order).catch((err) =>
@@ -404,21 +420,28 @@ exports.exportOrders = async (req, res) => {
 
     const csvRows = [headers.join(",")];
 
+    // Sanitize CSV cell values to prevent formula injection
+    function csvSafe(val) {
+      const str = String(val || "").replace(/"/g, '""');
+      if (/^[=+\-@\t\r]/.test(str)) return `"'${str}"`;
+      return `"${str}"`;
+    }
+
     for (const order of orders) {
       const date = new Date(order.createdAt).toISOString().slice(0, 10);
       for (const item of order.items) {
         csvRows.push(
           [
-            `"${order.orderNumber}"`,
+            csvSafe(order.orderNumber),
             date,
-            `"${(order.customerName || "").replace(/"/g, '""')}"`,
-            `"${(order.customerCompany || "").replace(/"/g, '""')}"`,
-            `"${order.customerEmail}"`,
-            `"${(order.customerPhone || "").replace(/"/g, '""')}"`,
-            `"${(order.deliveryAddress || "").replace(/"/g, '""')}"`,
-            `"${(item.name || "").replace(/"/g, '""')}"`,
-            `"${item.sku}"`,
-            `"${item.size || ""}"`,
+            csvSafe(order.customerName),
+            csvSafe(order.customerCompany),
+            csvSafe(order.customerEmail),
+            csvSafe(order.customerPhone),
+            csvSafe(order.deliveryAddress),
+            csvSafe(item.name),
+            csvSafe(item.sku),
+            csvSafe(item.size),
             item.quantity,
             item.unitPrice.toFixed(2),
             item.lineTotal.toFixed(2),

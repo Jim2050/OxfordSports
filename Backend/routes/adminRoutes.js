@@ -10,12 +10,16 @@ const { uploadExcel, uploadZip } = require("../middleware/uploadMiddleware");
 const multer = require("multer");
 const path = require("path");
 const fs = require("fs");
+const crypto = require("crypto");
 const TEMP_DIR = path.join(__dirname, "..", "uploads", "temp");
 if (!fs.existsSync(TEMP_DIR)) fs.mkdirSync(TEMP_DIR, { recursive: true });
 const singleImageUpload = multer({
   storage: multer.diskStorage({
     destination: (_req, _file, cb) => cb(null, TEMP_DIR),
-    filename: (_req, file, cb) => cb(null, `${Date.now()}-${file.originalname}`),
+    filename: (_req, file, cb) => {
+      const ext = path.extname(file.originalname).toLowerCase();
+      cb(null, `${crypto.randomBytes(16).toString("hex")}${ext}`);
+    },
   }),
   limits: { fileSize: 10 * 1024 * 1024 },
   fileFilter: (_req, file, cb) => {
@@ -41,6 +45,8 @@ const {
   bulkRecategorize,
   getDeletedBatches,
   restoreProducts,
+  fixPrices: roundPrices,
+  cleanupCategories,
 } = require("../controllers/adminController");
 
 const {
@@ -98,6 +104,8 @@ router.get("/export-orders", exportOrders);
 router.post("/fix-subcategories", fixSubcategories);
 router.post("/fix-brands", fixBrands);
 router.post("/fix-prices", fixPrices);
+router.post("/round-prices", roundPrices);
+router.post("/cleanup-categories", cleanupCategories);
 router.post("/resolve-images", resolveImages);
 
 module.exports = router;

@@ -2,6 +2,11 @@ const Product = require("../models/Product");
 const Category = require("../models/Category");
 const Subcategory = require("../models/Subcategory");
 
+// Escape user input for safe use in $regex queries (prevent ReDoS / NoSQL injection)
+function escapeRegex(str) {
+  return String(str).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
 // ── Category keyword mapping for front-end slugs → DB values ──
 // These keywords are searched in BOTH category AND name/subcategory fields
 // for sport-specific slugs so products remain findable even when Excel stores
@@ -74,14 +79,14 @@ exports.getProducts = async (req, res) => {
     // Subcategory filter
     if (subcategory) {
       conditions.push({
-        subcategory: { $regex: subcategory.replace(/-/g, " "), $options: "i" },
+        subcategory: { $regex: escapeRegex(subcategory.replace(/-/g, " ")), $options: "i" },
       });
     }
 
     // Color filter
     if (color) {
       conditions.push({
-        color: { $regex: color, $options: "i" },
+        color: { $regex: escapeRegex(color), $options: "i" },
       });
     }
 
@@ -93,12 +98,12 @@ exports.getProducts = async (req, res) => {
 
     // Brand exact (case-insensitive)
     if (brand) {
-      conditions.push({ brand: { $regex: `^${brand}$`, $options: "i" } });
+      conditions.push({ brand: { $regex: `^${escapeRegex(brand)}$`, $options: "i" } });
     }
 
     // Full-text search (regex fallback)
     if (search) {
-      const q = search.trim();
+      const q = escapeRegex(search.trim());
       conditions.push({
         $or: [
           { name: { $regex: q, $options: "i" } },
@@ -160,6 +165,7 @@ exports.getBrands = async (_req, res) => {
 /**
  * GET /api/products/categories
  * Return categories from the Category collection + product counts.
+ * Uses aggregation to avoid N+1 query problem.
  */
 exports.getCategories = async (_req, res) => {
   try {
@@ -167,16 +173,20 @@ exports.getCategories = async (_req, res) => {
       .sort({ displayOrder: 1, name: 1 })
       .lean();
 
-    // Add product count per category
-    const withCounts = await Promise.all(
-      categories.map(async (cat) => {
-        const count = await Product.countDocuments({
-          category: { $regex: `^${cat.name}$`, $options: "i" },
-          isActive: true,
-        });
-        return { ...cat, productCount: count };
-      }),
-    );
+    // Get all category counts in a single aggregation
+    const counts = await Product.aggregate([
+      { $match: { isActive: true } },
+      { $group: { _id: { $toLower: "$category" }, count: { $sum: 1 } } },
+    ]);
+    const countMap = {};
+    for (const c of counts) {
+      countMap[c._id] = c.count;
+    }
+
+    const withCounts = categories.map((cat) => ({
+      ...cat,
+      productCount: countMap[cat.name.toLowerCase()] || 0,
+    }));
 
     res.json({ categories: withCounts });
   } catch (err) {
@@ -212,7 +222,7 @@ exports.getSubcategories = async (req, res) => {
     }
     // Find the category document
     const cat = await Category.findOne({
-      name: { $regex: `^${category}$`, $options: "i" },
+      name: { $regex: `^${escapeRegex(category)}$`, $options: "i" },
       isActive: true,
     });
     if (!cat) {

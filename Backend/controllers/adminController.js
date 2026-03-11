@@ -14,19 +14,7 @@ exports.adminLogin = async (req, res) => {
   try {
     const { email, password } = req.body;
 
-    // ── Backward-compat: password-only login (find the admin user) ──
-    if (!email && password) {
-      const admin = await User.findOne({ role: "admin" }).select("+password");
-      if (!admin || !(await admin.comparePassword(password))) {
-        return res
-          .status(401)
-          .json({ success: false, error: "Incorrect password." });
-      }
-      const token = generateToken(admin._id, admin.role);
-      return res.json({ success: true, token, user: admin.toJSON() });
-    }
-
-    // ── Standard email + password login ──
+    // ── Require both email and password ──
     if (!email || !password) {
       return res
         .status(400)
@@ -76,7 +64,7 @@ exports.addProduct = async (req, res) => {
     if (!name)
       return res.status(400).json({ error: "Product name is required." });
 
-    const finalSalePrice = parseFloat(salePrice || price);
+    const finalSalePrice = +parseFloat(salePrice || price).toFixed(2);
     if (isNaN(finalSalePrice) || finalSalePrice < 0) {
       return res.status(400).json({ error: "Valid sale price is required." });
     }
@@ -800,6 +788,84 @@ exports.bulkRecategorize = async (req, res) => {
       success: true,
       updated: result.modifiedCount,
       message: `${result.modifiedCount} products recategorized.`,
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+/**
+ * POST /api/admin/fix-prices
+ * One-time cleanup: round all product prices to 2 decimal places.
+ * Fixes floating-point artifacts like 17.64444444444445.
+ */
+exports.fixPrices = async (_req, res) => {
+  try {
+    const products = await Product.find({}).select("salePrice rrp").lean();
+    let fixed = 0;
+    const bulkOps = [];
+
+    for (const p of products) {
+      const roundedSale = +Number(p.salePrice || 0).toFixed(2);
+      const roundedRrp = +Number(p.rrp || 0).toFixed(2);
+      if (roundedSale !== p.salePrice || roundedRrp !== p.rrp) {
+        bulkOps.push({
+          updateOne: {
+            filter: { _id: p._id },
+            update: { $set: { salePrice: roundedSale, rrp: roundedRrp } },
+          },
+        });
+        fixed++;
+      }
+    }
+
+    if (bulkOps.length > 0) {
+      await Product.bulkWrite(bulkOps, { ordered: false });
+    }
+
+    res.json({
+      success: true,
+      message: `Rounded prices on ${fixed} of ${products.length} products.`,
+      fixed,
+      total: products.length,
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+/**
+ * POST /api/admin/cleanup-categories
+ * Remove Category documents that have 0 products and are not in the
+ * expected main categories list (FOOTWEAR, CLOTHING, ACCESSORIES, etc.).
+ */
+exports.cleanupCategories = async (_req, res) => {
+  try {
+    const KEEP = new Set([
+      "FOOTWEAR", "CLOTHING", "ACCESSORIES",
+      "LICENSED TEAM CLOTHING", "B GRADE", "SPORTS",
+    ]);
+
+    const allCats = await Category.find({}).lean();
+    let removed = 0;
+
+    for (const cat of allCats) {
+      if (KEEP.has(cat.name.toUpperCase())) continue;
+      // Check if any products still use this category
+      const count = await Product.countDocuments({
+        category: { $regex: `^${cat.name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`, $options: "i" },
+      });
+      if (count === 0) {
+        await Category.findByIdAndDelete(cat._id);
+        removed++;
+      }
+    }
+
+    res.json({
+      success: true,
+      message: `Removed ${removed} unused Category documents.`,
+      removed,
+      total: allCats.length,
     });
   } catch (err) {
     res.status(500).json({ error: err.message });

@@ -126,4 +126,7 @@ productSchema.index(
 // ── Compound index for category + subcategory browsing ──
 productSchema.index({ category: 1, subcategory: 1 });
 
+// ── Index for sorting by createdAt ──
+productSchema.index({ createdAt: -1 });
+
 module.exports = mongoose.model("Product", productSchema);

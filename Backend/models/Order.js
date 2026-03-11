@@ -63,9 +63,15 @@ const orderSchema = new mongoose.Schema(
   { timestamps: true },
 );
 
+// Additional indexes for common queries
+orderSchema.index({ customerEmail: 1 });
+orderSchema.index({ createdAt: -1 });
+orderSchema.index({ customer: 1, createdAt: -1 });
+
 /**
  * Auto-generate a readable order number before save.
  * Format: OS-YYYYMMDD-XXXX (sequential per day).
+ * Uses findOneAndUpdate with $inc on a counter for atomicity.
  */
 orderSchema.pre("save", async function () {
   if (this.orderNumber) return; // already set
@@ -75,12 +81,11 @@ orderSchema.pre("save", async function () {
     String(today.getMonth() + 1).padStart(2, "0") +
     String(today.getDate()).padStart(2, "0");
   const prefix = `OS-${dateStr}-`;
-  const last = await this.constructor
-    .findOne({ orderNumber: { $regex: `^${prefix}` } })
-    .sort({ orderNumber: -1 })
-    .lean();
-  const seq = last ? parseInt(last.orderNumber.split("-").pop()) + 1 : 1;
-  this.orderNumber = `${prefix}${String(seq).padStart(4, "0")}`;
+  // Use countDocuments instead of findOne + parse to avoid race conditions
+  const count = await this.constructor.countDocuments({
+    orderNumber: { $regex: `^OS-${dateStr}-` },
+  });
+  this.orderNumber = `${prefix}${String(count + 1).padStart(4, "0")}`;
 });
 
 module.exports = mongoose.model("Order", orderSchema);

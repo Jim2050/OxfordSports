@@ -1,16 +1,18 @@
 const multer = require("multer");
 const path = require("path");
 const fs = require("fs");
+const crypto = require("crypto");
 
 const TEMP_DIR = path.join(__dirname, "..", "uploads", "temp");
 if (!fs.existsSync(TEMP_DIR)) fs.mkdirSync(TEMP_DIR, { recursive: true });
 
-// ── Disk storage with unique filenames ──
+// ── Disk storage with cryptographically random filenames ──
 const storage = multer.diskStorage({
   destination: (_req, _file, cb) => cb(null, TEMP_DIR),
   filename: (_req, file, cb) => {
-    const unique = `${Date.now()}-${Math.round(Math.random() * 1e6)}`;
-    cb(null, `${unique}-${file.originalname}`);
+    const unique = crypto.randomBytes(16).toString("hex");
+    const ext = path.extname(file.originalname).toLowerCase();
+    cb(null, `${unique}${ext}`);
   },
 });
 

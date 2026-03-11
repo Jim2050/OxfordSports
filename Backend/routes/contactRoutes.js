@@ -10,5 +10,3 @@ const { sendContactForm } = require("../controllers/contactController");
 router.post("/", sendContactForm);
 
 module.exports = router;
-
-module.exports = router;

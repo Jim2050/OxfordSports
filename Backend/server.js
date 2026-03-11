@@ -58,8 +58,21 @@ if (!fs.existsSync(TEMP_DIR)) fs.mkdirSync(TEMP_DIR, { recursive: true });
 
 // ── Middleware ──
 app.use(helmet({ crossOriginResourcePolicy: { policy: "cross-origin" } }));
-app.use(cors({ origin: process.env.CLIENT_ORIGIN || "*", credentials: true }));
-app.use(morgan("dev"));
+const allowedOrigins = process.env.CLIENT_ORIGIN
+  ? process.env.CLIENT_ORIGIN.split(",").map((s) => s.trim())
+  : [];
+app.use(
+  cors({
+    origin: allowedOrigins.length > 0
+      ? (origin, cb) => {
+          if (!origin || allowedOrigins.includes(origin)) cb(null, true);
+          else cb(new Error("Not allowed by CORS"));
+        }
+      : "*",
+    credentials: true,
+  }),
+);
+app.use(morgan(process.env.NODE_ENV === "production" ? "combined" : "dev"));
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true }));
 
@@ -131,10 +144,16 @@ async function seedAdmin() {
   try {
     const existing = await User.findOne({ role: "admin" });
     if (!existing) {
+      const adminEmail = process.env.ADMIN_EMAIL || "admin@oxfordsports.net";
+      const adminPass = process.env.ADMIN_PASSWORD;
+      if (!adminPass) {
+        console.warn("⚠️  ADMIN_PASSWORD env not set — skipping admin seed");
+        return;
+      }
       await User.create({
         name: "Admin",
-        email: process.env.ADMIN_EMAIL || "admin@oxfordsports.net",
-        password: process.env.ADMIN_PASSWORD || "Godaddy1971turbs*",
+        email: adminEmail,
+        password: adminPass,
         role: "admin",
       });
       console.log("✅ Default admin user seeded");
