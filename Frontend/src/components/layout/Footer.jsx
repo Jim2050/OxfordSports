@@ -12,9 +12,13 @@ export default function Footer() {
           <p>
             Branded wholesale sportswear &amp; equipment at unbeatable prices.
           </p>
+          <div className="footer-contact-inline">
+            <a href="tel:01869228107">01869 228107</a>
+            <span>Home Farm Works, Clifton Road, Deddington, Oxon. OX15 0TP</span>
+          </div>
         </div>
 
-        {/* Quick Links */}
+        {/* Quick Links — two columns */}
         <div>
           <h4>Quick Links</h4>
           <div className="footer-links">
@@ -29,21 +33,6 @@ export default function Footer() {
             <Link to="/products">All Products</Link>
             <Link to="/contact">Contact</Link>
           </div>
-        </div>
-
-        {/* Contact */}
-        <div className="footer-contact">
-          <h4>Contact</h4>
-          <p>
-            <a href="tel:01869228107">01869 228107</a>
-          </p>
-          <p>
-            Home Farm Works
-            <br />
-            Clifton Road, Deddington
-            <br />
-            Oxon. OX15 0TP
-          </p>
         </div>
       </div>
 
