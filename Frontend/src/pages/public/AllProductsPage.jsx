@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { useSearchParams } from "react-router-dom";
 import ProductGrid from "../../components/products/ProductGrid";
 import SearchBar from "../../components/products/SearchBar";
@@ -13,6 +13,9 @@ export default function AllProductsPage() {
   const [category, setCategory] = useState(searchParams.get("category") || "");
   const [minPrice, setMinPrice] = useState("");
   const [maxPrice, setMaxPrice] = useState("");
+  const [debouncedMinPrice, setDebouncedMinPrice] = useState("");
+  const [debouncedMaxPrice, setDebouncedMaxPrice] = useState("");
+  const priceTimerRef = useRef(null);
   const [brands, setBrands] = useState([]);
   const [subcategory, setSubcategory] = useState(searchParams.get("subcategory") || "");
   const [subcategories, setSubcategories] = useState([]);
@@ -52,6 +55,17 @@ export default function AllProductsPage() {
       .catch(() => setSubcategories([]));
   }, [category]);
 
+  // Debounce price inputs (500ms) so we don't fire a request per keystroke
+  useEffect(() => {
+    clearTimeout(priceTimerRef.current);
+    priceTimerRef.current = setTimeout(() => {
+      setDebouncedMinPrice(minPrice);
+      setDebouncedMaxPrice(maxPrice);
+      resetPage();
+    }, 500);
+    return () => clearTimeout(priceTimerRef.current);
+  }, [minPrice, maxPrice]);
+
   useEffect(() => {
     setLoading(true);
     const params = { page, limit: ITEMS_PER_PAGE };
@@ -59,8 +73,8 @@ export default function AllProductsPage() {
     if (brand) params.brand = brand;
     if (category) params.category = category;
     if (subcategory) params.subcategory = subcategory;
-    if (minPrice) params.minPrice = minPrice;
-    if (maxPrice) params.maxPrice = maxPrice;
+    if (debouncedMinPrice) params.minPrice = debouncedMinPrice;
+    if (debouncedMaxPrice) params.maxPrice = debouncedMaxPrice;
     fetchProducts(params)
       .then((data) => {
         setProducts(Array.isArray(data) ? data : data.products || []);
@@ -68,7 +82,7 @@ export default function AllProductsPage() {
       })
       .catch(() => { setProducts([]); setTotalProducts(0); })
       .finally(() => setLoading(false));
-  }, [search, brand, category, subcategory, minPrice, maxPrice, page]);
+  }, [search, brand, category, subcategory, debouncedMinPrice, debouncedMaxPrice, page]);
 
   // Reset to page 1 when any filter changes
   const resetPage = () => setPage(1);
@@ -80,6 +94,8 @@ export default function AllProductsPage() {
     setSubcategories([]);
     setMinPrice("");
     setMaxPrice("");
+    setDebouncedMinPrice("");
+    setDebouncedMaxPrice("");
     setSearch("");
     setPage(1);
     setSearchParams({});
@@ -172,7 +188,7 @@ export default function AllProductsPage() {
                 type="number"
                 placeholder="Min £"
                 value={minPrice}
-                onChange={(e) => { setMinPrice(e.target.value); resetPage(); }}
+                onChange={(e) => setMinPrice(e.target.value)}
                 min="0"
                 step="0.01"
                 className="filter-input"
@@ -182,7 +198,7 @@ export default function AllProductsPage() {
                 type="number"
                 placeholder="Max £"
                 value={maxPrice}
-                onChange={(e) => { setMaxPrice(e.target.value); resetPage(); }}
+                onChange={(e) => setMaxPrice(e.target.value)}
                 min="0"
                 step="0.01"
                 className="filter-input"

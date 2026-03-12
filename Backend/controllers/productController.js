@@ -45,7 +45,7 @@ exports.getProducts = async (req, res) => {
       brand,
       search,
       page = 1,
-      limit = 10000,
+      limit = 100,
       sort,
     } = req.query;
 
@@ -125,7 +125,7 @@ exports.getProducts = async (req, res) => {
     else if (sort === "name_asc") sortObj = { name: 1 };
 
     const pageNum = Math.max(1, parseInt(page));
-    const limitNum = Math.min(10000, Math.max(1, parseInt(limit)));
+    const limitNum = Math.min(500, Math.max(1, parseInt(limit)));
 
     // Aggregate: products WITH images first, then by chosen sort
     const pipeline = [
@@ -149,11 +149,10 @@ exports.getProducts = async (req, res) => {
       { $unset: "_hasImage" },
     ];
 
-    const [products, totalArr] = await Promise.all([
+    const [products, total] = await Promise.all([
       Product.aggregate(pipeline),
-      Product.aggregate([{ $match: filter }, { $count: "total" }]),
+      Product.countDocuments(filter),
     ]);
-    const total = totalArr.length > 0 ? totalArr[0].total : 0;
 
     res.json({
       products,

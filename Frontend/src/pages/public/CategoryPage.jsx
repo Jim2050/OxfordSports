@@ -39,7 +39,7 @@ export default function CategoryPage() {
 
   useEffect(() => {
     setLoading(true);
-    const params = { category: slug };
+    const params = { category: slug, limit: 100 };
     if (search) params.search = search;
     fetchProducts(params)
       .then((data) =>

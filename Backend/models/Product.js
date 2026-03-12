@@ -126,6 +126,9 @@ productSchema.index(
 // ── Compound index for category + subcategory browsing ──
 productSchema.index({ category: 1, subcategory: 1 });
 
+// ── Compound index for active products with images-first sort ──
+productSchema.index({ isActive: 1, imageUrl: 1, createdAt: -1 });
+
 // ── Index for sorting by createdAt ──
 productSchema.index({ createdAt: -1 });
 
