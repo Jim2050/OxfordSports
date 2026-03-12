@@ -75,7 +75,7 @@ const navItems = [
     ],
   },
   {
-    to: "/products?category=BRANDS",
+    to: "/products",
     label: "Brands",
     children: [
       { to: "/products?brand=ADIDAS", label: "Adidas" },

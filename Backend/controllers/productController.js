@@ -45,7 +45,7 @@ exports.getProducts = async (req, res) => {
       brand,
       search,
       page = 1,
-      limit = 500,
+      limit = 5000,
       sort,
     } = req.query;
 
@@ -118,22 +118,42 @@ exports.getProducts = async (req, res) => {
     const filter =
       conditions.length === 1 ? conditions[0] : { $and: conditions };
 
-    // Sorting
+    // Sorting — products with images always come first
     let sortObj = { createdAt: -1 };
     if (sort === "price_asc") sortObj = { salePrice: 1 };
     else if (sort === "price_desc") sortObj = { salePrice: -1 };
     else if (sort === "name_asc") sortObj = { name: 1 };
 
     const pageNum = Math.max(1, parseInt(page));
-    const limitNum = Math.min(500, Math.max(1, parseInt(limit)));
+    const limitNum = Math.min(5000, Math.max(1, parseInt(limit)));
 
-    const [products, total] = await Promise.all([
-      Product.find(filter)
-        .sort(sortObj)
-        .skip((pageNum - 1) * limitNum)
-        .limit(limitNum),
-      Product.countDocuments(filter),
+    // Aggregate: products WITH images first, then by chosen sort
+    const pipeline = [
+      { $match: filter },
+      { $addFields: {
+        _hasImage: {
+          $cond: [
+            { $and: [
+              { $ne: ["$imageUrl", ""] },
+              { $ne: ["$imageUrl", null] },
+              { $ifNull: ["$imageUrl", false] },
+            ]},
+            0,  // 0 = has image (sort first)
+            1,  // 1 = no image (sort last)
+          ]
+        }
+      }},
+      { $sort: { _hasImage: 1, ...sortObj } },
+      { $skip: (pageNum - 1) * limitNum },
+      { $limit: limitNum },
+      { $unset: "_hasImage" },
+    ];
+
+    const [products, totalArr] = await Promise.all([
+      Product.aggregate(pipeline),
+      Product.aggregate([{ $match: filter }, { $count: "total" }]),
     ]);
+    const total = totalArr.length > 0 ? totalArr[0].total : 0;
 
     res.json({
       products,

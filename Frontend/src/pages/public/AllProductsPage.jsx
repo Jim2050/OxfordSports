@@ -127,8 +127,6 @@ export default function AllProductsPage() {
               <option value="ACCESSORIES">Accessories</option>
               <option value="B GRADE">B Grade</option>
               <option value="JOB LOTS">Job Lots</option>
-              <option value="UNDER £5">Under £5</option>
-              <option value="BRANDS">Brands</option>
               <option value="SPORTS">Sports</option>
             </select>
 
