@@ -101,11 +101,11 @@ ol {
 }
 
 .btn-accent {
-  background: var(--accent);
+  background: var(--primary);
   color: var(--text-inverse);
 }
 .btn-accent:hover {
-  background: var(--accent-hover);
+  background: var(--primary-dark);
 }
 
 .btn-outline {
@@ -844,10 +844,12 @@ ol {
   font-size: 0.78rem;
 }
 
-/* Limit sizes preview height in product cards to keep Order buttons aligned */
+/* Limit sizes preview height in product cards — scrollable when many sizes */
 .product-card-body .sizes-section {
-  max-height: 5.5rem;
-  overflow: hidden;
+  max-height: 6.5rem;
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-width: thin;
 }
 
 .sizes-header {
@@ -1694,14 +1696,14 @@ ol {
 
 .product-detail-img {
   position: relative;
-  max-height: 500px;
+  max-height: 350px;
   overflow: hidden;
   border-radius: var(--radius);
 }
 
 .product-detail-img img {
   width: 100%;
-  max-height: 500px;
+  max-height: 350px;
   object-fit: contain;
   border-radius: var(--radius);
   box-shadow: var(--shadow);
@@ -1829,7 +1831,7 @@ ol {
 
   .product-detail-img,
   .product-detail-img img {
-    max-height: 350px;
+    max-height: 300px;
   }
 
   .size-order-section {
@@ -1886,7 +1888,7 @@ ol {
   }
   .product-detail-img,
   .product-detail-img img {
-    max-height: 280px;
+    max-height: 250px;
   }
 }
 

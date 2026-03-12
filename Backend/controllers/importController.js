@@ -908,6 +908,14 @@ exports.importProducts = async (req, res) => {
         }
       }
 
+      // ── Step 0b: B Grade detection — brand contains "B grade" ──
+      const upperBrand = (productData.brand || "").toUpperCase();
+      if (!isLicensedTeam && /\bB[\s-]*GRADE\b/i.test(upperBrand)) {
+        productData.category = "B GRADE";
+        // Clean brand: remove "B grade" suffix to keep just the actual brand
+        productData.brand = productData.brand.replace(/\s*B[\s-]*grade\s*/i, "").trim() || productData.brand;
+      }
+
       // ── Step 1: Auto-assign category if missing or only gender ──
       const isGenderOnly = /^(MENS?|WOMENS?|WOMEN|FEMALE|LADIES|JUNIOR|JUNIORS|KIDS|YOUTH|BOYS?|GIRLS?|UNISEX|INFANT|BABY|TODDLER)$/i.test(catUpper);
       if (!isLicensedTeam && (!catUpper || isGenderOnly)) {

@@ -49,9 +49,11 @@ export default function ProductCard({ product }) {
     } else {
       const firstAvail = productSizes.find((s) => s.quantity > 0);
       if (!firstAvail) return;
-      addToCart(product, firstAvail.size, 1);
+      const cat = (product.category || "").toUpperCase();
+      const step = cat === "FOOTWEAR" ? 12 : 25;
+      addToCart(product, firstAvail.size, step);
       setAdded(true);
-      toast.success(`${product.name} added to cart`);
+      toast.success(`${step} × ${product.name} added to cart`);
     }
     setTimeout(() => setAdded(false), 1200);
   };
@@ -149,7 +151,7 @@ export default function ProductCard({ product }) {
           <div className="sizes-section">
             <span className="sizes-header">
               Available Sizes ({totalQty}{" "}
-              {totalQty === 1 ? "unit" : "units"}){!mustBuyAll && " — Sold pro rata from sizes below"}
+              {totalQty === 1 ? "unit" : "units"})
             </span>
             <div className="sizes-preview">
               {productSizes.slice(0, 10).map((s) => (

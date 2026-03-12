@@ -188,7 +188,7 @@ export default function ProductPage() {
             {hasSizes && !isOneSize && (
               <div className="sizes-section" style={{ marginBottom: "1rem" }}>
                 <span className="sizes-header">
-                  Available Sizes ({totalQty} units){!mustBuyAll && " — Sold pro rata from sizes below"}
+                  Available Sizes ({totalQty} units)
                 </span>
                 <div className="sizes-preview">
                   {productSizes.map((s) => (
