@@ -134,13 +134,13 @@ ol {
   background: #0a1f42;
 }
 
-/* ── ORDER THIS ITEM — red CTA (#13 / #19) ── */
+/* ── ORDER THIS ITEM — navy blue CTA (#10) ── */
 .btn-order-item {
   display: block;
   width: 100%;
   text-align: center;
   padding: 0.7rem 1rem;
-  background: var(--accent);
+  background: var(--primary);
   color: #fff;
   font-size: 0.85rem;
   font-weight: 800;
@@ -154,7 +154,7 @@ ol {
   margin-top: auto;
 }
 .btn-order-item:hover {
-  background: #d40707;
+  background: var(--primary-dark);
   transform: translateY(-1px);
 }
 .btn-order-item.disabled {

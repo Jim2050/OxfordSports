@@ -314,9 +314,9 @@ export const MIN_CART_TOTAL = 300;
 /**
  * Determine MOQ rules for a product.
  *
- * Rules (from client — Lily / Jim):
- *   FOOTWEAR  — totalQty < 12 → must buy ALL,  ≥ 12 → selectable
- *   CLOTHING / ACCESSORIES / other — totalQty < 50 → must buy ALL,  ≥ 50 → selectable
+ * Rules (from client — Lily / Jim, March 2026):
+ *   FOOTWEAR  — min order 12 units, totalQty < 12 → must buy ALL
+ *   Everything else — min order 25 units, totalQty < 25 → must buy ALL
  *
  * Returns { threshold, mustBuyAll: boolean }
  */
@@ -324,7 +324,7 @@ export function getMOQInfo(product) {
   const cat = (product?.category || "").toUpperCase();
   const totalQty = getTotalQuantity(product);
   const isFootwear = cat === "FOOTWEAR";
-  const threshold = isFootwear ? 24 : 100;
+  const threshold = isFootwear ? 12 : 25;
   const mustBuyAll = totalQty > 0 && totalQty < threshold;
   return { threshold, mustBuyAll, totalQty };
 }

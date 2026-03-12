@@ -111,7 +111,7 @@ export function CartProvider({ children }) {
           maxStock,
           lotItem,
           category: product.category || "",
-          moqStep: (product.category || "").toUpperCase() === "FOOTWEAR" ? 12 : 1,
+          moqStep: (product.category || "").toUpperCase() === "FOOTWEAR" ? 12 : 25,
         },
       ];
     });

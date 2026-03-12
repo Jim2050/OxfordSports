@@ -22,7 +22,10 @@ export default function Footer() {
             <Link to="/products?category=FOOTWEAR">Footwear</Link>
             <Link to="/products?category=CLOTHING">Clothing</Link>
             <Link to="/products?category=ACCESSORIES">Accessories</Link>
-            <Link to="/products?category=UNDER+%C2%A35">Under £5</Link>
+            <Link to="/products?category=LICENSED+TEAM+CLOTHING">Licensed Team Clothing</Link>
+            <Link to="/products?category=SPORTS">Sports</Link>
+            <Link to="/products?category=B+GRADE">B Grade</Link>
+            <Link to="/products?category=JOB+LOTS">Job Lots</Link>
             <Link to="/products">All Products</Link>
             <Link to="/contact">Contact</Link>
           </div>

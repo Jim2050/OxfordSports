@@ -30,7 +30,7 @@ export default function ProductPage() {
         setProduct(r.data);
         // Set initial qty to match MOQ step (footwear = 12)
         const cat = (r.data?.category || "").toUpperCase();
-        setOrderQty(cat === "FOOTWEAR" ? 12 : 1);
+        setOrderQty(cat === "FOOTWEAR" ? 12 : 25);
       })
       .catch(() => setProduct(null))
       .finally(() => setLoading(false));
@@ -82,7 +82,7 @@ export default function ProductPage() {
 
   // Quantity step: footwear orders in multiples of 12
   const isFootwear = (product.category || "").toUpperCase() === "FOOTWEAR";
-  const qtyStep = isFootwear ? 12 : 1;
+  const qtyStep = isFootwear ? 12 : 25;
 
   // Check if any variant is in cart
   const anySizeInCart = productSizes.some((s) => isInCart(product.sku, s.size));
@@ -162,7 +162,7 @@ export default function ProductPage() {
               {discount > 0 && (
                 <span className="discount-tag">{discount}% OFF</span>
               )}
-              {isUnder5 && <span className="price-under5">UNDER £5</span>}
+
             </div>
 
             {totalQty > 0 && (
@@ -188,10 +188,7 @@ export default function ProductPage() {
             {hasSizes && !isOneSize && (
               <div className="sizes-section" style={{ marginBottom: "1rem" }}>
                 <span className="sizes-header">
-                  Available Sizes ({totalQty} units) — Sold pro rata from sizes below
-                  {productSizes.filter(s => s.quantity > 0).length > 1 && (
-                    <span className="pro-rata-avg"> (~{(totalQty / productSizes.filter(s => s.quantity > 0).length).toFixed(0)} avg per size)</span>
-                  )}
+                  Available Sizes ({totalQty} units){!mustBuyAll && " — Sold pro rata from sizes below"}
                 </span>
                 <div className="sizes-preview">
                   {productSizes.map((s) => (

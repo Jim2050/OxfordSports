@@ -878,9 +878,39 @@ exports.importProducts = async (req, res) => {
         "HIKING": "Outdoor", "TRAIL": "Outdoor",
       };
 
+      // ── Step 0: Licensed Team Clothing detection (#4) ──
+      // Check BEFORE general category assignment — takes priority
+      const upperType = (row.type ? String(row.type).trim() : "").toUpperCase();
+      const upperColor = (productData.color || "").toUpperCase();
+      let isLicensedTeam = false;
+
+      // Rule 1: TEAM_MAP match in name/desc/sku
+      for (const key of Object.keys(TEAM_MAP)) {
+        if (combined.includes(key)) { isLicensedTeam = true; break; }
+      }
+      // Rule 2: JSY abbreviation (adidas jersey code)
+      if (!isLicensedTeam && /\bJSY\b/.test(combined)) isLicensedTeam = true;
+      // Rule 3: "Football Shirts" in Type column
+      if (!isLicensedTeam && /FOOTBALL SHIRT/i.test(upperType)) isLicensedTeam = true;
+      // Rule 4: REPLICA keyword in name/desc/color
+      if (!isLicensedTeam && /\bREPLICA\b/.test(`${combined} ${upperColor}`)) isLicensedTeam = true;
+
+      if (isLicensedTeam) {
+        productData.category = "LICENSED TEAM CLOTHING";
+        // Keep subcategory from TEAM_MAP if not already set
+        if (!productData.subcategory) {
+          for (const [key, subcat] of Object.entries(TEAM_MAP)) {
+            if (combined.includes(key)) {
+              productData.subcategory = subcat;
+              break;
+            }
+          }
+        }
+      }
+
       // ── Step 1: Auto-assign category if missing or only gender ──
       const isGenderOnly = /^(MENS?|WOMENS?|WOMEN|FEMALE|LADIES|JUNIOR|JUNIORS|KIDS|YOUTH|BOYS?|GIRLS?|UNISEX|INFANT|BABY|TODDLER)$/i.test(catUpper);
-      if (!catUpper || isGenderOnly) {
+      if (!isLicensedTeam && (!catUpper || isGenderOnly)) {
         if (FOOTWEAR_MODELS.test(combined) || FOOTWEAR_STUDS.test(combined) || FOOTWEAR_KEYWORDS.test(combined)) {
           productData.category = "FOOTWEAR";
         } else if (ACCESSORIES_KEYWORDS.test(combined)) {
