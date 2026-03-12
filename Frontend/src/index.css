@@ -2282,6 +2282,24 @@ ol {
   }
 }
 
+/* ========== Pagination ========== */
+.pagination {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+  margin: 2rem 0 1rem;
+}
+.pagination-info {
+  font-size: 0.95rem;
+  color: #374151;
+  font-weight: 500;
+}
+.pagination .btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
 /* ========== Go to Top Button ========== */
 .go-to-top-btn {
   position: fixed;

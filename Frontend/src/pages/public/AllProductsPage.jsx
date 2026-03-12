@@ -16,6 +16,9 @@ export default function AllProductsPage() {
   const [brands, setBrands] = useState([]);
   const [subcategory, setSubcategory] = useState(searchParams.get("subcategory") || "");
   const [subcategories, setSubcategories] = useState([]);
+  const [page, setPage] = useState(1);
+  const [totalProducts, setTotalProducts] = useState(0);
+  const ITEMS_PER_PAGE = 100;
 
   // Load brands on mount
   useEffect(() => {
@@ -51,7 +54,7 @@ export default function AllProductsPage() {
 
   useEffect(() => {
     setLoading(true);
-    const params = {};
+    const params = { page, limit: ITEMS_PER_PAGE };
     if (search) params.search = search;
     if (brand) params.brand = brand;
     if (category) params.category = category;
@@ -59,12 +62,16 @@ export default function AllProductsPage() {
     if (minPrice) params.minPrice = minPrice;
     if (maxPrice) params.maxPrice = maxPrice;
     fetchProducts(params)
-      .then((data) =>
-        setProducts(Array.isArray(data) ? data : data.products || []),
-      )
-      .catch(() => setProducts([]))
+      .then((data) => {
+        setProducts(Array.isArray(data) ? data : data.products || []);
+        setTotalProducts(data.total || 0);
+      })
+      .catch(() => { setProducts([]); setTotalProducts(0); })
       .finally(() => setLoading(false));
-  }, [search, brand, category, subcategory, minPrice, maxPrice]);
+  }, [search, brand, category, subcategory, minPrice, maxPrice, page]);
+
+  // Reset to page 1 when any filter changes
+  const resetPage = () => setPage(1);
 
   const clearFilters = () => {
     setBrand("");
@@ -74,6 +81,7 @@ export default function AllProductsPage() {
     setMinPrice("");
     setMaxPrice("");
     setSearch("");
+    setPage(1);
     setSearchParams({});
   };
 
@@ -103,7 +111,7 @@ export default function AllProductsPage() {
 
       <section className="section">
         <div className="container">
-          <SearchBar onSearch={setSearch} placeholder="Search all products…" />
+          <SearchBar onSearch={(v) => { setSearch(v); resetPage(); }} placeholder="Search all products…" />
 
           {/* Filter bar */}
           <div className="filter-bar">
@@ -111,6 +119,7 @@ export default function AllProductsPage() {
               value={category}
               onChange={(e) => {
                 setCategory(e.target.value);
+                resetPage();
                 if (e.target.value) {
                   setSearchParams({ category: e.target.value });
                 } else {
@@ -133,7 +142,7 @@ export default function AllProductsPage() {
             {subcategories.length > 0 && (
               <select
                 value={subcategory}
-                onChange={(e) => setSubcategory(e.target.value)}
+                onChange={(e) => { setSubcategory(e.target.value); resetPage(); }}
                 className="filter-select"
               >
                 <option value="">All Sub-categories</option>
@@ -147,7 +156,7 @@ export default function AllProductsPage() {
 
             <select
               value={brand}
-              onChange={(e) => setBrand(e.target.value)}
+                onChange={(e) => { setBrand(e.target.value); resetPage(); }}
               className="filter-select"
             >
               <option value="">All Brands</option>
@@ -163,7 +172,7 @@ export default function AllProductsPage() {
                 type="number"
                 placeholder="Min £"
                 value={minPrice}
-                onChange={(e) => setMinPrice(e.target.value)}
+                onChange={(e) => { setMinPrice(e.target.value); resetPage(); }}
                 min="0"
                 step="0.01"
                 className="filter-input"
@@ -173,7 +182,7 @@ export default function AllProductsPage() {
                 type="number"
                 placeholder="Max £"
                 value={maxPrice}
-                onChange={(e) => setMaxPrice(e.target.value)}
+                onChange={(e) => { setMaxPrice(e.target.value); resetPage(); }}
                 min="0"
                 step="0.01"
                 className="filter-input"
@@ -200,10 +209,34 @@ export default function AllProductsPage() {
                   fontSize: "0.9rem",
                 }}
               >
-                {products.length} product{products.length !== 1 ? "s" : ""}{" "}
-                found
+                {totalProducts === 0
+                  ? "No products found"
+                  : `Showing ${(page - 1) * ITEMS_PER_PAGE + 1}–${Math.min(page * ITEMS_PER_PAGE, totalProducts)} of ${totalProducts} product${totalProducts !== 1 ? "s" : ""}`}
               </p>
               <ProductGrid products={products} />
+
+              {/* Pagination */}
+              {totalProducts > ITEMS_PER_PAGE && (
+                <div className="pagination">
+                  <button
+                    className="btn btn-primary btn-sm"
+                    onClick={() => { setPage((p) => Math.max(1, p - 1)); scrollToTop(); }}
+                    disabled={page <= 1}
+                  >
+                    ← Previous
+                  </button>
+                  <span className="pagination-info">
+                    Page {page} of {Math.ceil(totalProducts / ITEMS_PER_PAGE)}
+                  </span>
+                  <button
+                    className="btn btn-primary btn-sm"
+                    onClick={() => { setPage((p) => p + 1); scrollToTop(); }}
+                    disabled={page >= Math.ceil(totalProducts / ITEMS_PER_PAGE)}
+                  >
+                    Next →
+                  </button>
+                </div>
+              )}
             </>
           )}
         </div>
