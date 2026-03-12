@@ -45,7 +45,7 @@ exports.getProducts = async (req, res) => {
       brand,
       search,
       page = 1,
-      limit = 5000,
+      limit = 10000,
       sort,
     } = req.query;
 
@@ -125,7 +125,7 @@ exports.getProducts = async (req, res) => {
     else if (sort === "name_asc") sortObj = { name: 1 };
 
     const pageNum = Math.max(1, parseInt(page));
-    const limitNum = Math.min(5000, Math.max(1, parseInt(limit)));
+    const limitNum = Math.min(10000, Math.max(1, parseInt(limit)));
 
     // Aggregate: products WITH images first, then by chosen sort
     const pipeline = [
