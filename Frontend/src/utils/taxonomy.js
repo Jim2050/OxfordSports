@@ -82,6 +82,106 @@ const LABEL_OVERRIDES = {
 
 const TITLE_CASE_EXCEPTIONS = new Set(["and", "of", "the"]);
 
+const NAV_SUBCATEGORY_FALLBACKS = {
+  FOOTWEAR: [
+    "TRAINERS",
+    "FOOTBALL TRAINERS",
+    "FOOTBALL BOOTS",
+    "RUGBY BOOTS",
+    "SLIDES, FLIP FLOPS & SANDALS",
+    "GOLF SHOES",
+    "TENNIS / PADEL & RACKET SPORT SHOES",
+    "SPECIALIST FOOTWEAR",
+    "WINTER FOOTWEAR",
+    "HIKING BOOTS",
+    "RUNNING SHOES",
+  ],
+  CLOTHING: [
+    "POLO SHIRTS",
+    "T-SHIRTS",
+    "SHORTS",
+    "JACKETS & COATS",
+    "HOODED SWEATERS",
+    "JUMPERS & SWEATERS",
+    "GLOVES",
+    "SOCKS",
+    "HEADWEAR",
+    "TRACKSUIT BOTTOMS",
+    "TRACKSUITS JACKETS",
+    "TRACKSUIT SETS",
+    "SWIMWEAR",
+    "LEGGINGS",
+    "VESTS & BRAS",
+    "SKIRTS & SKORTS",
+    "DRESSES & BODYSUITS",
+    "SPECIALIST CLOTHING",
+  ],
+  "LICENSED TEAM CLOTHING": [
+    "TEAM JERSEYS",
+    "T-SHIRTS",
+    "JACKETS & COATS",
+    "HEADWEAR",
+    "ACCESSORIES & MEMORABILIA",
+    "TRACKSUIT JACKETS",
+    "TRACKSUIT BOTTOMS",
+    "SOCKS",
+    "BAGS & HOLDALLS",
+    "SHORTS",
+    "HOODED SWEATERS",
+    "JUMPERS & SWEATERS",
+    "TRACKSUIT SETS",
+    "LEGGINGS",
+    "GLOVES",
+    "VESTS & BRAS",
+  ],
+  ACCESSORIES: [
+    "BALLS",
+    "BAGS & HOLDALLS",
+    "HEADWEAR",
+    "GLOVES",
+    "RACKETS & BATS",
+    "SPORTS TOWELS",
+    "PROTECTIVE GEAR",
+    "SUNGLASSES",
+    "WATCHES MONITORS",
+    "GYM EQUIPMENT",
+    "TOWELS",
+  ],
+  BRANDS: [
+    "ADIDAS",
+    "UNDER ARMOUR",
+    "REEBOK",
+    "PUMA",
+    "CASTORE",
+    "NIKE",
+    "MOLTEN",
+    "GUNN & MOORE",
+    "UNICORN",
+    "UHLSPORT",
+    "NEW BALANCE",
+  ],
+  SPORTS: [
+    "FOOTBALL",
+    "RUGBY",
+    "CRICKET",
+    "ATHLETICS",
+    "SWIMMING",
+    "BASKETBALL",
+    "HOCKEY",
+    "TENNIS",
+    "BADMINTON",
+    "SQUASH",
+    "PADEL",
+    "TABLE TENNIS",
+    "CYCLING",
+    "BOXING / MARTIAL ARTS",
+    "SKIING / SNOWBOARDING",
+    "YOGA / FITNESS",
+    "SNOOKER / POOL",
+    "DARTS",
+  ],
+};
+
 export function formatTaxonomyLabel(value) {
   const upper = String(value || "").trim().toUpperCase();
   if (!upper) return "";
@@ -129,6 +229,7 @@ const TOP_LEVEL_NAV_ORDER = [
   "BRANDS",
   "SPORTS",
   "B GRADE",
+  "JOB LOTS",
 ];
 
 export function getNavigableCategories(categories = []) {
@@ -136,9 +237,35 @@ export function getNavigableCategories(categories = []) {
   for (const cat of categories) {
     map.set(String(cat?.name || "").toUpperCase(), cat);
   }
-  return TOP_LEVEL_NAV_ORDER
-    .map((key) => map.get(key))
-    .filter(Boolean);
+
+  return TOP_LEVEL_NAV_ORDER.map((key) => {
+    const fromApi = map.get(key);
+    if (!fromApi) {
+      const fallbackSubs = NAV_SUBCATEGORY_FALLBACKS[key] || [];
+      return {
+        name: key,
+        subcategories: fallbackSubs.map((name) => ({ name })),
+      };
+    }
+
+    const apiSubcategories = Array.isArray(fromApi.subcategories)
+      ? fromApi.subcategories
+      : [];
+
+    if (apiSubcategories.length > 0) {
+      return fromApi;
+    }
+
+    const fallbackSubs = NAV_SUBCATEGORY_FALLBACKS[key] || [];
+    if (fallbackSubs.length === 0) {
+      return fromApi;
+    }
+
+    return {
+      ...fromApi,
+      subcategories: fallbackSubs.map((name) => ({ name })),
+    };
+  });
 }
 
 export function getFilterableCategories(categories = []) {
