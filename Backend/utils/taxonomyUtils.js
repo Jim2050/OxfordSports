@@ -33,6 +33,9 @@ const SUBCATEGORY_ALIASES_BY_CATEGORY = {
     ["BEACH FOOTWEAR", "SLIDES, FLIP FLOPS & SANDALS"],
     ["TENNIS / PADEL SHOES", "TENNIS / PADEL & RACKET SPORT SHOES"],
   ]),
+  CLOTHING: new Map([
+    ["TRACKSUIT JACKETS", "TRACKSUITS JACKETS"],
+  ]),
   "LICENSED TEAM CLOTHING": new Map([
     ["JACKETS", "JACKETS & COATS"],
     ["HATS & CAPS", "HEADWEAR"],
@@ -125,6 +128,8 @@ function deriveGenderCanonical({
   description,
   category,
   subcategory,
+  sizes,
+  hadNegativeSizes,
 }) {
   const explicit = normalizeUpper(rawGender);
   if (explicit && GENDER_ALIASES.has(explicit)) {
@@ -144,6 +149,29 @@ function deriveGenderCanonical({
   if (/W$/.test(upperSku)) return "WOMENS";
   if (/J$/.test(upperSku)) return "JUNIOR";
 
+  if (/\bJRS\b|\bJR\b|\bKIDS\b|\bYOUTH\b|\bINFANT\b|\bBABY\b/.test(searchable)) {
+    return "JUNIOR";
+  }
+  if (/\bW\b|\bWMNS\b|\bWOMENS\b|\bWOMEN'S\b|\bLADIES\b/.test(searchable)) {
+    return "WOMENS";
+  }
+
+  const categoryUpper = normalizeUpper(category);
+  const numericSizes = Array.isArray(sizes)
+    ? sizes
+        .map((entry) => String(entry?.size || "").trim())
+        .map((size) => size.match(/^(\d+(?:\.5)?)$/))
+        .filter(Boolean)
+        .map((match) => Number(match[1]))
+    : [];
+
+  if (categoryUpper === "FOOTWEAR" && numericSizes.length > 0) {
+    const maxSize = Math.max(...numericSizes);
+    if (hadNegativeSizes && maxSize <= 8) return "WOMENS";
+    if (maxSize <= 6) return "JUNIOR";
+    if (maxSize >= 7) return "MENS";
+  }
+
   return "";
 }
 
@@ -160,7 +188,12 @@ function deriveSportCanonical({ name, description, category, subcategory }) {
 }
 
 function sanitizeSizeLabel(value) {
-  return normalizeText(String(value || "").replace(/""/g, '"').replace(/^"|"$/g, ""));
+  return normalizeText(
+    String(value || "")
+      .replace(/""/g, '"')
+      .replace(/^"|"$/g, "")
+      .replace(/^-(?=\d)/, ""),
+  );
 }
 
 function isMalformedSize(size) {
@@ -179,6 +212,7 @@ function parseSizeEntries(rawSize, fallbackQty) {
       checksumMismatch: false,
       embeddedQuantities: false,
       parsedTotal: 0,
+      hadNegativeSizes: false,
     };
   }
 
@@ -191,10 +225,14 @@ function parseSizeEntries(rawSize, fallbackQty) {
   const invalidTokens = [];
   let parsedTotal = 0;
   let embeddedQuantities = false;
+  let hadNegativeSizes = false;
 
   for (const token of tokens) {
     const embeddedMatch = token.match(/^(.*)\((\d+)\)$/);
     const rawLabel = embeddedMatch ? embeddedMatch[1] : token;
+    if (/^-\d/.test(String(rawLabel || "").trim())) {
+      hadNegativeSizes = true;
+    }
     const size = sanitizeSizeLabel(rawLabel);
     const quantity = embeddedMatch
       ? parseInt(embeddedMatch[2], 10)
@@ -204,7 +242,12 @@ function parseSizeEntries(rawSize, fallbackQty) {
       embeddedQuantities = true;
     }
 
-    if (isMalformedSize(size) || quantity <= 0) {
+    // Silently ignore zero-quantity tokens instead of treating them as warnings.
+    if (quantity <= 0) {
+      continue;
+    }
+
+    if (isMalformedSize(size)) {
       invalidTokens.push(token);
       continue;
     }
@@ -223,6 +266,7 @@ function parseSizeEntries(rawSize, fallbackQty) {
     checksumMismatch,
     embeddedQuantities,
     parsedTotal,
+    hadNegativeSizes,
   };
 }
 

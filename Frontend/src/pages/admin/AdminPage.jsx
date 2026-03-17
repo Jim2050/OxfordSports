@@ -780,6 +780,9 @@ export default function AdminPage() {
                   <span className="stat-blue">
                     🔄 {excelResult.updated ?? 0} SKUs updated
                   </span>
+                  <span className="stat-total">
+                    ⚠️ {excelResult.warnings ?? 0} warnings
+                  </span>
                   <span className="stat-red">
                     ❌ {excelResult.failed ?? 0} failed
                   </span>
@@ -841,6 +844,28 @@ export default function AdminPage() {
                     </ul>
                   </details>
                 )}
+
+                {excelResult.warningDetails &&
+                  excelResult.warningDetails.length > 0 && (
+                    <details style={{ marginTop: "0.5rem" }}>
+                      <summary
+                        style={{
+                          cursor: "pointer",
+                          fontWeight: 600,
+                          color: "#92400e",
+                        }}
+                      >
+                        View {excelResult.warningDetails.length} warning(s)
+                      </summary>
+                      <ul style={{ marginTop: "0.5rem", fontSize: "0.85rem" }}>
+                        {excelResult.warningDetails.map((w, i) => (
+                          <li key={i}>
+                            Row {w.row}: {w.reason}
+                          </li>
+                        ))}
+                      </ul>
+                    </details>
+                  )}
 
                 {excelResult.errors && excelResult.errors.length > 0 && (
                   <details style={{ marginTop: "0.5rem" }}>

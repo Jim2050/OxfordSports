@@ -20,19 +20,16 @@ const {
   parseSizeEntries,
 } = require("../utils/taxonomyUtils");
 
-function normalizeImportedSubcategory(category, subcategory) {
+function normalizeImportedSubcategory(category, subcategory, name, description = "") {
   const cat = String(category || "").trim().toUpperCase();
   const raw = String(subcategory || "").trim();
   const upper = raw.toUpperCase();
+  const combined = `${String(name || "").toUpperCase()} ${String(description || "").toUpperCase()} ${upper}`;
   if (!upper) return "";
 
   // Common OCR variants in the provided CSV (e.g. "Shirts & Ierseys").
   if (/\bSHIRTS?\s*&\s*.[A-Z]*ERSEYS?\b/.test(upper)) {
     return cat === "LICENSED TEAM CLOTHING" ? "TEAM JERSEYS" : "T-SHIRTS";
-  }
-
-  if (upper === "TRACKSUITS & JOGGERS") {
-    return cat === "LICENSED TEAM CLOTHING" ? "TRACKSUIT SETS" : "TRACKSUIT SETS";
   }
 
   if (upper === "HOODS & SWEATERS") {
@@ -41,6 +38,40 @@ function normalizeImportedSubcategory(category, subcategory) {
 
   if (upper === "HATS & CAPS") {
     return "HEADWEAR";
+  }
+
+  if (cat === "CLOTHING") {
+    if (/\bPOLO\b/.test(combined)) return "POLO SHIRTS";
+    if (/\bCROP TOP\b|\bTUBE TOP\b|\bVEST\b|\bBRA\b/.test(combined)) return "VESTS & BRAS";
+    if (/\bSKIRT\b|\bSKORT\b/.test(combined)) return "SKIRTS & SKORTS";
+    if (/\bDRESS\b|\bBODYSUIT\b/.test(combined)) return "DRESSES & BODYSUITS";
+    if (/\bTRACK TOP\b|\bTRACK JACKET\b|\bTT\b|\bFIREBIRD TRACK TOP\b/.test(combined)) return "TRACKSUITS JACKETS";
+    if (/\bJOGGER\b|\bJOGGERS\b|\bPANT\b|\bPANTS\b|\bTRACK PANT\b|\bTRACKSUIT BOTTOM\b/.test(combined)) return "TRACKSUIT BOTTOMS";
+    if (/\bTRACKSUIT\b/.test(combined) || upper === "TRACKSUITS & JOGGERS") return "TRACKSUIT SETS";
+    if (/\bHOOD\b|\bHOODIE\b|\bHOODY\b/.test(combined)) return "HOODED SWEATERS";
+    if (/\bSWEATER\b|\bSWEATSHIRT\b|\bCREW SWEAT\b|\bJUMPER\b|\bKNIT\b/.test(combined)) return "JUMPERS & SWEATERS";
+    if (/\bSOCK\b/.test(combined)) return "SOCKS";
+    if (/\bGLOVE\b/.test(combined)) return "GLOVES";
+    if (/\bHEADWEAR\b|\bHAT\b|\bCAP\b|\bBEANIE\b/.test(combined)) return "HEADWEAR";
+    if (/\bSWIM\b|\bBIKINI\b/.test(combined)) return "SWIMWEAR";
+    if (/\bT-SHIRT\b|\bT SHIRT\b|\bTEE\b|\bTOP\b|\bTANK\b|\bSHIRT\b/.test(combined)) return "T-SHIRTS";
+  }
+
+  if (cat === "LICENSED TEAM CLOTHING") {
+    if (/\bBAG\b|\bHOLDALL\b|\bBACKPACK\b/.test(combined)) return "BAGS & HOLDALLS";
+    if (/\bHAT\b|\bCAP\b|\bBEANIE\b|\bHEADWEAR\b/.test(combined)) return "HEADWEAR";
+    if (/\bGLOVE\b/.test(combined)) return "GLOVES";
+    if (/\bSOCK\b/.test(combined)) return "SOCKS";
+    if (/\bTRACK TOP\b|\bTRACK JACKET\b|\bTT\b/.test(combined)) return "TRACKSUIT JACKETS";
+    if (/\bJOGGER\b|\bPANT\b|\bPANTS\b|\bTRACK PANT\b/.test(combined)) return "TRACKSUIT BOTTOMS";
+    if (/\bTRACKSUIT\b/.test(combined)) return "TRACKSUIT SETS";
+    if (/\bHOOD\b|\bHOODIE\b/.test(combined)) return "HOODED SWEATERS";
+    if (/\bJUMPER\b|\bSWEATER\b|\bSWEATSHIRT\b/.test(combined)) return "JUMPERS & SWEATERS";
+    if (/\bSHORT\b/.test(combined)) return "SHORTS";
+    if (/\bJACKET\b|\bCOAT\b/.test(combined)) return "JACKETS & COATS";
+    if (/\bJSY\b|\bJERSEY\b|\bREPLICA\b/.test(combined)) return "TEAM JERSEYS";
+    if (/\bTEE\b|\bT-SHIRT\b|\bT SHIRT\b|\bSHIRT\b/.test(combined)) return "T-SHIRTS";
+    if (/\bACCESSOR/.test(combined)) return "ACCESSORIES & MEMORABILIA";
   }
 
   return raw;
@@ -510,17 +541,18 @@ function consolidateBySku(rows) {
       const existing = skuMap.get(sku);
 
       if (parsedSizes.invalidTokens.length > 0) {
-        existing._sizeErrors = existing._sizeErrors || [];
-        existing._sizeErrors.push(
+        existing._sizeWarnings = existing._sizeWarnings || [];
+        existing._sizeWarnings.push(
           `Invalid size token(s): ${parsedSizes.invalidTokens.join(", ")}`,
         );
       }
       if (parsedSizes.checksumMismatch) {
-        existing._sizeErrors = existing._sizeErrors || [];
-        existing._sizeErrors.push(
+        existing._sizeWarnings = existing._sizeWarnings || [];
+        existing._sizeWarnings.push(
           `Embedded size quantities (${parsedSizes.parsedTotal}) do not match QTY (${rowQty})`,
         );
       }
+      existing._hadNegativeSizes = existing._hadNegativeSizes || parsedSizes.hadNegativeSizes;
 
       // Merge sizes with quantities
       if (rowSizes.length > 0) {
@@ -592,7 +624,8 @@ function consolidateBySku(rows) {
       skuMap.set(sku, {
         ...row,
         sku,
-        _sizeErrors: sizeErrors,
+        _sizeWarnings: sizeErrors,
+        _hadNegativeSizes: parsedSizes.hadNegativeSizes,
         sizeEntries: normalizeSizeEntries(sizeEntries),
         barcodes: barcode ? [barcode] : [],
       });
@@ -831,6 +864,7 @@ exports.importProducts = async (req, res) => {
     let failed = 0;
     let warnings = 0;
     const errors = [];
+    const warningDetails = [];
     const pendingImageProducts = [];
 
     // ── Process in batches of 500 for memory efficiency ──
@@ -841,12 +875,12 @@ exports.importProducts = async (req, res) => {
       const row = consolidated[i];
       const sku = row.sku;
 
-      if (Array.isArray(row._sizeErrors) && row._sizeErrors.length > 0) {
+      if (Array.isArray(row._sizeWarnings) && row._sizeWarnings.length > 0) {
         warnings++;
-        errors.push({
+        warningDetails.push({
           row: i + 1,
           sku,
-          reason: `WARNING: ${row._sizeErrors.join(" | ")}`,
+          reason: row._sizeWarnings.join("; "),
         });
       }
 
@@ -882,16 +916,21 @@ exports.importProducts = async (req, res) => {
       if (priceResult.error && priceResult.value === null && rrp > 0) {
         priceResult = { value: rrp, error: null };
         warnings++;
+        warningDetails.push({
+          row: i + 1,
+          sku,
+          reason: `No trade/sale price found; used RRP £${rrp.toFixed(2)}`,
+        });
         if (i < 5) debug(`[IMPORT] Row ${i + 1} (${sku}): no trade price, using RRP £${rrp}`);
       }
       // Fallback 2: last resort — default to 0 with warning instead of failing
       if (priceResult.error && priceResult.value === null) {
         priceResult = { value: 0, error: null };
         warnings++;
-        errors.push({
+        warningDetails.push({
           row: i + 1,
           sku,
-          reason: `WARNING: No price found, defaulted to £0.00 — update manually`,
+          reason: `No price found; defaulted to £0.00 (update manually)`,
         });
         if (i < 5) debug(`[IMPORT] Row ${i + 1} (${sku}): no price at all, defaulted to £0`);
       }
@@ -1118,6 +1157,8 @@ exports.importProducts = async (req, res) => {
       productData.subcategory = normalizeImportedSubcategory(
         productData.category,
         productData.subcategory,
+        productData.name,
+        productData.description,
       );
       if (!productData.subcategory) {
         // Check for sport keywords
@@ -1155,6 +1196,8 @@ exports.importProducts = async (req, res) => {
         description: productData.description,
         category: productData.category,
         subcategory: productData.subcategory,
+        sizes: productData.sizes,
+        hadNegativeSizes: !!row._hadNegativeSizes,
       });
       productData.brandCanonical = deriveBrandCanonical(productData.brand);
 
@@ -1317,6 +1360,7 @@ exports.importProducts = async (req, res) => {
       updated,
       failed,
       warnings,
+      warningDetails: warningDetails.slice(0, 50),
       imageResolved,
       imageFailed,
       imagePending: Math.max(0, pendingImageProducts.length - 50),
