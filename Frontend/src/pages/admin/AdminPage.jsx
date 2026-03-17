@@ -21,6 +21,7 @@ import {
   bulkRecategorize,
   fetchCategories,
   fetchDeletedBatches,
+  fetchImportBatches,
   restoreProducts,
 } from "../../api/api";
 
@@ -63,12 +64,14 @@ export default function AdminPage() {
   const [productImagePreview, setProductImagePreview] = useState(null);
   const [categoryList, setCategoryList] = useState([]);
   const [subcategoryList, setSubcategoryList] = useState([]);
+  const [importBatches, setImportBatches] = useState([]);
 
   useEffect(() => {
     if (authed) {
       loadProducts();
       loadStats();
       loadCategories();
+      loadImportBatches();
     }
 
     // Listen for 401-triggered auto-logout from the axios interceptor
@@ -105,6 +108,12 @@ export default function AdminPage() {
       .catch(() => {});
   };
 
+  const loadImportBatches = () => {
+    fetchImportBatches()
+      .then((data) => setImportBatches(Array.isArray(data?.batches) ? data.batches : []))
+      .catch(() => setImportBatches([]));
+  };
+
   /* ── Excel Dropzone ── */
   const onDropExcel = useCallback(async (accepted) => {
     const file = accepted[0];
@@ -133,6 +142,7 @@ export default function AdminPage() {
       toast.success(`Import complete: ${parts.join(", ")}.`);
       loadProducts();
       loadStats();
+      loadImportBatches();
     } catch (err) {
       const msg =
         err?.response?.data?.error || "Upload failed. Check file format.";
@@ -609,6 +619,7 @@ export default function AdminPage() {
         <div className="admin-tabs">
           {[
             { key: "excel", icon: "📄", label: "Upload Excel" },
+            { key: "imports", icon: "🧾", label: "Import History" },
             { key: "images", icon: "🖼️", label: "Upload Images" },
             {
               key: "addproduct",
@@ -851,6 +862,127 @@ export default function AdminPage() {
                     </ul>
                   </details>
                 )}
+              </div>
+            )}
+          </div>
+        )}
+
+        {tab === "imports" && (
+          <div className="admin-card">
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                gap: "1rem",
+                marginBottom: "1rem",
+                flexWrap: "wrap",
+              }}
+            >
+              <div>
+                <h3 style={{ marginBottom: "0.35rem" }}>Recent Import Batches</h3>
+                <p className="admin-hint" style={{ marginBottom: 0 }}>
+                  Review failed rows, quarantined size tokens, and batch-level outcomes without checking server logs.
+                </p>
+              </div>
+              <button className="btn btn-sm btn-outline" onClick={loadImportBatches}>
+                Refresh
+              </button>
+            </div>
+
+            {importBatches.length === 0 ? (
+              <p style={{ color: "#6b7280", margin: 0 }}>No import batches recorded yet.</p>
+            ) : (
+              <div style={{ display: "grid", gap: "1rem" }}>
+                {importBatches.map((batch) => {
+                  const statusColor =
+                    batch.status === "complete"
+                      ? "#059669"
+                      : batch.status === "failed"
+                        ? "#b91c1c"
+                        : "#b45309";
+
+                  return (
+                    <div
+                      key={batch._id}
+                      style={{
+                        border: "1px solid #e5e7eb",
+                        borderRadius: "14px",
+                        padding: "1rem",
+                        background: "#ffffff",
+                      }}
+                    >
+                      <div
+                        style={{
+                          display: "flex",
+                          justifyContent: "space-between",
+                          gap: "1rem",
+                          flexWrap: "wrap",
+                          alignItems: "flex-start",
+                        }}
+                      >
+                        <div>
+                          <div style={{ fontWeight: 700, color: "#111827" }}>{batch.filename}</div>
+                          <div style={{ fontSize: "0.85rem", color: "#6b7280", marginTop: "0.25rem" }}>
+                            {new Date(batch.createdAt).toLocaleString()}
+                            {batch.importedBy?.email ? ` · ${batch.importedBy.email}` : ""}
+                          </div>
+                        </div>
+                        <span
+                          style={{
+                            fontSize: "0.78rem",
+                            fontWeight: 700,
+                            letterSpacing: "0.04em",
+                            textTransform: "uppercase",
+                            color: statusColor,
+                          }}
+                        >
+                          {batch.status}
+                        </span>
+                      </div>
+
+                      <div
+                        style={{
+                          display: "grid",
+                          gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))",
+                          gap: "0.75rem",
+                          marginTop: "1rem",
+                        }}
+                      >
+                        <div><strong>{batch.totalRows || 0}</strong><div style={{ color: "#6b7280", fontSize: "0.82rem" }}>Rows</div></div>
+                        <div><strong>{batch.importedRows || 0}</strong><div style={{ color: "#6b7280", fontSize: "0.82rem" }}>Imported</div></div>
+                        <div><strong>{batch.updatedRows || 0}</strong><div style={{ color: "#6b7280", fontSize: "0.82rem" }}>Updated</div></div>
+                        <div><strong>{batch.failedRows || 0}</strong><div style={{ color: "#6b7280", fontSize: "0.82rem" }}>Failed</div></div>
+                        <div><strong>{batch.errorLog?.length || 0}</strong><div style={{ color: "#6b7280", fontSize: "0.82rem" }}>Logged Issues</div></div>
+                      </div>
+
+                      {Array.isArray(batch.errorLog) && batch.errorLog.length > 0 && (
+                        <details style={{ marginTop: "1rem" }}>
+                          <summary style={{ cursor: "pointer", fontWeight: 600, color: "#991b1b" }}>
+                            View {batch.errorLog.length} issue{batch.errorLog.length === 1 ? "" : "s"}
+                          </summary>
+                          <div style={{ marginTop: "0.75rem", display: "grid", gap: "0.5rem" }}>
+                            {batch.errorLog.map((entry, index) => (
+                              <div
+                                key={`${batch._id}-${index}`}
+                                style={{
+                                  background: "#f9fafb",
+                                  borderRadius: "10px",
+                                  padding: "0.75rem",
+                                  fontSize: "0.88rem",
+                                }}
+                              >
+                                <strong>Row {entry.row || 0}</strong>
+                                {entry.sku ? ` · ${entry.sku}` : ""}
+                                <div style={{ color: "#4b5563", marginTop: "0.25rem" }}>{entry.reason}</div>
+                              </div>
+                            ))}
+                          </div>
+                        </details>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             )}
           </div>

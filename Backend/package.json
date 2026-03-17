@@ -5,7 +5,8 @@
   "scripts": {
     "start": "node server.js",
     "dev": "node --watch server.js",
-    "build": "echo 'No build step needed for backend'"
+    "build": "echo 'No build step needed for backend'",
+    "migrate:canonical": "node migrate-populate-canonical.js"
   },
   "keywords": [],
   "author": "",

@@ -238,24 +238,151 @@ exports.getBrands = async (_req, res) => {
  */
 exports.getCategories = async (_req, res) => {
   try {
-    const categories = await Category.find({ isActive: true })
-      .sort({ displayOrder: 1, name: 1 })
-      .lean();
+    const [categories, subcategories, categoryCounts, rawCategoryCounts, subcategoryCounts, rawSubcategoryCounts, brandCounts, sportCounts, underFiveCount, brandTotalCount, sportTotalCount] =
+      await Promise.all([
+        Category.find({ isActive: true })
+          .sort({ displayOrder: 1, name: 1 })
+          .lean(),
+        Subcategory.find({ isActive: true })
+          .sort({ name: 1 })
+          .lean(),
+        Product.aggregate([
+          { $match: { isActive: true, categoryCanonical: { $nin: ["", null] } } },
+          { $group: { _id: "$categoryCanonical", count: { $sum: 1 } } },
+        ]),
+        Product.aggregate([
+          { $match: { isActive: true, category: { $nin: ["", null] } } },
+          { $group: { _id: { $toUpper: "$category" }, count: { $sum: 1 } } },
+        ]),
+        Product.aggregate([
+          {
+            $match: {
+              isActive: true,
+              categoryCanonical: { $nin: ["", null] },
+              subcategoryCanonical: { $nin: ["", null] },
+            },
+          },
+          {
+            $group: {
+              _id: {
+                category: "$categoryCanonical",
+                subcategory: "$subcategoryCanonical",
+              },
+              count: { $sum: 1 },
+            },
+          },
+        ]),
+        Product.aggregate([
+          {
+            $match: {
+              isActive: true,
+              category: { $nin: ["", null] },
+              subcategory: { $nin: ["", null] },
+            },
+          },
+          {
+            $group: {
+              _id: {
+                category: { $toUpper: "$category" },
+                subcategory: { $toUpper: "$subcategory" },
+              },
+              count: { $sum: 1 },
+            },
+          },
+        ]),
+        Product.aggregate([
+          { $match: { isActive: true, brandCanonical: { $nin: ["", null] } } },
+          { $group: { _id: "$brandCanonical", count: { $sum: 1 } } },
+        ]),
+        Product.aggregate([
+          { $match: { isActive: true, sportCanonical: { $nin: ["", null] } } },
+          { $group: { _id: "$sportCanonical", count: { $sum: 1 } } },
+        ]),
+        Product.countDocuments({ isActive: true, salePrice: { $lte: 5 } }),
+        Product.countDocuments({
+          isActive: true,
+          $or: [
+            { brandCanonical: { $nin: ["", null] } },
+            { brand: { $nin: ["", null] } },
+          ],
+        }),
+        Product.countDocuments({ isActive: true, sportCanonical: { $nin: ["", null] } }),
+      ]);
 
-    // Get all category counts in a single aggregation
-    const counts = await Product.aggregate([
-      { $match: { isActive: true } },
-      { $group: { _id: { $toLower: "$category" }, count: { $sum: 1 } } },
-    ]);
-    const countMap = {};
-    for (const c of counts) {
-      countMap[c._id] = c.count;
-    }
+    const categoryCountMap = new Map(
+      categoryCounts.map((entry) => [String(entry._id || "").toUpperCase(), entry.count]),
+    );
+    const rawCategoryCountMap = new Map(
+      rawCategoryCounts.map((entry) => [String(entry._id || "").toUpperCase(), entry.count]),
+    );
+    const subcategoryCountMap = new Map(
+      subcategoryCounts.map((entry) => [
+        `${String(entry._id.category || "").toUpperCase()}::${String(entry._id.subcategory || "").toUpperCase()}`,
+        entry.count,
+      ]),
+    );
+    const rawSubcategoryCountMap = new Map(
+      rawSubcategoryCounts.map((entry) => [
+        `${String(entry._id.category || "").toUpperCase()}::${String(entry._id.subcategory || "").toUpperCase()}`,
+        entry.count,
+      ]),
+    );
+    const brandCountMap = new Map(
+      brandCounts.map((entry) => [String(entry._id || "").toUpperCase(), entry.count]),
+    );
+    const sportCountMap = new Map(
+      sportCounts.map((entry) => [String(entry._id || "").toUpperCase(), entry.count]),
+    );
 
-    const withCounts = categories.map((cat) => ({
-      ...cat,
-      productCount: countMap[cat.name.toLowerCase()] || 0,
-    }));
+    const subcategoriesByCategoryId = subcategories.reduce((acc, subcategory) => {
+      const key = String(subcategory.category);
+      if (!acc.has(key)) {
+        acc.set(key, []);
+      }
+      acc.get(key).push(subcategory);
+      return acc;
+    }, new Map());
+
+    const withCounts = categories.map((cat) => {
+      const categoryName = String(cat.name || "").toUpperCase();
+      const categorySubcategories = subcategoriesByCategoryId.get(String(cat._id)) || [];
+
+      let productCount =
+        categoryCountMap.get(categoryName) || rawCategoryCountMap.get(categoryName) || 0;
+
+      if (categoryName === "UNDER £5") {
+        productCount = underFiveCount;
+      } else if (categoryName === "BRANDS") {
+        productCount = brandTotalCount;
+      } else if (categoryName === "SPORTS") {
+        productCount = sportTotalCount;
+      }
+
+      const enrichedSubcategories = categorySubcategories.map((subcategory) => {
+        const subcategoryName = String(subcategory.name || "").toUpperCase();
+        let subcategoryProductCount =
+          subcategoryCountMap.get(`${categoryName}::${subcategoryName}`) ||
+          rawSubcategoryCountMap.get(`${categoryName}::${subcategoryName}`) ||
+          0;
+
+        if (categoryName === "BRANDS") {
+          subcategoryProductCount = brandCountMap.get(subcategoryName) || 0;
+        } else if (categoryName === "SPORTS") {
+          subcategoryProductCount = sportCountMap.get(subcategoryName) || 0;
+        }
+
+        return {
+          ...subcategory,
+          productCount: subcategoryProductCount,
+        };
+      });
+
+      return {
+        ...cat,
+        productCount,
+        subcategories: enrichedSubcategories,
+      };
+    });
 
     res.json({ categories: withCounts });
   } catch (err) {

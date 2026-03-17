@@ -1,6 +1,34 @@
+import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
+import { fetchPublicCategories } from "../../api/api";
+import {
+  formatTaxonomyLabel,
+  getCategoryHref,
+  getNavigableCategories,
+} from "../../utils/taxonomy";
 
 export default function HomePage() {
+  const [categories, setCategories] = useState([]);
+
+  useEffect(() => {
+    let active = true;
+    fetchPublicCategories()
+      .then((data) => {
+        if (!active) return;
+        setCategories(Array.isArray(data?.categories) ? data.categories : []);
+      })
+      .catch(() => {
+        if (!active) return;
+        setCategories([]);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const heroCategories = getNavigableCategories(categories);
+
   return (
     <>
       {/* Hero */}
@@ -22,15 +50,11 @@ export default function HomePage() {
           </div>
 
           <div className="hero-links">
-            <Link to="/products?category=FOOTWEAR">Footwear</Link>
-            <Link to="/products?category=CLOTHING">Clothing</Link>
-            <Link to="/products?category=ACCESSORIES">Accessories</Link>
-            <Link to="/products?category=LICENSED+TEAM+CLOTHING">Licensed Team Clothing</Link>
-            <Link to="/products?category=B+GRADE">B Grade</Link>
-            <Link to="/products?category=JOB+LOTS">Job Lots</Link>
-            <Link to="/products?category=UNDER+%C2%A35">Under £5</Link>
-            <Link to="/products">Brands</Link>
-            <Link to="/products?category=SPORTS">Sports</Link>
+            {heroCategories.map((category) => (
+              <Link key={category._id || category.name} to={getCategoryHref(category.name)}>
+                {formatTaxonomyLabel(category.name)}
+              </Link>
+            ))}
             <Link to="/products">Shop All</Link>
           </div>
         </div>

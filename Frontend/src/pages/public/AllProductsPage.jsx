@@ -2,7 +2,11 @@ import { useEffect, useState, useCallback, useRef } from "react";
 import { useSearchParams } from "react-router-dom";
 import ProductGrid from "../../components/products/ProductGrid";
 import SearchBar from "../../components/products/SearchBar";
-import { fetchProducts, fetchBrands, fetchSubcategories } from "../../api/api";
+import { fetchProducts, fetchBrands, fetchPublicCategories } from "../../api/api";
+import {
+  formatTaxonomyLabel,
+  getFilterableCategories,
+} from "../../utils/taxonomy";
 
 export default function AllProductsPage() {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -19,6 +23,7 @@ export default function AllProductsPage() {
   const [brands, setBrands] = useState([]);
   const [subcategory, setSubcategory] = useState(searchParams.get("subcategory") || "");
   const [subcategories, setSubcategories] = useState([]);
+  const [categories, setCategories] = useState([]);
   const [page, setPage] = useState(1);
   const [totalProducts, setTotalProducts] = useState(0);
   const ITEMS_PER_PAGE = 100;
@@ -28,6 +33,10 @@ export default function AllProductsPage() {
     fetchBrands()
       .then((data) => setBrands(data.brands || []))
       .catch(() => {});
+
+    fetchPublicCategories()
+      .then((data) => setCategories(Array.isArray(data?.categories) ? data.categories : []))
+      .catch(() => setCategories([]));
   }, []);
 
   // Sync ALL filter params from URL when navigating (e.g. nav dropdown links)
@@ -50,10 +59,9 @@ export default function AllProductsPage() {
       if (!searchParams.get("subcategory")) setSubcategory("");
       return;
     }
-    fetchSubcategories(category)
-      .then((data) => setSubcategories(data.subcategories || []))
-      .catch(() => setSubcategories([]));
-  }, [category]);
+    const selectedCategory = categories.find((item) => item.name === category);
+    setSubcategories(Array.isArray(selectedCategory?.subcategories) ? selectedCategory.subcategories : []);
+  }, [category, categories, searchParams]);
 
   // Debounce price inputs (500ms) so we don't fire a request per keystroke
   useEffect(() => {
@@ -115,6 +123,7 @@ export default function AllProductsPage() {
   }, []);
 
   const pageTitle = category ? category : "All Products";
+  const filterableCategories = getFilterableCategories(categories);
 
   return (
     <>
@@ -146,13 +155,11 @@ export default function AllProductsPage() {
               className="filter-select"
             >
               <option value="">All Categories</option>
-              <option value="FOOTWEAR">Footwear</option>
-              <option value="CLOTHING">Clothing</option>
-              <option value="LICENSED TEAM CLOTHING">Licensed Team Clothing</option>
-              <option value="ACCESSORIES">Accessories</option>
-              <option value="B GRADE">B Grade</option>
-              <option value="JOB LOTS">Job Lots</option>
-              <option value="SPORTS">Sports</option>
+              {filterableCategories.map((item) => (
+                <option key={item._id || item.name} value={item.name}>
+                  {formatTaxonomyLabel(item.name)}
+                </option>
+              ))}
             </select>
 
             {subcategories.length > 0 && (
@@ -163,8 +170,8 @@ export default function AllProductsPage() {
               >
                 <option value="">All Sub-categories</option>
                 {subcategories.map((sc) => (
-                  <option key={sc._id} value={sc.name}>
-                    {sc.name}
+                  <option key={sc._id || sc.name} value={sc.name}>
+                    {formatTaxonomyLabel(sc.name)}
                   </option>
                 ))}
               </select>

@@ -3,130 +3,24 @@ import { Link, useLocation, useNavigate } from "react-router-dom";
 import toast from "react-hot-toast";
 import { useAuth } from "../../context/AuthContext";
 import { useCart } from "../../context/CartContext";
+import { fetchPublicCategories } from "../../api/api";
+import {
+  formatTaxonomyLabel,
+  getCategoryHref,
+  getNavigableCategories,
+  getSubcategoryHref,
+} from "../../utils/taxonomy";
 
 /* ── Auth-gated page list ── */
 const PUBLIC_PATHS = new Set(["/", "/contact", "/register"]);
 const isPublicPath = (to) => PUBLIC_PATHS.has(to.split("?")[0]);
-
-/* ────────────────────────────────────────────────────────────
-   NAV ITEMS — full category / subcategory structure per Jim's
-   WEBSITE_CATEGORIES_YASIR file.
-   ──────────────────────────────────────────────────────────── */
-const sub = (cat, name) =>
-  `/products?category=${encodeURIComponent(cat)}&subcategory=${encodeURIComponent(name)}`;
-
-const navItems = [
-  { to: "/", label: "Home" },
-  {
-    to: "/products?category=FOOTWEAR",
-    label: "Footwear",
-    children: [
-      { to: sub("FOOTWEAR", "TRAINERS"), label: "Trainers" },
-      { to: sub("FOOTWEAR", "FOOTBALL BOOTS"), label: "Football Boots" },
-      { to: sub("FOOTWEAR", "RUGBY BOOTS"), label: "Rugby Boots" },
-      { to: sub("FOOTWEAR", "BEACH FOOTWEAR"), label: "Beach Footwear" },
-      { to: sub("FOOTWEAR", "GOLF SHOES"), label: "Golf Shoes" },
-      { to: sub("FOOTWEAR", "TENNIS / PADEL SHOES"), label: "Tennis / Padel Shoes" },
-      { to: sub("FOOTWEAR", "SPECIALIST FOOTWEAR"), label: "Specialist Footwear" },
-    ],
-  },
-  {
-    to: "/products?category=CLOTHING",
-    label: "Clothing",
-    children: [
-      { to: sub("CLOTHING", "SHIRTS"), label: "Shirts" },
-      { to: sub("CLOTHING", "SHORTS"), label: "Shorts" },
-      { to: sub("CLOTHING", "JACKETS & COATS"), label: "Jackets & Coats" },
-      { to: sub("CLOTHING", "HOODS & SWEATERS"), label: "Hoods & Sweaters" },
-      { to: sub("CLOTHING", "SOCKS & GLOVES"), label: "Socks & Gloves" },
-      { to: sub("CLOTHING", "HATS & CAPS"), label: "Headwear" },
-      { to: sub("CLOTHING", "TRACKSUITS & JOGGERS"), label: "Tracksuits & Joggers" },
-      { to: sub("CLOTHING", "SWIMWEAR"), label: "Swimwear" },
-      { to: sub("CLOTHING", "LEGGINGS"), label: "Leggings" },
-      { to: sub("CLOTHING", "VESTS & BRAS"), label: "Vests & Bras" },
-    ],
-  },
-  {
-    to: "/products?category=LICENSED+TEAM+CLOTHING",
-    label: "Licensed Team Clothing",
-    children: [
-      { to: sub("LICENSED TEAM CLOTHING", "SHIRTS"), label: "Shirts & Jerseys" },
-      { to: sub("LICENSED TEAM CLOTHING", "JACKETS"), label: "Jackets" },
-      { to: sub("LICENSED TEAM CLOTHING", "HATS & CAPS"), label: "Headwear" },
-      { to: sub("LICENSED TEAM CLOTHING", "ACCESSORIES"), label: "Accessories" },
-      { to: sub("LICENSED TEAM CLOTHING", "TRACKSUITS & JOGGERS"), label: "Tracksuits & Joggers" },
-      { to: sub("LICENSED TEAM CLOTHING", "SOCKS"), label: "Socks" },
-      { to: sub("LICENSED TEAM CLOTHING", "BAGS & HOLDALLS"), label: "Bags & Holdalls" },
-    ],
-  },
-  {
-    to: "/products?category=ACCESSORIES",
-    label: "Accessories",
-    children: [
-      { to: sub("ACCESSORIES", "BALLS"), label: "Balls" },
-      { to: sub("ACCESSORIES", "BAGS & HOLDALLS"), label: "Bags & Holdalls" },
-      { to: sub("ACCESSORIES", "HEADWEAR"), label: "Headwear" },
-      { to: sub("ACCESSORIES", "GLOVES"), label: "Gloves" },
-      { to: sub("ACCESSORIES", "RACKETS & BATS"), label: "Rackets & Bats" },
-      { to: sub("ACCESSORIES", "SPORTS TOWELS"), label: "Sports Towels" },
-      { to: sub("ACCESSORIES", "PROTECTIVE GEAR"), label: "Protective Gear" },
-      { to: sub("ACCESSORIES", "SUNGLASSES"), label: "Sunglasses" },
-      { to: sub("ACCESSORIES", "WATCHES MONITORS"), label: "Watches & Monitors" },
-    ],
-  },
-  {
-    to: "/products",
-    label: "Brands",
-    children: [
-      { to: "/products?brand=ADIDAS", label: "Adidas" },
-      { to: "/products?brand=UNDER+ARMOUR", label: "Under Armour" },
-      { to: "/products?brand=REEBOK", label: "Reebok" },
-      { to: "/products?brand=PUMA", label: "Puma" },
-      { to: "/products?brand=CASTORE", label: "Castore" },
-      { to: "/products?brand=NIKE", label: "Nike" },
-      { to: "/products?brand=MOLTEN", label: "Molten" },
-      { to: "/products?brand=GUNN+%26+MOORE", label: "Gunn & Moore" },
-      { to: "/products?brand=UNICORN", label: "Unicorn" },
-      { to: "/products?brand=UHLSPORT", label: "Uhlsport" },
-      { to: "/products?brand=NEW+BALANCE", label: "New Balance" },
-    ],
-  },
-  {
-    to: "/products?category=SPORTS",
-    label: "Sports",
-    children: [
-      { to: sub("SPORTS", "FOOTBALL"), label: "Football" },
-      { to: sub("SPORTS", "RUGBY"), label: "Rugby" },
-      { to: sub("SPORTS", "CRICKET"), label: "Cricket" },
-      { to: sub("SPORTS", "ATHLETICS"), label: "Athletics" },
-      { to: sub("SPORTS", "SWIMMING"), label: "Swimming" },
-      { to: sub("SPORTS", "BASKETBALL"), label: "Basketball" },
-      { to: sub("SPORTS", "HOCKEY"), label: "Hockey" },
-      { to: sub("SPORTS", "TENNIS"), label: "Tennis" },
-      { to: sub("SPORTS", "BADMINTON"), label: "Badminton" },
-      { to: sub("SPORTS", "SQUASH"), label: "Squash" },
-      { to: sub("SPORTS", "PADEL"), label: "Padel" },
-      { to: sub("SPORTS", "TABLE TENNIS"), label: "Table Tennis" },
-      { to: sub("SPORTS", "CYCLING"), label: "Cycling" },
-      { to: sub("SPORTS", "BOXING / MARTIAL ARTS"), label: "Boxing / Martial Arts" },
-      { to: sub("SPORTS", "SKIING / SNOWBOARDING"), label: "Skiing / Snowboarding" },
-      { to: sub("SPORTS", "YOGA / FITNESS"), label: "Yoga / Fitness" },
-      { to: sub("SPORTS", "SNOOKER / POOL"), label: "Snooker / Pool" },
-      { to: sub("SPORTS", "DARTS"), label: "Darts" },
-    ],
-  },
-  { to: "/products?category=JOB+LOTS", label: "Job Lots" },
-  { to: "/products?category=B+GRADE", label: "B Grade" },
-  { to: "/under-5", label: "Under £5" },
-  { to: "/products", label: "All Products" },
-  { to: "/contact", label: "Contact" },
-];
 
 /* ─────── Component ─────── */
 export default function Header() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [openDropdown, setOpenDropdown] = useState(null); // index of open dropdown (mobile)
+  const [catalogCategories, setCatalogCategories] = useState([]);
   const { pathname, search } = useLocation();
   const navigate = useNavigate();
   const { isAuthenticated, user, logout } = useAuth();
@@ -149,6 +43,23 @@ export default function Header() {
     setMenuOpen(false);
     setOpenDropdown(null);
   }, [pathname, search]);
+
+  useEffect(() => {
+    let active = true;
+    fetchPublicCategories()
+      .then((data) => {
+        if (!active) return;
+        setCatalogCategories(Array.isArray(data?.categories) ? data.categories : []);
+      })
+      .catch(() => {
+        if (!active) return;
+        setCatalogCategories([]);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, []);
 
   const handleLogout = () => {
     logout();
@@ -189,6 +100,22 @@ export default function Header() {
     if (to.includes("?")) return pathname + search === to;
     return pathname === to;
   };
+
+  const navItems = [
+    { to: "/", label: "Home" },
+    ...getNavigableCategories(catalogCategories).map((category) => ({
+      to: getCategoryHref(category.name),
+      label: formatTaxonomyLabel(category.name),
+      children: Array.isArray(category.subcategories) && category.subcategories.length > 0
+        ? category.subcategories.map((subcategory) => ({
+            to: getSubcategoryHref(category.name, subcategory.name),
+            label: formatTaxonomyLabel(subcategory.name),
+          }))
+        : undefined,
+    })),
+    { to: "/products", label: "All Products" },
+    { to: "/contact", label: "Contact" },
+  ];
 
   /* Toggle sub-menu (mobile accordion) */
   const toggleDropdown = (idx) =>

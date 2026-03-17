@@ -169,6 +169,11 @@ export const getImageUploadStatus = (jobId) =>
     headers: adminHeaders(),
   }).then((r) => r.data);
 
+export const fetchImportBatches = () =>
+  API.get("/admin/import-batches", {
+    headers: adminHeaders(),
+  }).then((r) => r.data);
+
 export const resolveImages = (limit = 100) =>
   API.post(
     `/admin/resolve-images?limit=${limit}`,

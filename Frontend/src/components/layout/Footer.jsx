@@ -1,6 +1,34 @@
+import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
+import { fetchPublicCategories } from "../../api/api";
+import {
+  formatTaxonomyLabel,
+  getCategoryHref,
+  getNavigableCategories,
+} from "../../utils/taxonomy";
 
 export default function Footer() {
+  const [categories, setCategories] = useState([]);
+
+  useEffect(() => {
+    let active = true;
+    fetchPublicCategories()
+      .then((data) => {
+        if (!active) return;
+        setCategories(Array.isArray(data?.categories) ? data.categories : []);
+      })
+      .catch(() => {
+        if (!active) return;
+        setCategories([]);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const quickLinks = getNavigableCategories(categories);
+
   return (
     <footer className="footer">
       <div className="container footer-grid">
@@ -23,13 +51,11 @@ export default function Footer() {
           <h4>Quick Links</h4>
           <div className="footer-links">
             <Link to="/">Home</Link>
-            <Link to="/products?category=FOOTWEAR">Footwear</Link>
-            <Link to="/products?category=CLOTHING">Clothing</Link>
-            <Link to="/products?category=ACCESSORIES">Accessories</Link>
-            <Link to="/products?category=LICENSED+TEAM+CLOTHING">Licensed Team Clothing</Link>
-            <Link to="/products?category=SPORTS">Sports</Link>
-            <Link to="/products?category=B+GRADE">B Grade</Link>
-            <Link to="/products?category=JOB+LOTS">Job Lots</Link>
+            {quickLinks.map((category) => (
+              <Link key={category._id || category.name} to={getCategoryHref(category.name)}>
+                {formatTaxonomyLabel(category.name)}
+              </Link>
+            ))}
             <Link to="/products">All Products</Link>
             <Link to="/contact">Contact</Link>
           </div>
