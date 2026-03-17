@@ -236,6 +236,15 @@ function detectMapping(headers) {
     if (imgH) mapping.imageUrl = imgH;
   }
 
+  // ── Price precedence fix: prefer SALE over Trade when both exist ──
+  // Client files can include both columns (e.g. FIREBIRD sheet).
+  // SALE is the intended customer-facing sell price.
+  const saleHeader = headers.find((h) => /(^|\s)(sale|sale price)(\s|$)|\bsale\b|\bsale price\b/i.test(h));
+  const tradeHeader = headers.find((h) => /(^|\s)trade(\s|$)|\btrade price\b/i.test(h));
+  if (saleHeader && tradeHeader && mapping.price === tradeHeader) {
+    mapping.price = saleHeader;
+  }
+
   // ── Post-mapping fixup: if sku+description mapped but no name, use description as name ──
   // Handles Feb adidas format where "Description" column contains the actual product name
   if (mapping.sku && mapping.description && !mapping.name) {

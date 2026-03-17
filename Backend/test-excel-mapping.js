@@ -182,6 +182,14 @@ function detectMapping(headers) {
     const h = headers.find((h) => /image|img|photo|picture/i.test(h));
     if (h) mapping.imageUrl = h;
   }
+
+  // Keep test behavior consistent with importer: SALE takes precedence over Trade
+  const saleHeader = headers.find((h) => /(^|\s)(sale|sale price)(\s|$)|\bsale\b|\bsale price\b/i.test(h));
+  const tradeHeader = headers.find((h) => /(^|\s)trade(\s|$)|\btrade price\b/i.test(h));
+  if (saleHeader && tradeHeader && mapping.price === tradeHeader) {
+    mapping.price = saleHeader;
+  }
+
   return { mapping, unmapped };
 }
 
