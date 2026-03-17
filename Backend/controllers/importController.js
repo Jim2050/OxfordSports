@@ -11,6 +11,7 @@ const {
   batchResolveImages,
 } = require("../utils/imageResolver");
 const {
+  TOP_LEVEL_CATEGORIES,
   deriveBrandCanonical,
   deriveCategoryCanonical,
   deriveGenderCanonical,
@@ -18,6 +19,55 @@ const {
   deriveSubcategoryCanonical,
   parseSizeEntries,
 } = require("../utils/taxonomyUtils");
+
+function normalizeImportedSubcategory(category, subcategory) {
+  const cat = String(category || "").trim().toUpperCase();
+  const raw = String(subcategory || "").trim();
+  const upper = raw.toUpperCase();
+  if (!upper) return "";
+
+  // Common OCR variants in the provided CSV (e.g. "Shirts & Ierseys").
+  if (/\bSHIRTS?\s*&\s*.[A-Z]*ERSEYS?\b/.test(upper)) {
+    return cat === "LICENSED TEAM CLOTHING" ? "TEAM JERSEYS" : "T-SHIRTS";
+  }
+
+  if (upper === "TRACKSUITS & JOGGERS") {
+    return cat === "LICENSED TEAM CLOTHING" ? "TRACKSUIT SETS" : "TRACKSUIT SETS";
+  }
+
+  if (upper === "HOODS & SWEATERS") {
+    return "HOODED SWEATERS";
+  }
+
+  if (upper === "HATS & CAPS") {
+    return "HEADWEAR";
+  }
+
+  return raw;
+}
+
+function normalizeSizeEntries(entries = []) {
+  const merged = new Map();
+  for (const entry of entries) {
+    const size = String(entry?.size || "").trim();
+    const qty = Math.max(0, Number(entry?.quantity) || 0);
+    if (!size || qty <= 0) continue;
+    merged.set(size, (merged.get(size) || 0) + qty);
+  }
+
+  let normalized = Array.from(merged.entries()).map(([size, quantity]) => ({
+    size,
+    quantity,
+  }));
+
+  // If specific sizes exist, drop ONE SIZE to prevent duplicate/confusing display.
+  const hasSpecificSizes = normalized.some((entry) => entry.size.toUpperCase() !== "ONE SIZE");
+  if (hasSpecificSizes) {
+    normalized = normalized.filter((entry) => entry.size.toUpperCase() !== "ONE SIZE");
+  }
+
+  return normalized;
+}
 
 // Production-safe logger — silent in production, verbose in development
 const isDev = process.env.NODE_ENV !== "production";
@@ -498,6 +548,8 @@ function consolidateBySku(rows) {
         }
       }
 
+      existing.sizeEntries = normalizeSizeEntries(existing.sizeEntries);
+
       // Merge barcode
       const newBarcode = row.barcode ? String(row.barcode).trim() : "";
       if (newBarcode && !existing.barcodes.includes(newBarcode)) {
@@ -541,7 +593,7 @@ function consolidateBySku(rows) {
         ...row,
         sku,
         _sizeErrors: sizeErrors,
-        sizeEntries,
+        sizeEntries: normalizeSizeEntries(sizeEntries),
         barcodes: barcode ? [barcode] : [],
       });
     }
@@ -769,13 +821,9 @@ exports.importProducts = async (req, res) => {
     }
 
     // ── Collect distinct categories and auto-create them ──
-    const distinctCategories = [
-      ...new Set(
-        consolidated
-          .map((r) => (r.category ? String(r.category).trim() : ""))
-          .filter(Boolean),
-      ),
-    ];
+    const distinctCategories = Array.from(TOP_LEVEL_CATEGORIES).filter(
+      (name) => name !== "HOME",
+    );
     const createdCategories = await ensureCategories(distinctCategories);
 
     let imported = 0;
@@ -794,13 +842,12 @@ exports.importProducts = async (req, res) => {
       const sku = row.sku;
 
       if (Array.isArray(row._sizeErrors) && row._sizeErrors.length > 0) {
-        failed++;
+        warnings++;
         errors.push({
           row: i + 1,
           sku,
-          reason: row._sizeErrors.join(" | "),
+          reason: `WARNING: ${row._sizeErrors.join(" | ")}`,
         });
-        continue;
       }
 
       // Validate: must have SKU
@@ -851,12 +898,13 @@ exports.importProducts = async (req, res) => {
       const price = priceResult.value;
 
       const originalCategoryValue = row.category ? String(row.category).trim() : "";
+      const canonicalFromInput = deriveCategoryCanonical(originalCategoryValue);
 
       const productData = {
         sku,
         name,
         description: row.description ? String(row.description).trim() : "",
-        category: originalCategoryValue,
+        category: canonicalFromInput || originalCategoryValue,
         subcategory: row.subcategory ? String(row.subcategory).trim() : "",
         brand: row.brand ? String(row.brand).trim() : brandDefault, // fallback to workbook-wide brand (e.g. "adidas")
         color: row.color ? String(row.color).trim() : "",
@@ -1066,6 +1114,11 @@ exports.importProducts = async (req, res) => {
           }
         }
       }
+
+      productData.subcategory = normalizeImportedSubcategory(
+        productData.category,
+        productData.subcategory,
+      );
       if (!productData.subcategory) {
         // Check for sport keywords
         for (const [key, subcat] of Object.entries(SPORT_MAP)) {

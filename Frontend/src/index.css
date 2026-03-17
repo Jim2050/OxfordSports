@@ -381,6 +381,7 @@ ol {
   z-index: 200;
   max-height: 70vh;
   overflow-y: auto;
+  overflow-x: hidden;
 }
 /* Prevent right-side dropdowns from going off-screen */
 .nav-item:nth-last-child(-n+4) .nav-dropdown {
@@ -425,7 +426,9 @@ ol {
   font-weight: 500;
   text-decoration: none;
   transition: var(--transition);
-  white-space: nowrap;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 .dropdown-link:hover {
   background: rgba(255, 255, 255, 0.1);

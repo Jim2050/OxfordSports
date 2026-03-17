@@ -15,6 +15,7 @@ export default function AllProductsPage() {
   const [search, setSearch] = useState(searchParams.get("search") || "");
   const [brand, setBrand] = useState(searchParams.get("brand") || "");
   const [category, setCategory] = useState(searchParams.get("category") || "");
+  const [gender, setGender] = useState(searchParams.get("gender") || "");
   const [minPrice, setMinPrice] = useState("");
   const [maxPrice, setMaxPrice] = useState("");
   const [debouncedMinPrice, setDebouncedMinPrice] = useState("");
@@ -45,10 +46,12 @@ export default function AllProductsPage() {
     const urlSearch = searchParams.get("search") || "";
     const urlSubcat = searchParams.get("subcategory") || "";
     const urlBrand = searchParams.get("brand") || "";
+    const urlGender = searchParams.get("gender") || "";
     if (urlCat !== category) setCategory(urlCat);
     if (urlSearch !== search) setSearch(urlSearch);
     if (urlSubcat !== subcategory) setSubcategory(urlSubcat);
     if (urlBrand !== brand) setBrand(urlBrand);
+    if (urlGender !== gender) setGender(urlGender);
   }, [searchParams]);
 
   // Load subcategory OPTIONS when category changes (for the dropdown filter)
@@ -79,6 +82,7 @@ export default function AllProductsPage() {
     const params = { page, limit: ITEMS_PER_PAGE };
     if (search) params.search = search;
     if (brand) params.brand = brand;
+    if (gender) params.gender = gender;
     if (category) params.category = category;
     if (subcategory) params.subcategory = subcategory;
     if (debouncedMinPrice) params.minPrice = debouncedMinPrice;
@@ -90,13 +94,14 @@ export default function AllProductsPage() {
       })
       .catch(() => { setProducts([]); setTotalProducts(0); })
       .finally(() => setLoading(false));
-  }, [search, brand, category, subcategory, debouncedMinPrice, debouncedMaxPrice, page]);
+  }, [search, brand, gender, category, subcategory, debouncedMinPrice, debouncedMaxPrice, page]);
 
   // Reset to page 1 when any filter changes
   const resetPage = () => setPage(1);
 
   const clearFilters = () => {
     setBrand("");
+    setGender("");
     setCategory("");
     setSubcategory("");
     setSubcategories([]);
@@ -109,7 +114,7 @@ export default function AllProductsPage() {
     setSearchParams({});
   };
 
-  const hasFilters = brand || minPrice || maxPrice || search || category || subcategory;
+  const hasFilters = brand || gender || minPrice || maxPrice || search || category || subcategory;
 
   // Go to Top button visibility
   const [showGoTop, setShowGoTop] = useState(false);
@@ -188,6 +193,17 @@ export default function AllProductsPage() {
                   {b}
                 </option>
               ))}
+            </select>
+
+            <select
+              value={gender}
+              onChange={(e) => { setGender(e.target.value); resetPage(); }}
+              className="filter-select"
+            >
+              <option value="">All Genders</option>
+              <option value="MENS">Men's</option>
+              <option value="WOMENS">Women's</option>
+              <option value="JUNIOR">Kids</option>
             </select>
 
             <div className="filter-price-range">

@@ -78,6 +78,11 @@ export default function ProductCard({ product }) {
     if (canonical === "JUNIOR") return "Kids";
     if (canonical === "UNISEX") return "Unisex";
 
+    const categoryUpper = String(product.category || "").toUpperCase();
+    if (categoryUpper === "WOMENS" || categoryUpper === "WOMEN") return "Women's";
+    if (categoryUpper === "MENS" || categoryUpper === "MEN") return "Men's";
+    if (categoryUpper === "JUNIOR" || categoryUpper === "KIDS" || categoryUpper === "YOUTH") return "Kids";
+
     const text =
       `${product.name || ""} ${product.description || ""} ${product.category || ""} ${product.subcategory || ""}`.toLowerCase();
     if (

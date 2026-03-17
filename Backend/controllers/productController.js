@@ -51,6 +51,7 @@ exports.getProducts = async (req, res) => {
       minPrice,
       brand,
       search,
+      gender,
       page = 1,
       limit = 100,
       sort,
@@ -125,6 +126,19 @@ exports.getProducts = async (req, res) => {
           },
         ],
       });
+    }
+
+    // Gender filter (used by page-level Mens / Womens / Kids controls)
+    if (gender) {
+      const normalized = String(gender).trim().toUpperCase();
+      const canonicalGender =
+        normalized === "MEN" || normalized === "MENS" ? "MENS"
+          : normalized === "WOMEN" || normalized === "WOMENS" || normalized === "LADIES" ? "WOMENS"
+            : normalized === "KIDS" || normalized === "JUNIOR" || normalized === "YOUTH" ? "JUNIOR"
+              : "";
+      if (canonicalGender) {
+        conditions.push({ genderCanonical: canonicalGender });
+      }
     }
 
     // Color filter
