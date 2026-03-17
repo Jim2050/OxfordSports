@@ -33,7 +33,7 @@ const uploadZip = multer({
   storage,
   limits: { fileSize: 100 * 1024 * 1024 }, // 100 MB for image archives
   fileFilter: (_req, file, cb) => {
-    const allowed = [".zip", ".jpg", ".jpeg", ".png", ".webp"];
+    const allowed = [".zip", ".jpg", ".jpeg", ".png", ".webp", ".avif"];
     const ext = path.extname(file.originalname).toLowerCase();
     if (allowed.includes(ext)) return cb(null, true);
     cb(new Error("Only .zip or image files are allowed."));
@@ -45,10 +45,10 @@ const uploadMultipleImages = multer({
   storage,
   limits: { fileSize: 10 * 1024 * 1024 }, // 10 MB per file
   fileFilter: (_req, file, cb) => {
-    const allowed = [".jpg", ".jpeg", ".png", ".webp", ".gif"];
+    const allowed = [".jpg", ".jpeg", ".png", ".webp", ".gif", ".avif"];
     const ext = path.extname(file.originalname).toLowerCase();
     if (allowed.includes(ext)) return cb(null, true);
-    cb(new Error("Only image files (.jpg, .png, .webp, .gif) are allowed."));
+    cb(new Error("Only image files (.jpg, .png, .webp, .gif, .avif) are allowed."));
   },
 }).array("images", 100);
 

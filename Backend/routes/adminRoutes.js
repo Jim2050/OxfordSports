@@ -23,7 +23,7 @@ const singleImageUpload = multer({
   }),
   limits: { fileSize: 10 * 1024 * 1024 },
   fileFilter: (_req, file, cb) => {
-    const allowed = [".jpg", ".jpeg", ".png", ".webp", ".gif"];
+    const allowed = [".jpg", ".jpeg", ".png", ".webp", ".gif", ".avif"];
     const ext = path.extname(file.originalname).toLowerCase();
     if (allowed.includes(ext)) return cb(null, true);
     cb(new Error("Only image files are allowed."));

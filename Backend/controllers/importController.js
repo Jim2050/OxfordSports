@@ -77,6 +77,26 @@ function normalizeImportedSubcategory(category, subcategory, name, description =
   return raw;
 }
 
+function normalizeImportedName(name, category, subcategory) {
+  const raw = String(name || "").trim();
+  if (!raw) return "";
+
+  const cat = String(category || "").trim().toUpperCase();
+  const sub = String(subcategory || "").trim().toUpperCase();
+
+  // Source files sometimes contain a footwear title against clothing shorts rows.
+  // Normalize obvious contradictions so card titles align with taxonomy and image.
+  if (
+    cat === "CLOTHING" &&
+    sub === "SHORTS" &&
+    /\bFOOTBALL\s+BOOTS\b/i.test(raw)
+  ) {
+    return raw.replace(/\bFOOTBALL\s+BOOTS\b/gi, "Shorts").replace(/\s+/g, " ").trim();
+  }
+
+  return raw;
+}
+
 function normalizeSizeEntries(entries = []) {
   const merged = new Map();
   for (const entry of entries) {
@@ -941,7 +961,7 @@ exports.importProducts = async (req, res) => {
 
       const productData = {
         sku,
-        name,
+        name: normalizeImportedName(name, canonicalFromInput || originalCategoryValue, row.subcategory),
         description: row.description ? String(row.description).trim() : "",
         category: canonicalFromInput || originalCategoryValue,
         subcategory: row.subcategory ? String(row.subcategory).trim() : "",
@@ -1402,7 +1422,7 @@ exports.uploadImages = async (req, res) => {
     }
 
     const ext = path.extname(req.file.originalname).toLowerCase();
-    const ALLOWED_IMG = new Set([".jpg", ".jpeg", ".png", ".webp", ".gif"]);
+    const ALLOWED_IMG = new Set([".jpg", ".jpeg", ".png", ".webp", ".gif", ".avif"]);
 
     let imagesToProcess = [];
     let tempExtractDir = null;

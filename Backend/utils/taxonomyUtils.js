@@ -188,12 +188,20 @@ function deriveSportCanonical({ name, description, category, subcategory }) {
 }
 
 function sanitizeSizeLabel(value) {
-  return normalizeText(
+  const cleaned = normalizeText(
     String(value || "")
       .replace(/""/g, '"')
       .replace(/^"|"$/g, "")
       .replace(/^-(?=\d)/, ""),
   );
+
+  // Normalize inseam-style labels from exports like XS3" or 2XL4 into "XS 3\"" / "2XL 4\"".
+  const inseamMatch = cleaned.match(/^(2XS|XS|S|M|L|XL|2XL|3XL)\s*(\d+(?:\.\d+)?)"?$/i);
+  if (inseamMatch) {
+    return `${inseamMatch[1].toUpperCase()} ${inseamMatch[2]}"`;
+  }
+
+  return cleaned;
 }
 
 function isMalformedSize(size) {
