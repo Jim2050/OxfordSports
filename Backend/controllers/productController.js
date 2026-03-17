@@ -238,14 +238,28 @@ exports.getBrands = async (_req, res) => {
  */
 exports.getCategories = async (_req, res) => {
   try {
-    const [categories, subcategories, categoryCounts, rawCategoryCounts, subcategoryCounts, rawSubcategoryCounts, brandCounts, sportCounts, underFiveCount, brandTotalCount, sportTotalCount] =
+    const [categories, categoryCounts, rawCategoryCounts, subcategoryCounts, rawSubcategoryCounts, brandCounts, sportCounts, underFiveCount, brandTotalCount, sportTotalCount] =
       await Promise.all([
-        Category.find({ isActive: true })
-          .sort({ displayOrder: 1, name: 1 })
-          .lean(),
-        Subcategory.find({ isActive: true })
-          .sort({ name: 1 })
-          .lean(),
+        Category.aggregate([
+          { $match: { isActive: true } },
+          { $sort: { displayOrder: 1, name: 1 } },
+          {
+            $lookup: {
+              from: "subcategories",
+              let: { categoryId: "$_id" },
+              pipeline: [
+                {
+                  $match: {
+                    $expr: { $eq: ["$category", "$$categoryId"] },
+                    isActive: true,
+                  },
+                },
+                { $sort: { name: 1 } },
+              ],
+              as: "subcategories",
+            },
+          },
+        ]),
         Product.aggregate([
           { $match: { isActive: true, categoryCanonical: { $nin: ["", null] } } },
           { $group: { _id: "$categoryCanonical", count: { $sum: 1 } } },
@@ -334,18 +348,9 @@ exports.getCategories = async (_req, res) => {
       sportCounts.map((entry) => [String(entry._id || "").toUpperCase(), entry.count]),
     );
 
-    const subcategoriesByCategoryId = subcategories.reduce((acc, subcategory) => {
-      const key = String(subcategory.category);
-      if (!acc.has(key)) {
-        acc.set(key, []);
-      }
-      acc.get(key).push(subcategory);
-      return acc;
-    }, new Map());
-
     const withCounts = categories.map((cat) => {
       const categoryName = String(cat.name || "").toUpperCase();
-      const categorySubcategories = subcategoriesByCategoryId.get(String(cat._id)) || [];
+      const categorySubcategories = Array.isArray(cat.subcategories) ? cat.subcategories : [];
 
       let productCount =
         categoryCountMap.get(categoryName) || rawCategoryCountMap.get(categoryName) || 0;

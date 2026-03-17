@@ -295,11 +295,44 @@ export function getTotalQuantity(product) {
  * Get sizes array in normalized format: [{size, quantity}]
  */
 export function getSizes(product) {
+  const splitPackedSizes = (rawSize, fallbackQty = 0) => {
+    const text = String(rawSize || "").trim();
+    if (!text) return [];
+    const parts = text.split(";").map((s) => s.trim()).filter(Boolean);
+    if (parts.length <= 1) {
+      return [{ size: text, quantity: Number(fallbackQty) || 0 }];
+    }
+
+    return parts.map((part) => {
+      const match = part.match(/^(.*)\((\d+)\)$/);
+      if (!match) {
+        return { size: part, quantity: Number(fallbackQty) || 0 };
+      }
+      return {
+        size: match[1].trim(),
+        quantity: Number(match[2]) || 0,
+      };
+    });
+  };
+
   if (!product) return [];
   const sizes = product.sizes;
   if (!Array.isArray(sizes) || sizes.length === 0) return [];
   if (typeof sizes[0] === "object" && sizes[0].size !== undefined) {
-    return sizes.filter((entry) => String(entry?.size || "").trim() !== "");
+    const expanded = sizes.flatMap((entry) =>
+      splitPackedSizes(entry?.size, entry?.quantity),
+    );
+    const merged = new Map();
+    for (const entry of expanded) {
+      const size = String(entry?.size || "").trim();
+      if (!size) continue;
+      const quantity = Number(entry?.quantity) || 0;
+      merged.set(size, (merged.get(size) || 0) + quantity);
+    }
+    return Array.from(merged.entries()).map(([size, quantity]) => ({
+      size,
+      quantity,
+    }));
   }
   // Legacy: array of strings — derive quantities from sizeStock
   const sizeStock = product.sizeStock || {};
