@@ -113,6 +113,7 @@ export default function Header() {
           }))
         : undefined,
     })),
+    { to: "/under-5", label: "Under £5" },
     { to: "/products", label: "All Products" },
     { to: "/contact", label: "Contact" },
   ];

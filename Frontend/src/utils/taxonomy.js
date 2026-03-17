@@ -117,13 +117,33 @@ export function getSubcategoryHref(categoryName, subcategoryName) {
   return `/products?category=${encodeURIComponent(categoryName)}&subcategory=${encodeURIComponent(subcategoryName)}`;
 }
 
+/* Authoritative top-level nav group order.
+   Only categories whose uppercase name appears here will show in the navbar.
+   Anything else in the DB (raw product-level categories) is silently excluded.
+*/
+const TOP_LEVEL_NAV_ORDER = [
+  "FOOTWEAR",
+  "CLOTHING",
+  "LICENSED TEAM CLOTHING",
+  "ACCESSORIES",
+  "BRANDS",
+  "SPORTS",
+  "B GRADE",
+];
+
 export function getNavigableCategories(categories = []) {
-  return categories.filter((category) => String(category?.name || "").toUpperCase() !== "HOME");
+  const map = new Map();
+  for (const cat of categories) {
+    map.set(String(cat?.name || "").toUpperCase(), cat);
+  }
+  return TOP_LEVEL_NAV_ORDER
+    .map((key) => map.get(key))
+    .filter(Boolean);
 }
 
 export function getFilterableCategories(categories = []) {
-  return categories.filter((category) => {
+  return getNavigableCategories(categories).filter((category) => {
     const name = String(category?.name || "").toUpperCase();
-    return name && name !== "HOME" && name !== "BRANDS";
+    return name !== "BRANDS";
   });
 }

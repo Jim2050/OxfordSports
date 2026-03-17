@@ -55,6 +55,7 @@ export default function HomePage() {
                 {formatTaxonomyLabel(category.name)}
               </Link>
             ))}
+            <Link to="/under-5">Under £5</Link>
             <Link to="/products">Shop All</Link>
           </div>
         </div>
