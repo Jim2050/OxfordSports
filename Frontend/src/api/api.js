@@ -294,14 +294,16 @@ export function getSizes(product) {
   const sizes = product.sizes;
   if (!Array.isArray(sizes) || sizes.length === 0) return [];
   if (typeof sizes[0] === "object" && sizes[0].size !== undefined) {
-    return sizes; // Already in new format
+    return sizes.filter((entry) => String(entry?.size || "").trim() !== "");
   }
   // Legacy: array of strings — derive quantities from sizeStock
   const sizeStock = product.sizeStock || {};
-  return sizes.map((s) => ({
-    size: String(s),
-    quantity: sizeStock[String(s)] || 0,
-  }));
+  return sizes
+    .map((s) => ({
+      size: String(s),
+      quantity: sizeStock[String(s)] || 0,
+    }))
+    .filter((entry) => entry.size.trim() !== "");
 }
 
 // ═══════════════════════════════════════════════════════════════

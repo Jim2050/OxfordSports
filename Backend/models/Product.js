@@ -1,4 +1,11 @@
 const mongoose = require("mongoose");
+const {
+  deriveBrandCanonical,
+  deriveCategoryCanonical,
+  deriveGenderCanonical,
+  deriveSportCanonical,
+  deriveSubcategoryCanonical,
+} = require("../utils/taxonomyUtils");
 
 /**
  * Size-stock sub-schema: each entry is one size with its quantity.
@@ -26,7 +33,12 @@ const productSchema = new mongoose.Schema(
     description: { type: String, default: "" },
     category: { type: String, default: "", index: true },
     subcategory: { type: String, default: "" },
+    categoryCanonical: { type: String, default: "", index: true },
+    subcategoryCanonical: { type: String, default: "", index: true },
+    sportCanonical: { type: String, default: "", index: true },
+    genderCanonical: { type: String, default: "", index: true },
     brand: { type: String, default: "", index: true },
+    brandCanonical: { type: String, default: "", index: true },
     color: { type: String, default: "" },
     barcode: { type: String, default: "" },
 
@@ -101,7 +113,7 @@ const productSchema = new mongoose.Schema(
   },
 );
 
-// ── Pre-save: compute totalQuantity from sizes array ──
+// ── Pre-save: compute totalQuantity + canonical fields ──
 productSchema.pre("save", function () {
   if (Array.isArray(this.sizes)) {
     this.totalQuantity = this.sizes.reduce(
@@ -109,6 +121,27 @@ productSchema.pre("save", function () {
       0,
     );
   }
+
+  this.categoryCanonical = deriveCategoryCanonical(this.category);
+  this.subcategoryCanonical = deriveSubcategoryCanonical(
+    this.categoryCanonical || this.category,
+    this.subcategory,
+  );
+  this.sportCanonical = deriveSportCanonical({
+    name: this.name,
+    description: this.description,
+    category: this.category,
+    subcategory: this.subcategory,
+  });
+  this.genderCanonical = deriveGenderCanonical({
+    rawGender: this.genderCanonical,
+    sku: this.sku,
+    name: this.name,
+    description: this.description,
+    category: this.category,
+    subcategory: this.subcategory,
+  });
+  this.brandCanonical = deriveBrandCanonical(this.brand);
 });
 
 // ── Text index for full-text search ──
@@ -125,6 +158,12 @@ productSchema.index(
 
 // ── Compound index for category + subcategory browsing ──
 productSchema.index({ category: 1, subcategory: 1 });
+
+// ── Canonical query indexes for taxonomy v4 ──
+productSchema.index({ isActive: 1, categoryCanonical: 1, subcategoryCanonical: 1 });
+productSchema.index({ isActive: 1, sportCanonical: 1 });
+productSchema.index({ isActive: 1, genderCanonical: 1 });
+productSchema.index({ isActive: 1, brandCanonical: 1 });
 
 // ── Compound index for active products with images-first sort ──
 productSchema.index({ isActive: 1, imageUrl: 1, createdAt: -1 });

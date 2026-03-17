@@ -10,6 +10,14 @@ const {
   resolveProductImage,
   batchResolveImages,
 } = require("../utils/imageResolver");
+const {
+  deriveBrandCanonical,
+  deriveCategoryCanonical,
+  deriveGenderCanonical,
+  deriveSportCanonical,
+  deriveSubcategoryCanonical,
+  parseSizeEntries,
+} = require("../utils/taxonomyUtils");
 
 // Production-safe logger — silent in production, verbose in development
 const isDev = process.env.NODE_ENV !== "production";
@@ -436,25 +444,36 @@ function consolidateBySku(rows) {
     const parsedQty = parseInt(row.quantity);
     const rowQty = isNaN(parsedQty) ? 1 : Math.max(0, parsedQty);
     const rawSize = row.sizes ? String(row.sizes).trim() : "";
-    // Split comma-separated sizes (e.g. "8, 9, 10")
-    const rowSizes = rawSize
-      ? rawSize
-          .split(",")
-          .map((s) => s.trim())
-          .filter(Boolean)
-      : [];
+    const parsedSizes = parseSizeEntries(rawSize, rowQty);
+    const rowSizes = parsedSizes.entries;
 
     if (skuMap.has(sku)) {
       const existing = skuMap.get(sku);
 
+      if (parsedSizes.invalidTokens.length > 0) {
+        existing._sizeErrors = existing._sizeErrors || [];
+        existing._sizeErrors.push(
+          `Invalid size token(s): ${parsedSizes.invalidTokens.join(", ")}`,
+        );
+      }
+      if (parsedSizes.checksumMismatch) {
+        existing._sizeErrors = existing._sizeErrors || [];
+        existing._sizeErrors.push(
+          `Embedded size quantities (${parsedSizes.parsedTotal}) do not match QTY (${rowQty})`,
+        );
+      }
+
       // Merge sizes with quantities
       if (rowSizes.length > 0) {
-        for (const s of rowSizes) {
-          const found = existing.sizeEntries.find((e) => e.size === s);
+        for (const entry of rowSizes) {
+          const found = existing.sizeEntries.find((e) => e.size === entry.size);
           if (found) {
-            found.quantity += rowQty;
+            found.quantity += entry.quantity;
           } else {
-            existing.sizeEntries.push({ size: s, quantity: rowQty });
+            existing.sizeEntries.push({
+              size: entry.size,
+              quantity: entry.quantity,
+            });
           }
         }
       } else if (!rawSize && rowQty > 0) {
@@ -485,13 +504,23 @@ function consolidateBySku(rows) {
       const barcode = row.barcode ? String(row.barcode).trim() : "";
       const sizeEntries = [];
 
+      const sizeErrors = [];
+      if (parsedSizes.invalidTokens.length > 0) {
+        sizeErrors.push(`Invalid size token(s): ${parsedSizes.invalidTokens.join(", ")}`);
+      }
+      if (parsedSizes.checksumMismatch) {
+        sizeErrors.push(
+          `Embedded size quantities (${parsedSizes.parsedTotal}) do not match QTY (${rowQty})`,
+        );
+      }
+
       if (rowSizes.length > 0) {
-        for (const s of rowSizes) {
-          const found = sizeEntries.find((e) => e.size === s);
+        for (const entry of rowSizes) {
+          const found = sizeEntries.find((e) => e.size === entry.size);
           if (found) {
-            found.quantity += rowQty;
+            found.quantity += entry.quantity;
           } else {
-            sizeEntries.push({ size: s, quantity: rowQty });
+            sizeEntries.push({ size: entry.size, quantity: entry.quantity });
           }
         }
       } else if (rowQty > 0) {
@@ -502,6 +531,7 @@ function consolidateBySku(rows) {
       skuMap.set(sku, {
         ...row,
         sku,
+        _sizeErrors: sizeErrors,
         sizeEntries,
         barcodes: barcode ? [barcode] : [],
       });
@@ -754,6 +784,16 @@ exports.importProducts = async (req, res) => {
       const row = consolidated[i];
       const sku = row.sku;
 
+      if (Array.isArray(row._sizeErrors) && row._sizeErrors.length > 0) {
+        failed++;
+        errors.push({
+          row: i + 1,
+          sku,
+          reason: row._sizeErrors.join(" | "),
+        });
+        continue;
+      }
+
       // Validate: must have SKU
       if (!sku) {
         failed++;
@@ -801,11 +841,13 @@ exports.importProducts = async (req, res) => {
       }
       const price = priceResult.value;
 
+      const originalCategoryValue = row.category ? String(row.category).trim() : "";
+
       const productData = {
         sku,
         name,
         description: row.description ? String(row.description).trim() : "",
-        category: row.category ? String(row.category).trim() : "",
+        category: originalCategoryValue,
         subcategory: row.subcategory ? String(row.subcategory).trim() : "",
         brand: row.brand ? String(row.brand).trim() : brandDefault, // fallback to workbook-wide brand (e.g. "adidas")
         color: row.color ? String(row.color).trim() : "",
@@ -1032,6 +1074,27 @@ exports.importProducts = async (req, res) => {
           productData.subcategory = SPORT_MAP[catWord];
         }
       }
+
+      productData.categoryCanonical = deriveCategoryCanonical(productData.category);
+      productData.subcategoryCanonical = deriveSubcategoryCanonical(
+        productData.categoryCanonical || productData.category,
+        productData.subcategory,
+      );
+      productData.sportCanonical = deriveSportCanonical({
+        name: productData.name,
+        description: productData.description,
+        category: productData.category,
+        subcategory: productData.subcategory,
+      });
+      productData.genderCanonical = deriveGenderCanonical({
+        rawGender: row.gender || originalCategoryValue,
+        sku,
+        name: productData.name,
+        description: productData.description,
+        category: productData.category,
+        subcategory: productData.subcategory,
+      });
+      productData.brandCanonical = deriveBrandCanonical(productData.brand);
 
       // ── Image URL: store only direct image URLs ──
       // Google/Bing search URLs saved to _pendingImageQuery for auto-resolution

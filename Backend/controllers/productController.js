@@ -1,6 +1,11 @@
 const Product = require("../models/Product");
 const Category = require("../models/Category");
 const Subcategory = require("../models/Subcategory");
+const {
+  deriveBrandCanonical,
+  deriveCategoryCanonical,
+  deriveSubcategoryCanonical,
+} = require("../utils/taxonomyUtils");
 
 // Escape user input for safe use in $regex queries (prevent ReDoS / NoSQL injection)
 function escapeRegex(str) {
@@ -15,6 +20,7 @@ const CATEGORY_KEYWORDS = {
   mens: ["^mens$"],
   womens: ["^womens$", "^women$", "^female$", "^ladies$"],
   junior: ["^junior$", "^juniors$", "^kids$", "^youth$", "^boys$", "^girls$"],
+  sports: ["sports"],
   "rugby-category": ["rugby"],
   rugby: ["rugby"],
   football: ["football", "soccer", "fc ", "f\\.c\\."],
@@ -23,6 +29,7 @@ const CATEGORY_KEYWORDS = {
 
 // Slugs where we must search name + subcategory in addition to category
 const SPORT_SLUGS = new Set([
+  "sports",
   "rugby-category",
   "rugby",
   "football",
@@ -55,8 +62,32 @@ exports.getProducts = async (req, res) => {
     if (category) {
       const cat = category.toLowerCase();
       const keywords = CATEGORY_KEYWORDS[cat] || [cat.replace(/-/g, " ")];
+      const canonicalCategory = deriveCategoryCanonical(category);
+      const sportFilter = subcategory ? deriveSubcategoryCanonical("SPORTS", subcategory) : "";
 
-      if (SPORT_SLUGS.has(cat)) {
+      if (cat === "mens" || cat === "womens" || cat === "junior") {
+        conditions.push({
+          $or: [
+            { genderCanonical: cat === "mens" ? "MENS" : cat === "womens" ? "WOMENS" : "JUNIOR" },
+            ...keywords.map((kw) => ({
+              category: { $regex: kw, $options: "i" },
+            })),
+          ],
+        });
+      } else if (cat === "sports") {
+        const sportOr = [];
+        if (sportFilter) {
+          sportOr.push({ sportCanonical: sportFilter });
+          sportOr.push({ subcategory: { $regex: escapeRegex(subcategory.replace(/-/g, " ")), $options: "i" } });
+          sportOr.push({ name: { $regex: escapeRegex(subcategory.replace(/-/g, " ")), $options: "i" } });
+          sportOr.push({ description: { $regex: escapeRegex(subcategory.replace(/-/g, " ")), $options: "i" } });
+        } else {
+          sportOr.push({ sportCanonical: { $nin: ["", null] } });
+          sportOr.push({ categoryCanonical: "SPORTS" });
+        }
+        conditions.push({ $or: sportOr });
+
+      } else if (SPORT_SLUGS.has(cat)) {
         // Sport pages: search across category, name AND subcategory fields
         // so products with "Mens" category but "Argentina Rugby Jersey" name are found
         conditions.push({
@@ -68,18 +99,31 @@ exports.getProducts = async (req, res) => {
           ]),
         });
       } else {
-        conditions.push({
-          $or: keywords.map((kw) => ({
-            category: { $regex: kw, $options: "i" },
-          })),
-        });
+        const categoryOr = keywords.map((kw) => ({
+          category: { $regex: kw, $options: "i" },
+        }));
+        if (canonicalCategory) {
+          categoryOr.unshift({ categoryCanonical: canonicalCategory });
+        }
+        conditions.push({ $or: categoryOr });
       }
     }
 
     // Subcategory filter
-    if (subcategory) {
+    if (subcategory && String(category || "").toLowerCase() !== "sports") {
+      const canonicalSubcategory = deriveSubcategoryCanonical(category, subcategory);
       conditions.push({
-        subcategory: { $regex: escapeRegex(subcategory.replace(/-/g, " ")), $options: "i" },
+        $or: [
+          ...(canonicalSubcategory
+            ? [{ subcategoryCanonical: canonicalSubcategory }]
+            : []),
+          {
+            subcategory: {
+              $regex: escapeRegex(subcategory.replace(/-/g, " ")),
+              $options: "i",
+            },
+          },
+        ],
       });
     }
 
@@ -98,7 +142,13 @@ exports.getProducts = async (req, res) => {
 
     // Brand exact (case-insensitive)
     if (brand) {
-      conditions.push({ brand: { $regex: `^${escapeRegex(brand)}$`, $options: "i" } });
+      const canonicalBrand = deriveBrandCanonical(brand);
+      conditions.push({
+        $or: [
+          ...(canonicalBrand ? [{ brandCanonical: canonicalBrand }] : []),
+          { brand: { $regex: `^${escapeRegex(brand)}$`, $options: "i" } },
+        ],
+      });
     }
 
     // Full-text search (regex fallback)

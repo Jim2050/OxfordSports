@@ -115,6 +115,7 @@ const navItems = [
       { to: sub("SPORTS", "DARTS"), label: "Darts" },
     ],
   },
+  { to: "/products?category=JOB+LOTS", label: "Job Lots" },
   { to: "/products?category=B+GRADE", label: "B Grade" },
   { to: "/under-5", label: "Under £5" },
   { to: "/products", label: "All Products" },

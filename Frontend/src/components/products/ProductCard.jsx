@@ -72,6 +72,12 @@ export default function ProductCard({ product }) {
 
   /* Derive gender from product fields */
   const genderLabel = (() => {
+    const canonical = (product.genderCanonical || "").toUpperCase();
+    if (canonical === "WOMENS") return "Women's";
+    if (canonical === "MENS") return "Men's";
+    if (canonical === "JUNIOR") return "Kids";
+    if (canonical === "UNISEX") return "Unisex";
+
     const text =
       `${product.name || ""} ${product.description || ""} ${product.category || ""} ${product.subcategory || ""}`.toLowerCase();
     if (
