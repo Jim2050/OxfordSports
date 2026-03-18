@@ -536,6 +536,11 @@ function consolidateBySku(rows) {
     const parsedSizes = parseSizeEntries(rawSize, rowQty);
     const rowSizes = parsedSizes.entries;
     const normalizedRowSizes = normalizeSizeEntries(rowSizes, row.category);
+    const droppedDuringNormalization =
+      rawSizeProvided && rowSizes.length > 0 && normalizedRowSizes.length < rowSizes.length;
+    const strictSizeFailure =
+      rawSizeProvided &&
+      (parsedSizes.invalidTokens.length > 0 || parsedSizes.hadNegativeSizes || droppedDuringNormalization);
 
     if (skuMap.has(sku)) {
       const existing = skuMap.get(sku);
@@ -554,10 +559,15 @@ function consolidateBySku(rows) {
       }
       existing._hadNegativeSizes = existing._hadNegativeSizes || parsedSizes.hadNegativeSizes;
       existing._rawSizeProvided = existing._rawSizeProvided || rawSizeProvided;
+      existing._sizeParseFailed = existing._sizeParseFailed || strictSizeFailure;
 
       if (rawSizeProvided && rowSizes.length > 0 && normalizedRowSizes.length === 0) {
         existing._sizeWarnings = existing._sizeWarnings || [];
         existing._sizeWarnings.push("All parsed sizes were rejected by normalization rules");
+      }
+      if (droppedDuringNormalization) {
+        existing._sizeWarnings = existing._sizeWarnings || [];
+        existing._sizeWarnings.push("Some parsed sizes were rejected by normalization rules");
       }
 
       // Merge sizes with quantities
@@ -617,6 +627,9 @@ function consolidateBySku(rows) {
           `Embedded size quantities (${parsedSizes.parsedTotal}) do not match QTY (${rowQty})`,
         );
       }
+      if (droppedDuringNormalization) {
+        sizeErrors.push("Some parsed sizes were rejected by normalization rules");
+      }
 
       if (normalizedRowSizes.length > 0) {
         for (const entry of normalizedRowSizes) {
@@ -640,7 +653,8 @@ function consolidateBySku(rows) {
         _sizeWarnings: sizeErrors,
         _hadNegativeSizes: parsedSizes.hadNegativeSizes,
         _rawSizeProvided: rawSizeProvided,
-        _sizeParseFailed: rawSizeProvided && sizeEntries.length === 0,
+        _sizeParseFailed:
+          strictSizeFailure || (rawSizeProvided && sizeEntries.length === 0),
         sizeEntries: normalizeSizeEntries(sizeEntries, row.category),
         barcodes: barcode ? [barcode] : [],
       });
