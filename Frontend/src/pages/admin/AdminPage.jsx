@@ -390,15 +390,19 @@ export default function AdminPage() {
 
   const startEdit = (product) => {
     const sizesArr = Array.isArray(product.sizes) ? product.sizes : [];
+    const visibleSizesArr = sizesArr.filter((s) => {
+      const label = typeof s === "object" ? s.size : s;
+      return String(label || "").trim().toUpperCase() !== "ONE SIZE";
+    });
     let sizesStr = "";
     let qtyStr = "";
-    if (sizesArr.length > 0 && typeof sizesArr[0] === "object") {
-      sizesStr = sizesArr.map((s) => s.size).join(", ");
-      qtyStr = sizesArr
+    if (visibleSizesArr.length > 0 && typeof visibleSizesArr[0] === "object") {
+      sizesStr = visibleSizesArr.map((s) => s.size).join(", ");
+      qtyStr = visibleSizesArr
         .reduce((sum, s) => sum + (s.quantity || 0), 0)
         .toString();
     } else {
-      sizesStr = sizesArr.join(", ");
+      sizesStr = visibleSizesArr.join(", ");
       qtyStr = (product.totalQuantity || product.quantity || "").toString();
     }
     setProductForm({
@@ -1349,6 +1353,10 @@ export default function AdminPage() {
                           0,
                         );
                       const sizesDisplay = sizesArr
+                        .filter((s) => {
+                          const label = typeof s === "object" ? s.size : s;
+                          return String(label || "").trim().toUpperCase() !== "ONE SIZE";
+                        })
                         .map((s) =>
                           typeof s === "object"
                             ? `${s.size}(${s.quantity || 0})`
