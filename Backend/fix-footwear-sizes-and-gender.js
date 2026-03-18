@@ -1,5 +1,7 @@
-const path = require("path");
 const mongoose = require("mongoose");
+const path = require("path");
+
+// Try to load from .env (local), otherwise use process.env (Railway)
 require("dotenv").config({ path: path.join(__dirname, ".env") });
 
 const Product = require("./models/Product");
