@@ -172,6 +172,11 @@ function deriveGenderCanonical({
     if (maxSize >= 7) return "MENS";
   }
 
+  // Keep product cards/filter metadata complete when supplier data has no gender clues.
+  if (categoryUpper === "FOOTWEAR") {
+    return "UNISEX";
+  }
+
   return "";
 }
 

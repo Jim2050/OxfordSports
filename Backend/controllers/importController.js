@@ -97,10 +97,39 @@ function normalizeImportedName(name, category, subcategory) {
   return raw;
 }
 
-function normalizeSizeEntries(entries = []) {
+function normalizeFootwearSizeLabel(size) {
+  const raw = String(size || "").trim().toUpperCase();
+  if (!raw) return "";
+
+  // "21".."29" appears in supplier exports where 20 is prefixed to UK sizes.
+  const prefixedUk = raw.match(/^(2[1-9])(?:\.0)?$/);
+  if (prefixedUk) {
+    return String(Number(prefixedUk[1]) - 20);
+  }
+
+  // Reject implausible numeric footwear sizes that are likely IDs/encoding artifacts.
+  const numeric = raw.match(/^-?\d+(?:\.\d+)?$/);
+  if (numeric) {
+    const absolute = Math.abs(Number(raw));
+    if (!Number.isFinite(absolute)) return "";
+    if (absolute < 1 || absolute > 15.5) return "";
+
+    // Keep .5 only when needed; otherwise render as integer.
+    return Number.isInteger(absolute) ? String(absolute) : String(absolute);
+  }
+
+  // Keep alpha sizes for non-UK footwear exports, but drop long digit-only blobs.
+  if (/^\d{4,}$/.test(raw)) return "";
+  return raw;
+}
+
+function normalizeSizeEntries(entries = [], category = "") {
+  const categoryUpper = String(category || "").trim().toUpperCase();
+  const isFootwear = categoryUpper === "FOOTWEAR";
   const merged = new Map();
   for (const entry of entries) {
-    const size = String(entry?.size || "").trim();
+    const rawSize = String(entry?.size || "").trim();
+    const size = isFootwear ? normalizeFootwearSizeLabel(rawSize) : rawSize;
     const qty = Math.max(0, Number(entry?.quantity) || 0);
     if (!size || qty <= 0) continue;
     merged.set(size, (merged.get(size) || 0) + qty);
@@ -600,7 +629,7 @@ function consolidateBySku(rows) {
         }
       }
 
-      existing.sizeEntries = normalizeSizeEntries(existing.sizeEntries);
+      existing.sizeEntries = normalizeSizeEntries(existing.sizeEntries, existing.category);
 
       // Merge barcode
       const newBarcode = row.barcode ? String(row.barcode).trim() : "";
@@ -646,7 +675,7 @@ function consolidateBySku(rows) {
         sku,
         _sizeWarnings: sizeErrors,
         _hadNegativeSizes: parsedSizes.hadNegativeSizes,
-        sizeEntries: normalizeSizeEntries(sizeEntries),
+        sizeEntries: normalizeSizeEntries(sizeEntries, row.category),
         barcodes: barcode ? [barcode] : [],
       });
     }
