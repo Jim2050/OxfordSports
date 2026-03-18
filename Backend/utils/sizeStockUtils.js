@@ -2,18 +2,21 @@ function normalizeFootwearSizeLabel(size) {
   const raw = String(size || "").trim().toUpperCase();
   if (!raw) return "";
 
-  // Supplier exports sometimes prefix UK sizes with 20 (21..29 => 1..9).
-  const prefixedUk = raw.match(/^(2[1-9])(?:\.0)?$/);
-  if (prefixedUk) {
-    return String(Number(prefixedUk[1]) - 20);
-  }
-
   const numeric = raw.match(/^-?\d+(?:\.\d+)?$/);
   if (numeric) {
     const absolute = Math.abs(Number(raw));
     if (!Number.isFinite(absolute)) return "";
-    if (absolute < 1 || absolute > 15.5) return "";
-    return Number.isInteger(absolute) ? String(absolute) : String(absolute);
+
+    // Accept practical footwear ranges while rejecting obvious corruption.
+    // - UK/adult style values: 1..15.5
+    // - Junior/EU-style values seen in client feed: 16..55
+    // - Reject >55 and tiny/invalid numbers.
+    if (absolute < 1 || absolute > 55) return "";
+
+    // Prevent noisy decimal precision in source feeds.
+    const rounded = Math.round(absolute * 2) / 2;
+    if (rounded < 1 || rounded > 55) return "";
+    return Number.isInteger(rounded) ? String(rounded) : String(rounded);
   }
 
   if (/^\d{4,}$/.test(raw)) return "";

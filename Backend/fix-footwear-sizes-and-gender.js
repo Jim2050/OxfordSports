@@ -6,40 +6,10 @@ require("dotenv").config({ path: path.join(__dirname, ".env") });
 
 const Product = require("./models/Product");
 const { deriveGenderCanonical } = require("./utils/taxonomyUtils");
-
-function normalizeFootwearSizeLabel(size) {
-  const raw = String(size || "").trim().toUpperCase();
-  if (!raw) return "";
-
-  const prefixedUk = raw.match(/^(2[1-9])(?:\.0)?$/);
-  if (prefixedUk) {
-    return String(Number(prefixedUk[1]) - 20);
-  }
-
-  const numeric = raw.match(/^-?\d+(?:\.\d+)?$/);
-  if (numeric) {
-    const absolute = Math.abs(Number(raw));
-    if (!Number.isFinite(absolute)) return "";
-    if (absolute < 1 || absolute > 15.5) return "";
-    return Number.isInteger(absolute) ? String(absolute) : String(absolute);
-  }
-
-  if (/^\d{4,}$/.test(raw)) return "";
-  return raw;
-}
+const { normalizeSizeEntries } = require("./utils/sizeStockUtils");
 
 function normalizeFootwearSizeEntries(entries = []) {
-  const merged = new Map();
-  for (const entry of entries) {
-    const normalized = normalizeFootwearSizeLabel(entry?.size);
-    const qty = Math.max(0, Number(entry?.quantity) || 0);
-    if (!normalized || qty <= 0) continue;
-    merged.set(normalized, (merged.get(normalized) || 0) + qty);
-  }
-  return Array.from(merged.entries()).map(([size, quantity]) => ({
-    size,
-    quantity,
-  }));
+  return normalizeSizeEntries(entries, "FOOTWEAR");
 }
 
 function sameSizeEntries(a = [], b = []) {
