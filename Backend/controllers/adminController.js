@@ -5,6 +5,7 @@ const DeletedProductBatch = require("../models/DeletedProductBatch");
 const generateToken = require("../utils/generateToken");
 const cloudinary = require("../config/cloudinary");
 const fs = require("fs");
+const { parseSizesInput } = require("../utils/sizeStockUtils");
 
 /**
  * POST /api/admin/login
@@ -69,34 +70,13 @@ exports.addProduct = async (req, res) => {
       return res.status(400).json({ error: "Valid sale price is required." });
     }
 
-    // Build sizes array: accept either new format [{size,quantity}] or legacy "S, M, L" string
-    let sizesArray = [];
-    if (Array.isArray(sizes) && sizes.length > 0) {
-      if (typeof sizes[0] === "object" && sizes[0].size !== undefined) {
-        sizesArray = sizes.map((s) => ({
-          size: String(s.size).trim(),
-          quantity: parseInt(s.quantity) || 0,
-        }));
-      } else {
-        // Legacy: array of strings
-        const qty = parseInt(quantity) || 0;
-        const perSize = sizes.length > 0 ? Math.floor(qty / sizes.length) : 0;
-        sizesArray = sizes.map((s) => ({
-          size: String(s).trim(),
-          quantity: perSize,
-        }));
-      }
-    } else if (typeof sizes === "string" && sizes.trim()) {
-      const sizeList = sizes
-        .split(",")
-        .map((s) => s.trim())
-        .filter(Boolean);
-      const qty = parseInt(quantity) || 0;
-      const perSize =
-        sizeList.length > 0 ? Math.floor(qty / sizeList.length) : 0;
-      sizesArray = sizeList.map((s) => ({ size: s, quantity: perSize }));
-    } else if (parseInt(quantity) > 0) {
-      sizesArray = [{ size: "ONE SIZE", quantity: parseInt(quantity) }];
+    const parsedTotalQty = parseInt(quantity);
+    const totalQtyInput = isNaN(parsedTotalQty) ? 0 : Math.max(0, parsedTotalQty);
+
+    // Build sizes array using shared parser for consistency with import pipeline.
+    let sizesArray = parseSizesInput(sizes, totalQtyInput, category);
+    if (sizesArray.length === 0 && totalQtyInput > 0) {
+      sizesArray = [{ size: "ONE SIZE", quantity: totalQtyInput }];
     }
 
     const totalQuantity = sizesArray.reduce(
@@ -181,31 +161,28 @@ exports.updateProduct = async (req, res) => {
       product.rrp = parseFloat(req.body.rrp);
     }
 
-    // Sizes: accept new format [{size,quantity}] or legacy string "S, M, L"
+    const categoryForSizeParsing =
+      req.body.category !== undefined ? req.body.category : product.category;
+
+    // Sizes: parse via shared utility to prevent malformed labels and qty drift.
     if (req.body.sizes !== undefined) {
-      const s = req.body.sizes;
-      if (Array.isArray(s) && s.length > 0 && typeof s[0] === "object") {
-        product.sizes = s.map((e) => ({
-          size: String(e.size).trim(),
-          quantity: parseInt(e.quantity) || 0,
-        }));
-      } else if (typeof s === "string" && s.trim()) {
-        const sizeList = s
-          .split(",")
-          .map((x) => x.trim())
-          .filter(Boolean);
-        const qty = parseInt(req.body.quantity) || 0;
-        const perSize =
-          sizeList.length > 0 ? Math.floor(qty / sizeList.length) : 0;
-        product.sizes = sizeList.map((x) => ({ size: x, quantity: perSize }));
-      } else if (Array.isArray(s)) {
-        // Legacy string array
-        const qty = parseInt(req.body.quantity) || 0;
-        const perSize = s.length > 0 ? Math.floor(qty / s.length) : 0;
-        product.sizes = s.map((x) => ({
-          size: String(x).trim(),
-          quantity: perSize,
-        }));
+      const parsedQty = parseInt(req.body.quantity);
+      const totalQtyInput = isNaN(parsedQty)
+        ? Math.max(0, Number(product.totalQuantity) || 0)
+        : Math.max(0, parsedQty);
+
+      const parsedSizes = parseSizesInput(
+        req.body.sizes,
+        totalQtyInput,
+        categoryForSizeParsing,
+      );
+
+      if (parsedSizes.length > 0) {
+        product.sizes = parsedSizes;
+      } else if (totalQtyInput > 0) {
+        product.sizes = [{ size: "ONE SIZE", quantity: totalQtyInput }];
+      } else {
+        product.sizes = [];
       }
     }
 

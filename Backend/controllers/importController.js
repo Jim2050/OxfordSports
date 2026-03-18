@@ -19,6 +19,7 @@ const {
   deriveSubcategoryCanonical,
   parseSizeEntries,
 } = require("../utils/taxonomyUtils");
+const { normalizeSizeEntries } = require("../utils/sizeStockUtils");
 
 function normalizeImportedSubcategory(category, subcategory, name, description = "") {
   const cat = String(category || "").trim().toUpperCase();
@@ -95,58 +96,6 @@ function normalizeImportedName(name, category, subcategory) {
   }
 
   return raw;
-}
-
-function normalizeFootwearSizeLabel(size) {
-  const raw = String(size || "").trim().toUpperCase();
-  if (!raw) return "";
-
-  // "21".."29" appears in supplier exports where 20 is prefixed to UK sizes.
-  const prefixedUk = raw.match(/^(2[1-9])(?:\.0)?$/);
-  if (prefixedUk) {
-    return String(Number(prefixedUk[1]) - 20);
-  }
-
-  // Reject implausible numeric footwear sizes that are likely IDs/encoding artifacts.
-  const numeric = raw.match(/^-?\d+(?:\.\d+)?$/);
-  if (numeric) {
-    const absolute = Math.abs(Number(raw));
-    if (!Number.isFinite(absolute)) return "";
-    if (absolute < 1 || absolute > 15.5) return "";
-
-    // Keep .5 only when needed; otherwise render as integer.
-    return Number.isInteger(absolute) ? String(absolute) : String(absolute);
-  }
-
-  // Keep alpha sizes for non-UK footwear exports, but drop long digit-only blobs.
-  if (/^\d{4,}$/.test(raw)) return "";
-  return raw;
-}
-
-function normalizeSizeEntries(entries = [], category = "") {
-  const categoryUpper = String(category || "").trim().toUpperCase();
-  const isFootwear = categoryUpper === "FOOTWEAR";
-  const merged = new Map();
-  for (const entry of entries) {
-    const rawSize = String(entry?.size || "").trim();
-    const size = isFootwear ? normalizeFootwearSizeLabel(rawSize) : rawSize;
-    const qty = Math.max(0, Number(entry?.quantity) || 0);
-    if (!size || qty <= 0) continue;
-    merged.set(size, (merged.get(size) || 0) + qty);
-  }
-
-  let normalized = Array.from(merged.entries()).map(([size, quantity]) => ({
-    size,
-    quantity,
-  }));
-
-  // If specific sizes exist, drop ONE SIZE to prevent duplicate/confusing display.
-  const hasSpecificSizes = normalized.some((entry) => entry.size.toUpperCase() !== "ONE SIZE");
-  if (hasSpecificSizes) {
-    normalized = normalized.filter((entry) => entry.size.toUpperCase() !== "ONE SIZE");
-  }
-
-  return normalized;
 }
 
 // Production-safe logger — silent in production, verbose in development

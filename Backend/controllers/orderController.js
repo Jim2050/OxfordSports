@@ -60,21 +60,29 @@ exports.placeOrder = async (req, res) => {
         // Per-size stock mode using new sizes array
         const sizeEntry = sizeEntries.find((s) => s.size === size);
         const available = sizeEntry ? sizeEntry.quantity : 0;
-        if (available > 0 && qty > available) {
+        if (!sizeEntry || available <= 0) {
+          return res.status(400).json({
+            error: `Size ${size || "N/A"} is out of stock for ${product.name}.`,
+          });
+        }
+        if (qty > available) {
           return res.status(400).json({
             error: `Only ${available} of size ${size} available for ${product.name}.`,
           });
         }
-        if (available > 0) {
-          stockUpdates.push({
-            updateOne: {
-              filter: { _id: product._id, "sizes.size": size },
-              update: {
-                $inc: { "sizes.$.quantity": -qty, totalQuantity: -qty },
-              },
+        stockUpdates.push({
+          updateOne: {
+            filter: {
+              _id: product._id,
+              "sizes.size": size,
+              "sizes.quantity": { $gte: qty },
+              totalQuantity: { $gte: qty },
             },
-          });
-        }
+            update: {
+              $inc: { "sizes.$.quantity": -qty, totalQuantity: -qty },
+            },
+          },
+        });
       } else if (product.totalQuantity > 0) {
         // Flat stock mode
         if (qty > product.totalQuantity) {
@@ -153,9 +161,10 @@ exports.placeOrder = async (req, res) => {
     try {
       for (const op of stockUpdates) {
         const result = await Product.bulkWrite([op], { ordered: true });
-        if (result.modifiedCount > 0) {
-          stockRollbacks.push(op);
+        if (result.modifiedCount !== 1) {
+          throw new Error("Concurrent stock change detected");
         }
+        stockRollbacks.push(op);
       }
     } catch (stockErr) {
       // Rollback any successful deductions

@@ -327,6 +327,7 @@ export function getSizes(product) {
       const size = String(entry?.size || "").trim();
       if (!size) continue;
       const quantity = Number(entry?.quantity) || 0;
+      if (quantity <= 0) continue;
       merged.set(size, (merged.get(size) || 0) + quantity);
     }
     return Array.from(merged.entries()).map(([size, quantity]) => ({
