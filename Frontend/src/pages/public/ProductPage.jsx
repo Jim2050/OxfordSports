@@ -76,8 +76,12 @@ export default function ProductPage() {
 
   const productSizes = getSizes(product);
   const hasSizes = productSizes.length > 0;
+  const displaySizes = productSizes.filter(
+    (s) => String(s?.size || "").trim().toUpperCase() !== "ONE SIZE",
+  );
   const isOneSize =
-    productSizes.length === 1 && productSizes[0].size === "ONE SIZE";
+    productSizes.length === 1 &&
+    String(productSizes[0]?.size || "").trim().toUpperCase() === "ONE SIZE";
   const { mustBuyAll } = getMOQInfo(product);
 
   // Quantity step: footwear orders in multiples of 12
@@ -185,13 +189,13 @@ export default function ProductPage() {
             )}
 
             {/* ── Sizes at a glance (read-only) ── */}
-            {hasSizes && !isOneSize && (
+            {hasSizes && !isOneSize && displaySizes.length > 0 && (
               <div className="sizes-section" style={{ marginBottom: "1rem" }}>
                 <span className="sizes-header">
                   Available Sizes ({totalQty} units)
                 </span>
                 <div className="sizes-preview">
-                  {productSizes.map((s) => (
+                  {displaySizes.map((s) => (
                     <span
                       key={s.size}
                       className={`size-tag${s.quantity === 0 ? " out-of-stock" : ""}`}

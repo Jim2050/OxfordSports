@@ -27,7 +27,11 @@ export default function ProductCard({ product }) {
 
   const { addToCart, isInCart, openDrawer } = useCart();
   const productSizes = getSizes(product);
+  const displaySizes = productSizes.filter(
+    (s) => String(s?.size || "").trim().toUpperCase() !== "ONE SIZE",
+  );
   const hasSizes = productSizes.length > 0;
+  const hasDisplaySizes = displaySizes.length > 0;
   const { mustBuyAll } = getMOQInfo(product);
 
   const [added, setAdded] = useState(false);
@@ -158,14 +162,14 @@ export default function ProductCard({ product }) {
 
 
         {/* ── Available Sizes (R7 / #12) ── */}
-        {hasSizes && (
+        {hasDisplaySizes && (
           <div className="sizes-section">
             <span className="sizes-header">
               Available Sizes ({totalQty}{" "}
               {totalQty === 1 ? "unit" : "units"})
             </span>
             <div className="sizes-preview">
-              {productSizes.slice(0, 10).map((s) => (
+              {displaySizes.slice(0, 10).map((s) => (
                 <span
                   key={s.size}
                   className={`size-tag${s.quantity === 0 ? " out-of-stock" : ""}`}
@@ -174,9 +178,9 @@ export default function ProductCard({ product }) {
                   {s.quantity > 0 ? `(${s.quantity})` : ""}
                 </span>
               ))}
-              {productSizes.length > 10 && (
+              {displaySizes.length > 10 && (
                 <span className="size-tag more">
-                  +{productSizes.length - 10}
+                  +{displaySizes.length - 10}
                 </span>
               )}
             </div>
