@@ -32,6 +32,7 @@ export default function ProductCard({ product }) {
   );
   const hasSizes = productSizes.length > 0;
   const hasDisplaySizes = displaySizes.length > 0;
+  const showNeutralOneSizeChip = hasSizes && !hasDisplaySizes;
   const { mustBuyAll } = getMOQInfo(product);
 
   const [added, setAdded] = useState(false);
@@ -162,22 +163,30 @@ export default function ProductCard({ product }) {
 
 
         {/* ── Available Sizes (R7 / #12) ── */}
-        {hasDisplaySizes && (
+        {hasSizes && (
           <div className="sizes-section">
             <span className="sizes-header">
               Available Sizes ({totalQty}{" "}
               {totalQty === 1 ? "unit" : "units"})
             </span>
             <div className="sizes-preview">
-              {displaySizes.slice(0, 10).map((s) => (
+              {hasDisplaySizes &&
+                displaySizes.slice(0, 10).map((s) => (
+                  <span
+                    key={s.size}
+                    className={`size-tag${s.quantity === 0 ? " out-of-stock" : ""}`}
+                  >
+                    {s.size}
+                    {s.quantity > 0 ? `(${s.quantity})` : ""}
+                  </span>
+                ))}
+              {showNeutralOneSizeChip && (
                 <span
-                  key={s.size}
-                  className={`size-tag${s.quantity === 0 ? " out-of-stock" : ""}`}
+                  className="size-tag"
                 >
-                  {s.size}
-                  {s.quantity > 0 ? `(${s.quantity})` : ""}
+                  STD{totalQty > 0 ? `(${totalQty})` : ""}
                 </span>
-              ))}
+              )}
               {displaySizes.length > 10 && (
                 <span className="size-tag more">
                   +{displaySizes.length - 10}
