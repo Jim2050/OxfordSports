@@ -908,9 +908,22 @@ exports.importProducts = async (req, res) => {
     let updated = 0;
     let failed = 0;
     let warnings = 0;
+    const MAX_IMPORT_DETAIL_SAMPLES = 30;
     const errors = [];
     const warningDetails = [];
     const pendingImageProducts = [];
+
+    const pushWarningDetail = (detail) => {
+      if (warningDetails.length < MAX_IMPORT_DETAIL_SAMPLES) {
+        warningDetails.push(detail);
+      }
+    };
+
+    const pushErrorDetail = (detail) => {
+      if (errors.length < MAX_IMPORT_DETAIL_SAMPLES) {
+        errors.push(detail);
+      }
+    };
 
     // ── Process in batches of 500 for memory efficiency ──
     const BATCH_SIZE = 500;
@@ -922,7 +935,7 @@ exports.importProducts = async (req, res) => {
 
       if (Array.isArray(row._sizeWarnings) && row._sizeWarnings.length > 0) {
         warnings++;
-        warningDetails.push({
+        pushWarningDetail({
           row: i + 1,
           sku,
           reason: row._sizeWarnings.join("; "),
@@ -932,7 +945,7 @@ exports.importProducts = async (req, res) => {
       // Validate: must have SKU
       if (!sku) {
         failed++;
-        errors.push({
+        pushErrorDetail({
           row: i + 1,
           sku: "",
           reason: "Missing SKU/Code",
@@ -942,7 +955,7 @@ exports.importProducts = async (req, res) => {
 
       if (row._sizeParseFailed || (row._rawSizeProvided && (!Array.isArray(row.sizeEntries) || row.sizeEntries.length === 0))) {
         failed++;
-        errors.push({
+        pushErrorDetail({
           row: i + 1,
           sku,
           reason: "Malformed sizes: provided size values could not be normalized",
@@ -971,7 +984,7 @@ exports.importProducts = async (req, res) => {
       if (priceResult.error && priceResult.value === null && rrp > 0) {
         priceResult = { value: rrp, error: null };
         warnings++;
-        warningDetails.push({
+        pushWarningDetail({
           row: i + 1,
           sku,
           reason: `No trade/sale price found; used RRP £${rrp.toFixed(2)}`,
@@ -982,7 +995,7 @@ exports.importProducts = async (req, res) => {
       if (priceResult.error && priceResult.value === null) {
         priceResult = { value: 0, error: null };
         warnings++;
-        warningDetails.push({
+        pushWarningDetail({
           row: i + 1,
           sku,
           reason: `No price found; defaulted to £0.00 (update manually)`,
@@ -1400,7 +1413,7 @@ exports.importProducts = async (req, res) => {
     batch.importedRows = imported;
     batch.updatedRows = updated;
     batch.failedRows = failed;
-    batch.errorLog = errors;
+    batch.errorLog = errors.slice(0, MAX_IMPORT_DETAIL_SAMPLES);
     batch.status = "complete";
     await batch.save();
 
@@ -1417,11 +1430,11 @@ exports.importProducts = async (req, res) => {
       updated,
       failed,
       warnings,
-      warningDetails: warningDetails.slice(0, 50),
+      warningDetails,
       imageResolved,
       imageFailed,
       imagePending: Math.max(0, pendingImageProducts.length - 50),
-      errors: errors.slice(0, 50),
+      errors,
       headers,
       mapping,
       unmappedHeaders,

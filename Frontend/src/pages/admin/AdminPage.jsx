@@ -140,7 +140,6 @@ export default function AdminPage() {
       if (res.failed > 0) parts.push(`${res.failed} failed`);
       if (res.warnings > 0) parts.push(`${res.warnings} warnings`);
       toast.success(`Import complete: ${parts.join(", ")}.`);
-      loadProducts();
       loadStats();
       loadImportBatches();
     } catch (err) {
