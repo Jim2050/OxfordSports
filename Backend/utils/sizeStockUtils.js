@@ -38,6 +38,17 @@ function normalizeSizeLabel(rawSize, category = "") {
     .trim()
     .toUpperCase();
 
+  // Labels containing brackets are usually corrupted parse artifacts.
+  if (/[()]/.test(cleaned)) return "";
+
+  const numeric = cleaned.match(/^\d+(?:\.\d+)?$/);
+  if (numeric) {
+    const value = Number(cleaned);
+    if (!Number.isFinite(value)) return "";
+    // Generic non-footwear numeric sizes outside practical apparel ranges are invalid.
+    if (value < 1 || value > 60) return "";
+  }
+
   // Reject obvious concatenation artifacts such as 1161 or 34341.
   if (/^\d{4,}$/.test(cleaned)) return "";
   return cleaned;

@@ -532,8 +532,10 @@ function consolidateBySku(rows) {
     const parsedQty = parseInt(row.quantity);
     const rowQty = isNaN(parsedQty) ? 1 : Math.max(0, parsedQty);
     const rawSize = row.sizes ? String(row.sizes).trim() : "";
+    const rawSizeProvided = rawSize.length > 0;
     const parsedSizes = parseSizeEntries(rawSize, rowQty);
     const rowSizes = parsedSizes.entries;
+    const normalizedRowSizes = normalizeSizeEntries(rowSizes, row.category);
 
     if (skuMap.has(sku)) {
       const existing = skuMap.get(sku);
@@ -551,10 +553,16 @@ function consolidateBySku(rows) {
         );
       }
       existing._hadNegativeSizes = existing._hadNegativeSizes || parsedSizes.hadNegativeSizes;
+      existing._rawSizeProvided = existing._rawSizeProvided || rawSizeProvided;
+
+      if (rawSizeProvided && rowSizes.length > 0 && normalizedRowSizes.length === 0) {
+        existing._sizeWarnings = existing._sizeWarnings || [];
+        existing._sizeWarnings.push("All parsed sizes were rejected by normalization rules");
+      }
 
       // Merge sizes with quantities
-      if (rowSizes.length > 0) {
-        for (const entry of rowSizes) {
+      if (normalizedRowSizes.length > 0) {
+        for (const entry of normalizedRowSizes) {
           const found = existing.sizeEntries.find((e) => e.size === entry.size);
           if (found) {
             found.quantity += entry.quantity;
@@ -565,7 +573,7 @@ function consolidateBySku(rows) {
             });
           }
         }
-      } else if (!rawSize && rowQty > 0) {
+      } else if (!rawSizeProvided && rowQty > 0) {
         // Row has quantity but no size — add to "ONE SIZE" bucket
         const found = existing.sizeEntries.find((e) => e.size === "ONE SIZE");
         if (found) {
@@ -578,7 +586,12 @@ function consolidateBySku(rows) {
         }
       }
 
+      const beforeNormalizeCount = existing.sizeEntries.length;
       existing.sizeEntries = normalizeSizeEntries(existing.sizeEntries, existing.category);
+      if (beforeNormalizeCount > 0 && existing.sizeEntries.length === 0) {
+        existing._sizeWarnings = existing._sizeWarnings || [];
+        existing._sizeWarnings.push("All merged sizes were rejected by normalization rules");
+      }
 
       // Merge barcode
       const newBarcode = row.barcode ? String(row.barcode).trim() : "";
@@ -605,8 +618,8 @@ function consolidateBySku(rows) {
         );
       }
 
-      if (rowSizes.length > 0) {
-        for (const entry of rowSizes) {
+      if (normalizedRowSizes.length > 0) {
+        for (const entry of normalizedRowSizes) {
           const found = sizeEntries.find((e) => e.size === entry.size);
           if (found) {
             found.quantity += entry.quantity;
@@ -614,9 +627,11 @@ function consolidateBySku(rows) {
             sizeEntries.push({ size: entry.size, quantity: entry.quantity });
           }
         }
-      } else if (rowQty > 0) {
+      } else if (!rawSizeProvided && rowQty > 0) {
         // No explicit size column value
         sizeEntries.push({ size: "ONE SIZE", quantity: rowQty });
+      } else if (rawSizeProvided) {
+        sizeErrors.push("Provided size value could not be normalized");
       }
 
       skuMap.set(sku, {
@@ -624,6 +639,8 @@ function consolidateBySku(rows) {
         sku,
         _sizeWarnings: sizeErrors,
         _hadNegativeSizes: parsedSizes.hadNegativeSizes,
+        _rawSizeProvided: rawSizeProvided,
+        _sizeParseFailed: rawSizeProvided && sizeEntries.length === 0,
         sizeEntries: normalizeSizeEntries(sizeEntries, row.category),
         barcodes: barcode ? [barcode] : [],
       });
@@ -817,6 +834,22 @@ exports.importProducts = async (req, res) => {
       );
     }
 
+    const uploadSkuFrequency = new Map();
+    for (const r of normalizedRows) {
+      const sku = r.sku ? String(r.sku).trim().toUpperCase() : "";
+      if (!sku) continue;
+      uploadSkuFrequency.set(sku, (uploadSkuFrequency.get(sku) || 0) + 1);
+    }
+    const duplicateSkuGroupsInUpload = Array.from(uploadSkuFrequency.values()).filter((count) => count > 1).length;
+    const duplicateRowsMerged = Array.from(uploadSkuFrequency.values())
+      .filter((count) => count > 1)
+      .reduce((sum, count) => sum + (count - 1), 0);
+    if (duplicateSkuGroupsInUpload > 0) {
+      debug(
+        `[IMPORT] Upload contains ${duplicateSkuGroupsInUpload} duplicate SKU groups (${duplicateRowsMerged} extra rows)`,
+      );
+    }
+
     // ── Consolidate same-SKU rows (size merging) ──
     const consolidated = consolidateBySku(normalizedRows);
     debug(
@@ -889,6 +922,16 @@ exports.importProducts = async (req, res) => {
           row: i + 1,
           sku: "",
           reason: "Missing SKU/Code",
+        });
+        continue;
+      }
+
+      if (row._sizeParseFailed || (row._rawSizeProvided && (!Array.isArray(row.sizeEntries) || row.sizeEntries.length === 0))) {
+        failed++;
+        errors.push({
+          row: i + 1,
+          sku,
+          reason: "Malformed sizes: provided size values could not be normalized",
         });
         continue;
       }
@@ -1354,6 +1397,8 @@ exports.importProducts = async (req, res) => {
       batchId: batch._id,
       totalRawRows: rows.length,
       consolidatedProducts: consolidated.length,
+      duplicateSkuGroupsInUpload,
+      duplicateRowsMerged,
       imported,
       updated,
       failed,
