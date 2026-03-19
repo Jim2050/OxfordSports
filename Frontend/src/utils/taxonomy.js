@@ -67,7 +67,7 @@ const LABEL_OVERRIDES = {
   "YOGA / FITNESS": "Yoga / Fitness",
   "SNOOKER / POOL": "Snooker / Pool",
   DARTS: "Darts",
-  ADIDAS: "Adidas",
+  ADIDAS: "adidas",
   "UNDER ARMOUR": "Under Armour",
   REEBOK: "Reebok",
   PUMA: "Puma",

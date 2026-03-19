@@ -23,6 +23,7 @@ import {
   fetchDeletedBatches,
   fetchImportBatches,
   restoreProducts,
+  getSizes,
 } from "../../api/api";
 
 export default function AdminPage() {
@@ -98,14 +99,25 @@ export default function AdminPage() {
       .catch(() => {});
   };
 
-  const loadProducts = () => {
-    // Fetch up to 500 products for the product list table;
-    // the real total count comes from the stats endpoint.
-    fetchProducts({ limit: 500 })
-      .then((data) =>
-        setProducts(Array.isArray(data) ? data : data.products || []),
-      )
-      .catch(() => {});
+  const loadProducts = async () => {
+    try {
+      const pageSize = 500;
+      let page = 1;
+      let allProducts = [];
+      let totalPages = 1;
+
+      do {
+        const data = await fetchProducts({ page, limit: pageSize });
+        const pageProducts = Array.isArray(data) ? data : data.products || [];
+        allProducts = allProducts.concat(pageProducts);
+        totalPages = Number(data?.pages) || 1;
+        page += 1;
+      } while (page <= totalPages);
+
+      setProducts(allProducts);
+    } catch {
+      setProducts([]);
+    }
   };
 
   const loadImportBatches = () => {
@@ -586,7 +598,7 @@ export default function AdminPage() {
         {/* Stats */}
         <div className="stats-row">
           <div className="stat-card">
-            {/* Use the stats endpoint total — not products.length which is capped at 500 */}
+            {/* Use the stats endpoint total (authoritative backend count). */}
             <div className="number">{stats?.total ?? products.length}</div>
             <div className="label">Total Products</div>
           </div>
@@ -1335,7 +1347,7 @@ export default function AdminPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {filteredProducts.slice(0, 500).map((p, i) => {
+                    {filteredProducts.map((p) => {
                       const salePrice = Number(p.salePrice || p.price) || 0;
                       const rrpVal = Number(p.rrp) || 0;
                       const discPct =
@@ -1343,7 +1355,7 @@ export default function AdminPage() {
                         (rrpVal > 0 && salePrice < rrpVal
                           ? Math.round(((rrpVal - salePrice) / rrpVal) * 100)
                           : 0);
-                      const sizesArr = Array.isArray(p.sizes) ? p.sizes : [];
+                      const sizesArr = getSizes(p);
                       const totalQty =
                         p.totalQuantity ||
                         p.quantity ||
@@ -1353,14 +1365,9 @@ export default function AdminPage() {
                           0,
                         );
                       const sizesDisplay = sizesArr
-                        .filter((s) => {
-                          const label = typeof s === "object" ? s.size : s;
-                          return String(label || "").trim().toUpperCase() !== "ONE SIZE";
-                        })
+                        .filter((s) => String(s?.size || "").trim().toUpperCase() !== "ONE SIZE")
                         .map((s) =>
-                          typeof s === "object"
-                            ? `${s.size}(${s.quantity || 0})`
-                            : s,
+                          `${s.size}(${s.quantity || 0})`,
                         )
                         .join(", ");
 
@@ -1455,13 +1462,6 @@ export default function AdminPage() {
                     })}
                   </tbody>
                 </table>
-                {filteredProducts.length > 500 && (
-                  <p className="admin-hint" style={{ marginTop: "0.75rem" }}>
-                    Showing first 500 of {filteredProducts.length} products
-                    {searchQuery && " (filtered)"}. Use search to narrow
-                    results.
-                  </p>
-                )}
                 {searchQuery && filteredProducts.length === 0 && (
                   <p className="admin-hint" style={{ marginTop: "0.75rem" }}>
                     No products match "{searchQuery}".

@@ -295,24 +295,39 @@ export function getTotalQuantity(product) {
  * Get sizes array in normalized format: [{size, quantity}]
  */
 export function getSizes(product) {
-  const splitPackedSizes = (rawSize, fallbackQty = 0) => {
-    const text = String(rawSize || "").trim();
-    if (!text) return [];
-    const parts = text.split(";").map((s) => s.trim()).filter(Boolean);
-    if (parts.length <= 1) {
-      return [{ size: text, quantity: Number(fallbackQty) || 0 }];
-    }
+  const normalizeDisplaySizeLabel = (rawSize) => {
+    const text = String(rawSize || "")
+      .replace(/[\u2212\u2012\u2013\u2014\u2015]/g, "-")
+      .trim();
+    if (!text) return "";
 
-    return parts.map((part) => {
+    const embedded = text.match(/^(.*)\((\d+)\)$/);
+    const labelOnly = embedded ? embedded[1].trim() : text;
+    return labelOnly.replace(/^-(?=\d)/, "").trim();
+  };
+
+  const splitPackedSizes = (rawSize, fallbackQty = 0) => {
+    const text = String(rawSize || "")
+      .replace(/[\u2212\u2012\u2013\u2014\u2015]/g, "-")
+      .trim();
+    if (!text) return [];
+    const parts = text.split(/[;,]/).map((s) => s.trim()).filter(Boolean);
+
+    const parsed = parts.map((part) => {
       const match = part.match(/^(.*)\((\d+)\)$/);
       if (!match) {
-        return { size: part, quantity: Number(fallbackQty) || 0 };
+        return {
+          size: normalizeDisplaySizeLabel(part),
+          quantity: Number(fallbackQty) || 0,
+        };
       }
       return {
-        size: match[1].trim(),
+        size: normalizeDisplaySizeLabel(match[1]),
         quantity: Number(match[2]) || 0,
       };
     });
+
+    return parsed.filter((entry) => entry.size);
   };
 
   if (!product) return [];
@@ -324,7 +339,7 @@ export function getSizes(product) {
     );
     const merged = new Map();
     for (const entry of expanded) {
-      const size = String(entry?.size || "").trim();
+      const size = normalizeDisplaySizeLabel(entry?.size);
       if (!size) continue;
       const quantity = Number(entry?.quantity) || 0;
       if (quantity <= 0) continue;

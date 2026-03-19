@@ -1,10 +1,17 @@
 function normalizeFootwearSizeLabel(size) {
-  const raw = String(size || "").trim().toUpperCase();
+  const raw = String(size || "")
+    .replace(/[\u2212\u2012\u2013\u2014\u2015]/g, "-")
+    .trim()
+    .toUpperCase();
   if (!raw) return "";
 
-  const numeric = raw.match(/^-?\d+(?:\.\d+)?$/);
+  const embeddedQtyMatch = raw.match(/^(.*)\((\d+)\)$/);
+  const candidate = embeddedQtyMatch ? embeddedQtyMatch[1].trim() : raw;
+
+  const normalizedLeadingSign = candidate.replace(/^[-+](?=\d)/, "");
+  const numeric = normalizedLeadingSign.match(/^\d+(?:\.\d+)?$/);
   if (numeric) {
-    const absolute = Math.abs(Number(raw));
+    const absolute = Math.abs(Number(normalizedLeadingSign));
     if (!Number.isFinite(absolute)) return "";
 
     // Accept practical footwear ranges while rejecting obvious corruption.
@@ -19,13 +26,15 @@ function normalizeFootwearSizeLabel(size) {
     return Number.isInteger(rounded) ? String(rounded) : String(rounded);
   }
 
-  if (/^\d{4,}$/.test(raw)) return "";
-  return raw;
+  if (/^\d{4,}$/.test(candidate)) return "";
+  return candidate;
 }
 
 function normalizeSizeLabel(rawSize, category = "") {
   const categoryUpper = String(category || "").trim().toUpperCase();
-  const raw = String(rawSize || "").trim();
+  const raw = String(rawSize || "")
+    .replace(/[\u2212\u2012\u2013\u2014\u2015]/g, "-")
+    .trim();
   if (!raw) return "";
 
   if (categoryUpper === "FOOTWEAR") {
@@ -33,7 +42,7 @@ function normalizeSizeLabel(rawSize, category = "") {
   }
 
   const cleaned = raw
-    .replace(/^-(?=\d)/, "")
+    .replace(/^[-+](?=\d)/, "")
     .replace(/\s+/g, " ")
     .trim()
     .toUpperCase();

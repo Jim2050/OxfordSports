@@ -13,6 +13,28 @@ import { useCart } from "../../context/CartContext";
 
 const PLACEHOLDER = "https://placehold.co/400x400/e2e8f0/64748b?text=No+Image";
 
+function HeartOutlineIcon({ size = 18 }) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+      aria-hidden="true"
+      focusable="false"
+    >
+      <path
+        d="M12 20.5s-7-4.35-7-10a4.5 4.5 0 0 1 8-2.83A4.5 4.5 0 0 1 20 10.5c0 5.65-8 10-8 10Z"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
 export default function ProductCard({ product }) {
   const img = resolveImageUrl(product.imageUrl || product.image) || PLACEHOLDER;
   const finalPrice = getDisplayPrice(product);
@@ -136,7 +158,7 @@ export default function ProductCard({ product }) {
           title={alreadyInCart ? "View cart" : "Add to cart"}
           disabled={totalQty === 0}
         >
-          {alreadyInCart ? "✓" : "♡"}
+          {alreadyInCart ? "✓" : <HeartOutlineIcon size={18} />}
         </button>
         {totalQty === 0 && <span className="sold-out-badge">Sold Out</span>}
       </div>
@@ -217,7 +239,7 @@ export default function ProductCard({ product }) {
               onClick={alreadyInCart ? handleCartClick : handleHeartClick}
               title={alreadyInCart ? "View cart" : "Add to cart"}
             >
-              {alreadyInCart ? "✓" : "♡"}
+              {alreadyInCart ? "✓" : <HeartOutlineIcon size={16} />}
             </button>
           )}
         </div>

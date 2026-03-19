@@ -195,9 +195,10 @@ function deriveSportCanonical({ name, description, category, subcategory }) {
 function sanitizeSizeLabel(value) {
   const cleaned = normalizeText(
     String(value || "")
+      .replace(/[\u2212\u2012\u2013\u2014\u2015]/g, "-")
       .replace(/""/g, '"')
       .replace(/^"|"$/g, "")
-      .replace(/^-(?=\d)/, ""),
+      .replace(/^[-+](?=\d)/, ""),
   );
 
   // Normalize inseam-style labels from exports like XS3" or 2XL4 into "XS 3\"" / "2XL 4\"".
@@ -243,7 +244,7 @@ function parseSizeEntries(rawSize, fallbackQty) {
   for (const token of tokens) {
     const embeddedMatch = token.match(/^(.*)\((\d+)\)$/);
     const rawLabel = embeddedMatch ? embeddedMatch[1] : token;
-    if (/^-\d/.test(String(rawLabel || "").trim())) {
+    if (/^[-\u2212\u2012\u2013\u2014\u2015]\d/.test(String(rawLabel || "").trim())) {
       hadNegativeSizes = true;
     }
     const size = sanitizeSizeLabel(rawLabel);

@@ -540,7 +540,7 @@ function consolidateBySku(rows) {
       rawSizeProvided && rowSizes.length > 0 && normalizedRowSizes.length < rowSizes.length;
     const strictSizeFailure =
       rawSizeProvided &&
-      (parsedSizes.invalidTokens.length > 0 || parsedSizes.hadNegativeSizes || droppedDuringNormalization);
+      (parsedSizes.invalidTokens.length > 0 || droppedDuringNormalization);
 
     if (skuMap.has(sku)) {
       const existing = skuMap.get(sku);
@@ -555,6 +555,12 @@ function consolidateBySku(rows) {
         existing._sizeWarnings = existing._sizeWarnings || [];
         existing._sizeWarnings.push(
           `Embedded size quantities (${parsedSizes.parsedTotal}) do not match QTY (${rowQty})`,
+        );
+      }
+      if (parsedSizes.hadNegativeSizes) {
+        existing._sizeWarnings = existing._sizeWarnings || [];
+        existing._sizeWarnings.push(
+          "Negative size sign detected and normalized to a positive value",
         );
       }
       existing._hadNegativeSizes = existing._hadNegativeSizes || parsedSizes.hadNegativeSizes;
@@ -625,6 +631,11 @@ function consolidateBySku(rows) {
       if (parsedSizes.checksumMismatch) {
         sizeErrors.push(
           `Embedded size quantities (${parsedSizes.parsedTotal}) do not match QTY (${rowQty})`,
+        );
+      }
+      if (parsedSizes.hadNegativeSizes) {
+        sizeErrors.push(
+          "Negative size sign detected and normalized to a positive value",
         );
       }
       if (droppedDuringNormalization) {
