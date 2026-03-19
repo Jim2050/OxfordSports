@@ -13,27 +13,20 @@ import { useCart } from "../../context/CartContext";
 
 const PLACEHOLDER = "https://placehold.co/400x400/e2e8f0/64748b?text=No+Image";
 
-function HeartOutlineIcon({ size = 18 }) {
-  return (
-    <svg
-      width={size}
-      height={size}
-      viewBox="0 0 24 24"
-      fill="none"
-      xmlns="http://www.w3.org/2000/svg"
-      aria-hidden="true"
-      focusable="false"
-    >
-      <path
-        d="M12 20.5s-7-4.35-7-10a4.5 4.5 0 0 1 8-2.83A4.5 4.5 0 0 1 20 10.5c0 5.65-8 10-8 10Z"
-        stroke="currentColor"
-        strokeWidth="1.8"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
-  );
-}
+// Heart SVG icon - reliable across all browsers including Firefox
+const HeartIcon = ({ filled = false }) => (
+  <svg
+    width="20"
+    height="20"
+    viewBox="0 0 24 24"
+    fill={filled ? "currentColor" : "none"}
+    stroke="currentColor"
+    strokeWidth="2"
+    style={{ display: "block" }}
+  >
+    <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path>
+  </svg>
+);
 
 export default function ProductCard({ product }) {
   const img = resolveImageUrl(product.imageUrl || product.image) || PLACEHOLDER;
@@ -49,9 +42,8 @@ export default function ProductCard({ product }) {
 
   const { addToCart, isInCart, openDrawer } = useCart();
   const productSizes = getSizes(product);
-  const displaySizes = productSizes.filter(
-    (s) => String(s?.size || "").trim().toUpperCase() !== "ONE SIZE",
-  );
+  // FIXED: Show all sizes including "ONE SIZE" to customers
+  const displaySizes = productSizes;
   const hasSizes = productSizes.length > 0;
   const hasDisplaySizes = displaySizes.length > 0;
   const { mustBuyAll } = getMOQInfo(product);
@@ -158,7 +150,7 @@ export default function ProductCard({ product }) {
           title={alreadyInCart ? "View cart" : "Add to cart"}
           disabled={totalQty === 0}
         >
-          {alreadyInCart ? "✓" : <HeartOutlineIcon size={18} />}
+          {alreadyInCart ? "✓" : <HeartIcon filled={added} />}
         </button>
         {totalQty === 0 && <span className="sold-out-badge">Sold Out</span>}
       </div>
@@ -239,7 +231,7 @@ export default function ProductCard({ product }) {
               onClick={alreadyInCart ? handleCartClick : handleHeartClick}
               title={alreadyInCart ? "View cart" : "Add to cart"}
             >
-              {alreadyInCart ? "✓" : <HeartOutlineIcon size={16} />}
+              {alreadyInCart ? "✓" : "♡"}
             </button>
           )}
         </div>
