@@ -32,6 +32,7 @@ const singleImageUpload = multer({
 
 const {
   adminLogin,
+  getProducts,
   addProduct,
   updateProduct,
   deleteProduct,
@@ -72,6 +73,9 @@ router.use(protect, adminOnly);
 
 // Dashboard
 router.get("/stats", getStats);
+
+// Admin products listing/search
+router.get("/products", getProducts);
 
 // Product CRUD
 router.post("/products", addProduct);

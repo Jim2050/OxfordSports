@@ -7,7 +7,6 @@ import {
   uploadExcel,
   uploadImages,
   getImageUploadStatus,
-  fetchProducts,
   deleteProduct,
   deleteAllProducts,
   resolveImageUrl,
@@ -15,6 +14,7 @@ import {
   updateProduct,
   exportProducts,
   fetchAdminStats,
+  fetchAdminProducts,
   fixSubcategories,
   fixBrands,
   uploadProductImage,
@@ -45,6 +45,9 @@ export default function AdminPage() {
   const [serverProcessing, setServerProcessing] = useState(false);
   const [tab, setTab] = useState("excel");
   const [searchQuery, setSearchQuery] = useState("");
+  const [productPage, setProductPage] = useState(1);
+  const [productPages, setProductPages] = useState(1);
+  const [productTotal, setProductTotal] = useState(0);
   const [editingSku, setEditingSku] = useState(null);
   const [productForm, setProductForm] = useState({
     sku: "",
@@ -66,10 +69,10 @@ export default function AdminPage() {
   const [categoryList, setCategoryList] = useState([]);
   const [subcategoryList, setSubcategoryList] = useState([]);
   const [importBatches, setImportBatches] = useState([]);
+  const PRODUCT_PAGE_SIZE = 100;
 
   useEffect(() => {
     if (authed) {
-      loadProducts();
       loadStats();
       loadCategories();
       loadImportBatches();
@@ -83,6 +86,14 @@ export default function AdminPage() {
     window.addEventListener("admin:logout", handleLogout);
     return () => window.removeEventListener("admin:logout", handleLogout);
   }, [authed]);
+
+  useEffect(() => {
+    if (!authed || tab !== "products") return;
+    const timer = setTimeout(() => {
+      loadProducts({ page: productPage, search: searchQuery });
+    }, 220);
+    return () => clearTimeout(timer);
+  }, [authed, tab, productPage, searchQuery]);
 
   const loadStats = () => {
     fetchAdminStats()
@@ -99,24 +110,29 @@ export default function AdminPage() {
       .catch(() => {});
   };
 
-  const loadProducts = async () => {
+  const loadProducts = async ({ page = productPage, search = searchQuery } = {}) => {
     try {
-      const pageSize = 500;
-      let page = 1;
-      let allProducts = [];
-      let totalPages = 1;
+      const data = await fetchAdminProducts({
+        page,
+        limit: PRODUCT_PAGE_SIZE,
+        includeInactive: true,
+        ...(search ? { search } : {}),
+      });
+      const pageProducts = Array.isArray(data) ? data : data.products || [];
+      const total = Number(data?.total) || 0;
+      const pages = Math.max(1, Number(data?.pages) || 1);
 
-      do {
-        const data = await fetchProducts({ page, limit: pageSize });
-        const pageProducts = Array.isArray(data) ? data : data.products || [];
-        allProducts = allProducts.concat(pageProducts);
-        totalPages = Number(data?.pages) || 1;
-        page += 1;
-      } while (page <= totalPages);
+      setProducts(pageProducts);
+      setProductTotal(total);
+      setProductPages(pages);
 
-      setProducts(allProducts);
+      if (page > pages) {
+        setProductPage(pages);
+      }
     } catch {
       setProducts([]);
+      setProductTotal(0);
+      setProductPages(1);
     }
   };
 
@@ -232,7 +248,7 @@ export default function AdminPage() {
                 } else {
                   toast.error("Image processing failed. Check errors below.");
                 }
-                loadProducts();
+                loadProducts({ page: productPage, search: searchQuery });
                 loadStats();
               }
             } catch {
@@ -248,7 +264,7 @@ export default function AdminPage() {
           setUploading(false);
           setProgress(0);
           setServerProcessing(false);
-          loadProducts();
+          loadProducts({ page: productPage, search: searchQuery });
           loadStats();
         }
       } catch (err) {
@@ -294,7 +310,7 @@ export default function AdminPage() {
     toast.success(`${totalMatched} of ${accepted.length} images matched to products.`);
     setUploading(false);
     setProgress(0);
-    loadProducts();
+    loadProducts({ page: productPage, search: searchQuery });
     loadStats();
   }, []);
 
@@ -320,7 +336,7 @@ export default function AdminPage() {
     try {
       await deleteProduct(sku);
       toast.success("Product deleted.");
-      loadProducts();
+      loadProducts({ page: productPage, search: searchQuery });
     } catch {
       toast.error("Failed to delete product.");
     }
@@ -372,7 +388,7 @@ export default function AdminPage() {
       if (!window.confirm(`Restore ${batch.count} products from "${batch.reason}"?\n\nExisting products with same SKU will be skipped.`)) return;
       const result = await restoreProducts(batch._id);
       toast.success(result.message || `Restored ${result.restored} products.`);
-      loadProducts();
+      loadProducts({ page: productPage, search: searchQuery });
       loadStats();
     } catch (err) {
       toast.error(err?.response?.data?.error || "Failed to restore products.");
@@ -475,7 +491,7 @@ export default function AdminPage() {
       }
 
       resetForm();
-      loadProducts();
+      loadProducts({ page: productPage, search: searchQuery });
       loadStats();
       setTab("products");
     } catch (err) {
@@ -560,19 +576,6 @@ export default function AdminPage() {
     }
   };
 
-  /* ── Filter products for table ── */
-  const filteredProducts = searchQuery
-    ? products.filter(
-        (p) =>
-          (p.name || "").toLowerCase().includes(searchQuery.toLowerCase()) ||
-          (p.sku || "").toLowerCase().includes(searchQuery.toLowerCase()) ||
-          (p.category || "")
-            .toLowerCase()
-            .includes(searchQuery.toLowerCase()) ||
-          (p.color || "").toLowerCase().includes(searchQuery.toLowerCase()),
-      )
-    : products;
-
   /* ── Auth gate ── */
   if (!authed) return <AdminLogin onAuth={setAuthed} />;
 
@@ -649,6 +652,7 @@ export default function AdminPage() {
               onClick={() => {
                 setTab(t.key);
                 if (t.key === "addproduct" && !editingSku) resetForm();
+                if (t.key === "products") setProductPage(1);
               }}
             >
               {t.icon} {t.label}
@@ -726,7 +730,7 @@ export default function AdminPage() {
                     ...(sub ? { subcategory: sub } : {}),
                   });
                   toast.success(r.message || `Recategorized ${r.updated} products.`);
-                  loadProducts();
+                  loadProducts({ page: productPage, search: searchQuery });
                   loadStats();
                   loadCategories();
                 } catch (err) {
@@ -1272,10 +1276,7 @@ export default function AdminPage() {
           <div className="admin-card">
             <div className="admin-card-header">
               <h3>
-                Product List — showing {products.length}
-                {stats?.total && stats.total > products.length
-                  ? ` of ${stats.total.toLocaleString()}`
-                  : ""}
+                Product List — showing {products.length} of {productTotal.toLocaleString()}
               </h3>
               {products.length > 0 && (
                 <button
@@ -1303,29 +1304,37 @@ export default function AdminPage() {
               </button>
             </div>
 
-            {/* Search within products */}
-            {products.length > 0 && (
-              <div style={{ marginBottom: "1rem" }}>
-                <input
-                  type="text"
-                  placeholder="Search by name, SKU, or category…"
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  style={{
-                    width: "100%",
-                    padding: "0.55rem 0.75rem",
-                    border: "1.5px solid #e5e7eb",
-                    borderRadius: "6px",
-                    fontSize: "0.9rem",
-                    outline: "none",
-                  }}
-                />
-              </div>
-            )}
+            {/* Search across all products (server-side) */}
+            <div style={{ marginBottom: "1rem" }}>
+              <input
+                type="text"
+                placeholder="Search all products by SKU, name, brand, category, subcategory, color…"
+                value={searchQuery}
+                onChange={(e) => {
+                  setSearchQuery(e.target.value);
+                  setProductPage(1);
+                }}
+                style={{
+                  width: "100%",
+                  padding: "0.55rem 0.75rem",
+                  border: "1.5px solid #e5e7eb",
+                  borderRadius: "6px",
+                  fontSize: "0.9rem",
+                  outline: "none",
+                }}
+              />
+              <p className="admin-hint" style={{ marginTop: "0.5rem", marginBottom: 0 }}>
+                {searchQuery
+                  ? `Search results: ${productTotal.toLocaleString()} match(es)`
+                  : `Total products in database: ${productTotal.toLocaleString()}`}
+              </p>
+            </div>
 
             {products.length === 0 ? (
               <p className="admin-hint">
-                No products yet. Upload an Excel file to get started.
+                {searchQuery
+                  ? `No products match "${searchQuery}".`
+                  : "No products yet. Upload an Excel file to get started."}
               </p>
             ) : (
               <div style={{ overflowX: "auto" }}>
@@ -1347,7 +1356,7 @@ export default function AdminPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {filteredProducts.map((p) => {
+                    {products.map((p) => {
                       const salePrice = Number(p.salePrice || p.price) || 0;
                       const rrpVal = Number(p.rrp) || 0;
                       const discPct =
@@ -1462,11 +1471,36 @@ export default function AdminPage() {
                     })}
                   </tbody>
                 </table>
-                {searchQuery && filteredProducts.length === 0 && (
-                  <p className="admin-hint" style={{ marginTop: "0.75rem" }}>
-                    No products match "{searchQuery}".
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                    gap: "0.75rem",
+                    flexWrap: "wrap",
+                    marginTop: "0.9rem",
+                  }}
+                >
+                  <p className="admin-hint" style={{ margin: 0 }}>
+                    Page {productPage} of {productPages}
                   </p>
-                )}
+                  <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
+                    <button
+                      className="btn btn-sm btn-outline"
+                      disabled={productPage <= 1}
+                      onClick={() => setProductPage((p) => Math.max(1, p - 1))}
+                    >
+                      Prev
+                    </button>
+                    <button
+                      className="btn btn-sm btn-outline"
+                      disabled={productPage >= productPages}
+                      onClick={() => setProductPage((p) => Math.min(productPages, p + 1))}
+                    >
+                      Next
+                    </button>
+                  </div>
+                </div>
               </div>
             )}
           </div>

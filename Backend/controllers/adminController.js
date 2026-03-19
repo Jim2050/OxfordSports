@@ -669,6 +669,61 @@ exports.getStats = async (_req, res) => {
         .lean(),
     ]);
 
+    /**
+     * GET /api/admin/products
+     * Admin-only product listing with optional search and inactive inclusion.
+     */
+    exports.getProducts = async (req, res) => {
+      try {
+        const {
+          page = 1,
+          limit = 500,
+          search = "",
+          includeInactive = "true",
+        } = req.query;
+
+        const pageNum = Math.max(1, parseInt(page, 10) || 1);
+        const limitNum = Math.min(2000, Math.max(1, parseInt(limit, 10) || 500));
+        const q = String(search || "").trim();
+
+        const filter = {};
+
+        if (String(includeInactive).toLowerCase() !== "true") {
+          filter.isActive = true;
+        }
+
+        if (q) {
+          const escaped = q.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+          filter.$or = [
+            { sku: { $regex: escaped, $options: "i" } },
+            { name: { $regex: escaped, $options: "i" } },
+            { brand: { $regex: escaped, $options: "i" } },
+            { category: { $regex: escaped, $options: "i" } },
+            { subcategory: { $regex: escaped, $options: "i" } },
+            { color: { $regex: escaped, $options: "i" } },
+          ];
+        }
+
+        const [products, total] = await Promise.all([
+          Product.find(filter)
+            .sort({ updatedAt: -1, createdAt: -1 })
+            .skip((pageNum - 1) * limitNum)
+            .limit(limitNum)
+            .lean(),
+          Product.countDocuments(filter),
+        ]);
+
+        res.json({
+          products,
+          total,
+          page: pageNum,
+          pages: Math.ceil(total / limitNum),
+        });
+      } catch (err) {
+        res.status(500).json({ error: err.message });
+      }
+    };
+
     res.json({
       total,
       underFive,

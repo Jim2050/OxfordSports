@@ -130,6 +130,12 @@ export const exportProducts = () =>
 export const fetchAdminStats = () =>
   API.get("/admin/stats", { headers: adminHeaders() }).then((r) => r.data);
 
+export const fetchAdminProducts = (params = {}) =>
+  API.get("/admin/products", {
+    params,
+    headers: adminHeaders(),
+  }).then((r) => r.data);
+
 export const fixSubcategories = () =>
   API.post("/admin/fix-subcategories", {}, { headers: adminHeaders() }).then(
     (r) => r.data,
