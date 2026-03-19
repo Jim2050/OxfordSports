@@ -114,34 +114,39 @@ const productSchema = new mongoose.Schema(
 );
 
 // ── Pre-save: compute totalQuantity + canonical fields ──
-productSchema.pre("save", function () {
-  if (Array.isArray(this.sizes)) {
-    this.totalQuantity = this.sizes.reduce(
-      (sum, s) => sum + (s.quantity || 0),
-      0,
-    );
-  }
+productSchema.pre("save", function (next) {
+  try {
+    if (Array.isArray(this.sizes)) {
+      this.totalQuantity = this.sizes.reduce(
+        (sum, s) => sum + (s.quantity || 0),
+        0,
+      );
+    }
 
-  this.categoryCanonical = deriveCategoryCanonical(this.category);
-  this.subcategoryCanonical = deriveSubcategoryCanonical(
-    this.categoryCanonical || this.category,
-    this.subcategory,
-  );
-  this.sportCanonical = deriveSportCanonical({
-    name: this.name,
-    description: this.description,
-    category: this.category,
-    subcategory: this.subcategory,
-  });
-  this.genderCanonical = deriveGenderCanonical({
-    rawGender: this.genderCanonical,
-    sku: this.sku,
-    name: this.name,
-    description: this.description,
-    category: this.category,
-    subcategory: this.subcategory,
-  });
-  this.brandCanonical = deriveBrandCanonical(this.brand);
+    this.categoryCanonical = deriveCategoryCanonical(this.category);
+    this.subcategoryCanonical = deriveSubcategoryCanonical(
+      this.categoryCanonical || this.category,
+      this.subcategory,
+    );
+    this.sportCanonical = deriveSportCanonical({
+      name: this.name,
+      description: this.description,
+      category: this.category,
+      subcategory: this.subcategory,
+    });
+    this.genderCanonical = deriveGenderCanonical({
+      rawGender: this.genderCanonical,
+      sku: this.sku,
+      name: this.name,
+      description: this.description,
+      category: this.category,
+      subcategory: this.subcategory,
+    });
+    this.brandCanonical = deriveBrandCanonical(this.brand);
+    next();
+  } catch (error) {
+    next(error);
+  }
 });
 
 // ── Text index for full-text search ──
