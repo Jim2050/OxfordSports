@@ -1763,7 +1763,7 @@ exports.getImportBatches = async (_req, res) => {
  */
 exports.resolveImages = async (req, res) => {
   try {
-    const limit = Math.min(parseInt(req.query?.limit) || 100, 500);
+    const limit = Math.min(parseInt(req.query?.limit) || 100, 10000);
     const concurrency = Math.min(parseInt(req.query?.concurrency) || 3, 5);
 
     // Find products without images
