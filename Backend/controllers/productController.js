@@ -189,7 +189,7 @@ exports.getProducts = async (req, res) => {
     else if (sort === "name_asc") sortObj = { name: 1 };
 
     const pageNum = Math.max(1, parseInt(page));
-    const limitNum = Math.min(500, Math.max(1, parseInt(limit)));
+    const limitNum = Math.min(2000, Math.max(1, parseInt(limit)));
 
     // Aggregate: products WITH images first, then by chosen sort
     const pipeline = [
