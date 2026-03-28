@@ -74,20 +74,27 @@ exports.placeOrder = async (req, res) => {
 
       if (hasSizeStock) {
         // Per-size stock mode using new sizes array
-        const sizeEntry = sizeEntries.find((s) => s.size === size);
+        // Try to find exact size match first
+        let sizeEntry = sizeEntries.find((s) => s.size === size);
+        
+        // If no exact match and user didn't specify size (empty string), use first available size
+        if (!sizeEntry && (!size || size.trim() === "")) {
+          sizeEntry = sizeEntries[0];
+        }
+        
         const available = sizeEntry ? sizeEntry.quantity : 0;
         if (!sizeEntry || available <= 0) {
           return res.status(400).json({
-            error: `Size ${size || "N/A"} is out of stock for ${product.name}.`,
+            error: `Out of stock for ${product.name}.`,
             debug: process.env.NODE_ENV === "production" ? undefined : {
-              message: "No inventory for selected size",
+              message: "No inventory available",
               availableSizes: sizeEntries.map((s) => ({ size: s.size, qty: s.quantity }))
             }
           });
         }
         if (qty > available) {
           return res.status(400).json({
-            error: `Only ${available} of size ${size} available for ${product.name}.`,
+            error: `Only ${available} units available for ${product.name}.`,
           });
         }
         stockUpdates.push({
