@@ -127,10 +127,6 @@ const COLUMN_MAP = {
     "product name",
     "name",
     "title",
-    "item",
-    "description name",
-    "item name",
-    "item description",
   ],
   description: [
     "description",
@@ -299,7 +295,7 @@ function detectMapping(headers) {
     if (skuH) mapping.sku = skuH;
   }
   if (!mapping.name) {
-    const nameH = headers.find((h) => /style|name|title|product/i.test(h));
+    const nameH = headers.find((h) => /^(style|name|title|product\s+name)$/i.test(h) || /^(style|name|title)\s+(desc|description)$/i.test(h));
     if (nameH && nameH !== mapping.sku) mapping.name = nameH;
   }
   if (!mapping.price) {
@@ -880,6 +876,47 @@ exports.importProducts = async (req, res) => {
     debug(
       `[IMPORT] Consolidated ${normalizedRows.length} rows → ${consolidated.length} unique products`,
     );
+
+    // ── Log size consolidation details for debugging Issue #1 ──
+    const sizeConsolidationStats = {
+      productsWithSizes: 0,
+      productsWithOnlyOneSize: 0,
+      productsWithNoSizes: 0,
+      productsWithMultipleSizes: 0,
+      totalSizeVariants: 0,
+      sizeWarnings: 0,
+    };
+    
+    for (const prod of consolidated) {
+      const sizeCount = Array.isArray(prod.sizeEntries) ? prod.sizeEntries.length : 0;
+      if (sizeCount === 0) {
+        sizeConsolidationStats.productsWithNoSizes++;
+      } else if (sizeCount === 1) {
+        sizeConsolidationStats.productsWithOnlyOneSize++;
+        sizeConsolidationStats.productsWithSizes++;
+      } else {
+        sizeConsolidationStats.productsWithMultipleSizes++;
+        sizeConsolidationStats.productsWithSizes++;
+      }
+      sizeConsolidationStats.totalSizeVariants += sizeCount;
+      if (Array.isArray(prod._sizeWarnings) && prod._sizeWarnings.length > 0) {
+        sizeConsolidationStats.sizeWarnings++;
+      }
+    }
+    
+    debug(
+      `[IMPORT] Size consolidation stats: ${sizeConsolidationStats.productsWithSizes} products have sizes, ` +
+      `${sizeConsolidationStats.productsWithMultipleSizes} multi-size, ` +
+      `${sizeConsolidationStats.productsWithNoSizes} no sizes, ` +
+      `${sizeConsolidationStats.sizeWarnings} with warnings`,
+    );
+    
+    if (sizeConsolidationStats.productsWithNoSizes > consolidated.length * 0.7) {
+      console.warn(
+        `[IMPORT WARNING] Most products (${sizeConsolidationStats.productsWithNoSizes}/${consolidated.length}) have NO sizes! ` +
+        `Check: 1) Are sizes in Excel? 2) Is size column being detected? 3) Run diagnostic import.`,
+      );
+    }
 
     // ── Detect workbook-wide brand default ──
     // In the adidas Master sheet, the brand ("adidas") is in the unnamed first
