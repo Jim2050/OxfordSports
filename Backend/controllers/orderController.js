@@ -187,10 +187,14 @@ exports.placeOrder = async (req, res) => {
       if (product) skuMap[sku].product = product;
     }
     // ── Auto-add missing sizes for "must-buy-all" products ──
+    const LOT_CATEGORIES = ["JOB LOTS", "B GRADE", "UNDER £5"];
     for (const [sku, entry] of Object.entries(skuMap)) {
       const product = entry.product;
       if (!product) continue;
       const cat = (product.category || "").toUpperCase();
+      if (LOT_CATEGORIES.includes(cat)) {
+        continue;
+      }
       const isFootwear = cat === "FOOTWEAR";
       const threshold = isFootwear ? FOOTWEAR_THRESHOLD : DEFAULT_THRESHOLD;
       const totalQty = product.totalQuantity || 0;

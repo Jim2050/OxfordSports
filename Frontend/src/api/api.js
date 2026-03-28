@@ -385,13 +385,38 @@ export const MIN_CART_TOTAL = 300;
 export function getMOQInfo(product) {
   const cat = (product?.category || "").toUpperCase();
   const totalQty = getTotalQuantity(product);
+  
+  // LOT categories are indivisible items
+  const LOT_CATEGORIES = ["JOB LOTS", "B GRADE", "UNDER £5"];
+  const isLotCategory = LOT_CATEGORIES.includes(cat);
+  
+  if (isLotCategory) {
+    return {
+      threshold: totalQty,
+      moqStep: 1,
+      mustBuyAll: true,
+      isLot: true,
+      canSelectSizes: false,
+      canCustomizeQty: false,
+      totalQty,
+    };
+  }
+  
+  // Normal products: apply quantity-based thresholds
   const isFootwear = cat === "FOOTWEAR";
-  // "Must-buy-all" thresholds (must match backend FOOTWEAR_THRESHOLD=24, DEFAULT_THRESHOLD=100)
   const mustBuyAllThreshold = isFootwear ? 24 : 100;
-  // MOQ step for quantity validation
   const moqStep = isFootwear ? 12 : 25;
   const mustBuyAll = totalQty > 0 && totalQty < mustBuyAllThreshold;
-  return { threshold: mustBuyAllThreshold, moqStep, mustBuyAll, totalQty };
+  
+  return {
+    threshold: mustBuyAllThreshold,
+    moqStep,
+    mustBuyAll,
+    isLot: false,
+    canSelectSizes: true,
+    canCustomizeQty: true,
+    totalQty,
+  };
 }
 
 /**

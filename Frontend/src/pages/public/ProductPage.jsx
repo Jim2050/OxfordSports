@@ -84,7 +84,7 @@ export default function ProductPage() {
   const isOneSize =
     productSizes.length === 1 &&
     String(productSizes[0]?.size || "").trim().toUpperCase() === "ONE SIZE";
-  const { mustBuyAll } = getMOQInfo(product);
+  const { mustBuyAll, isLot, canSelectSizes, canCustomizeQty } = getMOQInfo(product);
 
   // Quantity step: footwear orders in multiples of 12
   const isFootwear = (product.category || "").toUpperCase() === "FOOTWEAR";
@@ -109,7 +109,14 @@ export default function ProductPage() {
    * - otherwise  → user picks a total qty, sizes distributed by pro rata on backend
    */
   const handleAddToCart = () => {
-    if (mustBuyAll) {
+    if (isLot) {
+      // Lot items: add complete lot as qty=1, no customization
+      addToCart(product, "", 1, true);
+      toast.success(`Complete lot (${totalQty} units) added to cart!`);
+      return;
+    }
+    
+    if (mustBuyAll && !isLot) {
       // Add every size at its full quantity, mark as lot item
       productSizes.forEach((s) => {
         if (s.quantity > 0) addToCart(product, s.size, s.quantity, true);
@@ -240,7 +247,16 @@ export default function ProductPage() {
             )}
 
             {/* ── Size selection for multi-size products (when not mustBuyAll) ── */}
-            {!mustBuyAll && hasSizes && !isOneSize && displaySizes.length > 0 && (
+            {isLot ? (
+                    <div style={{ marginBottom: "1.5rem" }}>
+                      <p style={{ color: "#d9534f", fontWeight: 600, fontSize: "1rem", marginBottom: "0.5rem" }}>
+                        ⚠️ Clearance Lot Item
+                      </p>
+                      <p style={{ color: "#666", fontSize: "0.9rem", marginBottom: "1rem" }}>
+                        This item contains {totalQty} mixed products and must be purchased as a complete lot. No customization available.
+                      </p>
+                    </div>
+                  ) : !mustBuyAll && hasSizes && !isOneSize && displaySizes.length > 0 && (
               <div style={{ marginBottom: "1.5rem" }}>
                 <label
                   htmlFor="size-select"
