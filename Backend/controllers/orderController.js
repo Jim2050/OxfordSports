@@ -1,6 +1,7 @@
 const Order = require("../models/Order");
 const Product = require("../models/Product");
 const nodemailer = require("nodemailer");
+const { isValidSizeCode } = require("../utils/sizeStockUtils");
 
 // ══════════════════════════════════════════
 //  Member: Place an order (from cart)
@@ -77,9 +78,13 @@ exports.placeOrder = async (req, res) => {
         // Try to find exact size match first
         let sizeEntry = sizeEntries.find((s) => s.size === size);
         
-        // If no exact match and user didn't specify size (empty string), use first available size
+        // If no exact match and user didn't specify size (empty string), use first available VALID size
         if (!sizeEntry && (!size || size.trim() === "")) {
-          sizeEntry = sizeEntries[0];
+          sizeEntry = sizeEntries.find((s) => isValidSizeCode(s.size, product.category));
+          if (sizeEntry) {
+            // Update size variable to the auto-selected size for stock deduction
+            size = sizeEntry.size;
+          }
         }
         
         const available = sizeEntry ? sizeEntry.quantity : 0;
@@ -175,8 +180,9 @@ exports.placeOrder = async (req, res) => {
       const totalQty = product.totalQuantity || 0;
       if (totalQty > 0 && totalQty < threshold) {
         // Must buy ALL available sizes — validate the order contains every size
+        // Filter out invalid size codes (NS, N/A, etc.) to avoid false missing sizes
         const availableSizes = (product.sizes || [])
-          .filter((s) => s.quantity > 0)
+          .filter((s) => s.quantity > 0 && isValidSizeCode(s.size, product.category))
           .map((s) => s.size);
         const orderedSizes = new Set(entry.items.map((i) => (i.size || "").trim()));
         const missingSizes = availableSizes.filter((s) => !orderedSizes.has(s));
