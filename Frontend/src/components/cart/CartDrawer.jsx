@@ -141,6 +141,8 @@ export default function CartDrawer() {
                                 updateQuantity(item.sku, item.size, newQty);
                               }
                             }}
+                            disabled={item.quantityLocked || item.lotItem}
+                            title={item.quantityLocked ? "Quantity locked - must purchase all available units" : ""}
                           >
                             −
                           </button>
@@ -151,16 +153,16 @@ export default function CartDrawer() {
                               const step = item.moqStep || 1;
                               updateQuantity(item.sku, item.size, item.quantity + step);
                             }}
-                            disabled={
-                              item.maxStock > 0 && item.quantity >= item.maxStock
-                            }
+                            disabled={item.quantityLocked || item.lotItem || (item.maxStock > 0 && item.quantity >= item.maxStock)}
+                            title={item.quantityLocked ? "Quantity locked - must purchase all available units" : ""}
                           >
                             +
                           </button>
                           <button
                             className="cart-remove-btn"
                             onClick={() => removeFromCart(item.sku, item.size)}
-                            title="Remove"
+                            disabled={item.quantityLocked || item.lotItem}
+                            title={item.quantityLocked ? "Cannot remove - quantity locked for this item" : "Remove"}
                           >
                             🗑
                           </button>

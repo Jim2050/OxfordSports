@@ -106,32 +106,37 @@ export function CartProvider({ children }) {
         // Update existing item
         const updated = [...prev];
         const newQty = updated[idx].quantity + qty;
+        const moqStep = (updated[idx].category || "").toUpperCase() === "FOOTWEAR" ? 12 : 25;
         updated[idx] = {
           ...updated[idx],
           quantity: maxStock > 0 ? Math.min(newQty, maxStock) : newQty,
           maxStock,
           price: itemPrice,
           lotItem: updated[idx].lotItem || lotItem,
+          quantityLocked: maxStock > 0 && maxStock < moqStep,
         };
         return updated;
       }
 
       // New item
+      const moqStep = (product.category || "").toUpperCase() === "FOOTWEAR" ? 12 : 25;
+      const finalQty = maxStock > 0 ? Math.min(qty, maxStock) : qty;
       return [
         ...prev,
         {
           sku: product.sku,
           name: product.name,
           size,
-          quantity: maxStock > 0 ? Math.min(qty, maxStock) : qty,
+          quantity: finalQty,
           price: itemPrice,
           rrp: Number(product.rrp) || 0,
           imageUrl: product.imageUrl || product.image || "",
           maxStock,
           lotItem,
           category: product.category || "",
-          moqStep: (product.category || "").toUpperCase() === "FOOTWEAR" ? 12 : 25,
+          moqStep: moqStep,
           allocatedSize: "", // Will be populated when order returns with allocation info
+          quantityLocked: maxStock > 0 && maxStock < moqStep, // Lock if below MOQ
         },
       ];
     });
@@ -149,6 +154,8 @@ export function CartProvider({ children }) {
     setItems((prev) =>
       prev.map((i) => {
         if (cartKey(i.sku, i.size) !== cartKey(sku, size)) return i;
+        // Prevent updates if quantity is locked (below MOQ threshold)
+        if (i.quantityLocked) return i;
         const clamped = i.maxStock > 0 ? Math.min(newQty, i.maxStock) : newQty;
         return { ...i, quantity: Math.max(1, clamped) };
       }),
