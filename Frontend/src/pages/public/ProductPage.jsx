@@ -326,7 +326,8 @@ export default function ProductPage() {
                   <button
                     className="cart-qty-btn"
                     onClick={() => setOrderQty((q) => Math.max(effectiveMinQty, q - effectiveQtyStep))}
-                    disabled={orderQty <= effectiveMinQty}
+                    disabled={orderQty <= effectiveMinQty || (hasSizes && !isOneSize && selectedSize && selectedSizeQty < qtyStep)}
+                    title={hasSizes && !isOneSize && selectedSize && selectedSizeQty < qtyStep ? "Must purchase all available units" : ""}
                   >
                     −
                   </button>
@@ -338,6 +339,11 @@ export default function ProductPage() {
                     value={orderQty}
                     onChange={(e) => {
                       const v = parseInt(e.target.value) || effectiveMinQty;
+                      // Lock value to exact available qty when below MOQ threshold
+                      if (hasSizes && !isOneSize && selectedSize && selectedSizeQty < qtyStep) {
+                        setOrderQty(selectedSizeQty);
+                        return;
+                      }
                       const rounded = effectiveQtyStep === 1
                         ? Math.max(effectiveMinQty, v)
                         : Math.max(effectiveMinQty, Math.round(v / effectiveQtyStep) * effectiveQtyStep);
@@ -345,6 +351,7 @@ export default function ProductPage() {
                       setOrderQty(maxAvailable > 0 ? Math.min(rounded, maxAvailable) : rounded);
                     }}
                     className="qty-input"
+                    readOnly={hasSizes && !isOneSize && selectedSize && selectedSizeQty < qtyStep}
                   />
                   <button
                     className="cart-qty-btn"
