@@ -40,9 +40,11 @@ async function fixInvalidSizes() {
   try {
     // 1. Connect to MongoDB
     console.log("🔗 Connecting to MongoDB...");
+    console.log(`   URI: ${MONGO_URI.split('@')[0]}@...`);
+    
     await mongoose.connect(MONGO_URI, {
-      useNewUrlParser: true,
-      useUnifiedTopology: true,
+      serverSelectionTimeoutMS: 10000,
+      socketTimeoutMS: 45000,
     });
     console.log("✅ Connected to MongoDB\n");
 
