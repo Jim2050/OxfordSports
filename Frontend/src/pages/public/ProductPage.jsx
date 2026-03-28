@@ -90,6 +90,16 @@ export default function ProductPage() {
   const isFootwear = (product.category || "").toUpperCase() === "FOOTWEAR";
   const qtyStep = isFootwear ? 12 : 25;
 
+  // Get available quantity for selected size (JM1540 fix)
+  const selectedSizeData = selectedSize
+    ? productSizes.find((s) => s.size === selectedSize)
+    : null;
+  const selectedSizeQty = selectedSizeData?.quantity || 0;
+
+  // Override MOQ when selected size < MOQ threshold (ID3752 fix)
+  const effectiveQtyStep = selectedSize && selectedSizeQty < qtyStep ? 1 : qtyStep;
+  const effectiveMinQty = selectedSize && selectedSizeQty < qtyStep ? 1 : qtyStep;
+
   // Check if any variant is in cart
   const anySizeInCart = productSizes.some((s) => isInCart(product.sku, s.size));
 
@@ -117,6 +127,18 @@ export default function ProductPage() {
     // Validate size selection for multi-size products
     if (hasSizes && !isOneSize && !selectedSize) {
       toast.error("Please select a size.");
+      return;
+    }
+    
+    // Validate quantity against selected size's available stock (JM1540)
+    if (hasSizes && !isOneSize && selectedSize && orderQty > selectedSizeQty) {
+      toast.error(`Only ${selectedSizeQty} ${selectedSize} available. You entered ${orderQty}.`);
+      return;
+    }
+    
+    // Validate quantity meets MOQ if size has sufficient stock (ID3752 fix)
+    if (hasSizes && !isOneSize && selectedSize && selectedSizeQty >= qtyStep && orderQty % qtyStep !== 0) {
+      toast.error(`Quantity must be in multiples of ${qtyStep}.`);
       return;
     }
     
@@ -286,41 +308,49 @@ export default function ProductPage() {
                 <div className="qty-selector">
                   <button
                     className="cart-qty-btn"
-                    onClick={() => setOrderQty((q) => Math.max(qtyStep, q - qtyStep))}
-                    disabled={orderQty <= qtyStep}
+                    onClick={() => setOrderQty((q) => Math.max(effectiveMinQty, q - effectiveQtyStep))}
+                    disabled={orderQty <= effectiveMinQty}
                   >
                     −
                   </button>
                   <input
                     type="number"
-                    min={qtyStep}
-                    max={totalQty > 0 ? totalQty : 9999}
-                    step={qtyStep}
+                    min={effectiveMinQty}
+                    max={hasSizes && !isOneSize && selectedSize ? selectedSizeQty : (totalQty > 0 ? totalQty : 9999)}
+                    step={effectiveQtyStep}
                     value={orderQty}
                     onChange={(e) => {
-                      const v = parseInt(e.target.value) || qtyStep;
-                      const rounded = Math.max(qtyStep, Math.round(v / qtyStep) * qtyStep);
-                      setOrderQty(totalQty > 0 ? Math.min(rounded, totalQty) : rounded);
+                      const v = parseInt(e.target.value) || effectiveMinQty;
+                      const rounded = effectiveQtyStep === 1
+                        ? Math.max(effectiveMinQty, v)
+                        : Math.max(effectiveMinQty, Math.round(v / effectiveQtyStep) * effectiveQtyStep);
+                      const maxAvailable = hasSizes && !isOneSize && selectedSize ? selectedSizeQty : totalQty;
+                      setOrderQty(maxAvailable > 0 ? Math.min(rounded, maxAvailable) : rounded);
                     }}
                     className="qty-input"
                   />
                   <button
                     className="cart-qty-btn"
-                    onClick={() =>
+                    onClick={() => {
+                      const maxAvailable = hasSizes && !isOneSize && selectedSize ? selectedSizeQty : totalQty;
                       setOrderQty((q) =>
-                        totalQty > 0 ? Math.min(q + qtyStep, totalQty) : q + qtyStep,
-                      )
-                    }
-                    disabled={totalQty > 0 && orderQty >= totalQty}
+                        maxAvailable > 0 ? Math.min(q + effectiveQtyStep, maxAvailable) : q + effectiveQtyStep,
+                      );
+                    }}
+                    disabled={hasSizes && !isOneSize && selectedSize ? (orderQty >= selectedSizeQty) : (totalQty > 0 && orderQty >= totalQty)}
                   >
                     +
                   </button>
                 </div>
-                {totalQty > 0 && (
+                {(selectedSize && selectedSizeQty > 0) ? (
+                  <span style={{ fontSize: "0.85rem", color: "#0f2d5c", fontWeight: 600 }}>
+                    {selectedSizeQty} {selectedSize} available{selectedSizeQty >= qtyStep && isFootwear ? " (multiples of 12)" : selectedSizeQty < qtyStep && isFootwear ? ` (below MOQ, order available ${selectedSizeQty})` : ""}
+                  </span>
+                ) : totalQty > 0 ? (
                   <span style={{ fontSize: "0.85rem", color: "#6b7280" }}>
                     {totalQty} available{isFootwear ? " (multiples of 12)" : ""}
                   </span>
-                )}
+                ) : null}
               </div>
             )}
 
