@@ -88,7 +88,21 @@ exports.placeOrder = async (req, res) => {
         }
         
         const available = sizeEntry ? sizeEntry.quantity : 0;
-        if (!sizeEntry || available <= 0) {
+        
+        // FALLBACK: If no valid size found but totalQuantity exists, use flat stock mode
+        if (!sizeEntry && product.totalQuantity > 0) {
+          if (qty > product.totalQuantity) {
+            return res.status(400).json({
+              error: `Only ${product.totalQuantity} units available for ${product.name}.`,
+            });
+          }
+          stockUpdates.push({
+            updateOne: {
+              filter: { _id: product._id },
+              update: { $inc: { totalQuantity: -qty } },
+            },
+          });
+        } else if (!sizeEntry || available <= 0) {
           return res.status(400).json({
             error: `Out of stock for ${product.name}.`,
             debug: process.env.NODE_ENV === "production" ? undefined : {
@@ -96,25 +110,25 @@ exports.placeOrder = async (req, res) => {
               availableSizes: sizeEntries.map((s) => ({ size: s.size, qty: s.quantity }))
             }
           });
-        }
-        if (qty > available) {
+        } else if (qty > available) {
           return res.status(400).json({
             error: `Only ${available} units available for ${product.name}.`,
           });
+        } else {
+          stockUpdates.push({
+            updateOne: {
+              filter: {
+                _id: product._id,
+                "sizes.size": size,
+                "sizes.quantity": { $gte: qty },
+                totalQuantity: { $gte: qty },
+              },
+              update: {
+                $inc: { "sizes.$.quantity": -qty, totalQuantity: -qty },
+              },
+            },
+          });
         }
-        stockUpdates.push({
-          updateOne: {
-            filter: {
-              _id: product._id,
-              "sizes.size": size,
-              "sizes.quantity": { $gte: qty },
-              totalQuantity: { $gte: qty },
-            },
-            update: {
-              $inc: { "sizes.$.quantity": -qty, totalQuantity: -qty },
-            },
-          },
-        });
       } else if (product.totalQuantity > 0) {
         // Flat stock mode
         if (qty > product.totalQuantity) {

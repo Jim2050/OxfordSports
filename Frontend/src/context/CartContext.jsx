@@ -62,13 +62,32 @@ export function CartProvider({ children }) {
       const key = cartKey(product.sku, size);
       const idx = prev.findIndex((i) => cartKey(i.sku, i.size) === key);
 
+      // Helper to check if size code is valid (filter out NS, N/A, etc.)
+      const isValidSize = (sizeCode) => {
+        const s = String(sizeCode || "").trim().toUpperCase();
+        const invalid = ["NS", "N/A", "NA", "N.A.", "UNKNOWN", "UNK", "UNSET", "NULL", "NONE", "EMPTY", "TBD", "N", "A", "X"];
+        return !invalid.includes(s) && s.length > 0;
+      };
+
       // Determine max stock for this size from new sizes array or legacy sizeStock
       let maxStock = 0;
       const sizesArr = Array.isArray(product.sizes) ? product.sizes : [];
       if (sizesArr.length > 0 && typeof sizesArr[0] === "object") {
         // New format: [{size, quantity}]
-        const entry = sizesArr.find((s) => s.size === size);
-        maxStock = entry ? entry.quantity : 0;
+        if (size) {
+          // Exact size match requested
+          const entry = sizesArr.find((s) => s.size === size);
+          maxStock = entry ? entry.quantity : 0;
+        } else {
+          // No size specified: sum all valid sizes or use totalQuantity
+          const validSizes = sizesArr.filter((s) => isValidSize(s.size));
+          if (validSizes.length > 0) {
+            maxStock = validSizes.reduce((sum, s) => sum + s.quantity, 0);
+          } else {
+            // All sizes are invalid, fallback to totalQuantity
+            maxStock = product.totalQuantity || 0;
+          }
+        }
       } else if (
         product.sizeStock &&
         Object.keys(product.sizeStock).length > 0
