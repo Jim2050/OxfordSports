@@ -15,11 +15,11 @@ const fs = require("fs");
 const path = require("path");
 const XLSX = require("xlsx");
 const mongoose = require("mongoose");
-const Product = require("./Backend/models/Product");
+const Product = require("./models/Product");
 
 // Import size utilities
-const { parseSizeEntries } = require("./Backend/utils/taxonomyUtils");
-const { normalizeSizeEntries } = require("./Backend/utils/sizeStockUtils");
+const { parseSizeEntries } = require("./utils/taxonomyUtils");
+const { normalizeSizeEntries } = require("./utils/sizeStockUtils");
 
 const DB_URI = process.env.MONGODB_URI || "mongodb://localhost:27017/oxford-sports";
 
@@ -97,7 +97,7 @@ async function main() {
 
     // ── Inspect Recent Import Batch ──
     console.log("── RECENT IMPORT BATCH ANALYSIS ──\n");
-    const ImportBatch = require("./Backend/models/ImportBatch");
+    const ImportBatch = require("./models/ImportBatch");
     const recentBatch = await ImportBatch.findOne().sort({ createdAt: -1 });
 
     if (recentBatch) {

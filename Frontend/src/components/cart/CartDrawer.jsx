@@ -121,7 +121,7 @@ export default function CartDrawer() {
                             whiteSpace: "nowrap",
                           }}
                         >
-                          Lot \u00d7 {item.quantity}
+                          Qty: {item.quantity}
                         </span>
                       ) : (
                         <>
