@@ -184,6 +184,11 @@ exports.updateProduct = async (req, res) => {
       } else {
         product.sizes = [];
       }
+      
+      // LOG: Help debug Issue #3 (edits not saving)
+      if (process.env.NODE_ENV !== "production") {
+        console.log(`[UPDATE] ${sku}: sizes input="${req.body.sizes}" qty=${totalQtyInput} → result=${JSON.stringify(product.sizes)}`);
+      }
     }
 
     // Recompute totalQuantity
@@ -192,11 +197,20 @@ exports.updateProduct = async (req, res) => {
       0,
     );
 
-    await product.save();
+    const savedProduct = await product.save();
+    
+    if (!savedProduct) {
+      return res.status(500).json({ error: "Product save returned null - validation may have failed." });
+    }
 
-    res.json({ success: true, product, updated: 1 });
+    res.json({ success: true, product: savedProduct, updated: 1 });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    // Enhanced error logging for debugging
+    console.error(`[ERROR] updateProduct failed:`, err.message, err.stack);
+    res.status(500).json({ 
+      error: err.message,
+      details: process.env.NODE_ENV === "production" ? undefined : err.stack
+    });
   }
 };
 

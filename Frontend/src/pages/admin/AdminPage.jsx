@@ -417,22 +417,54 @@ export default function AdminPage() {
   };
 
   const startEdit = (product) => {
+    if (!product) {
+      console.error("[AdminPage] startEdit called with null product");
+      return;
+    }
+
     const sizesArr = Array.isArray(product.sizes) ? product.sizes : [];
+    
+    // Filter out "ONE SIZE" but keep ALL other sizes with their quantities
     const visibleSizesArr = sizesArr.filter((s) => {
       const label = typeof s === "object" ? s.size : s;
       return String(label || "").trim().toUpperCase() !== "ONE SIZE";
     });
+
+    // Format sizes for editing: if we have {size, quantity} objects, show "S(qty), M(qty)" format
+    // This makes it clear to admin what qty each size has
     let sizesStr = "";
     let qtyStr = "";
-    if (visibleSizesArr.length > 0 && typeof visibleSizesArr[0] === "object") {
-      sizesStr = visibleSizesArr.map((s) => s.size).join(", ");
-      qtyStr = visibleSizesArr
-        .reduce((sum, s) => sum + (s.quantity || 0), 0)
-        .toString();
+    
+    if (visibleSizesArr.length > 0) {
+      if (typeof visibleSizesArr[0] === "object" && visibleSizesArr[0].quantity !== undefined) {
+        // Format: "M(5), L(3), XL(1)" - shows qty per size
+        sizesStr = visibleSizesArr
+          .map((s) => `${s.size}(${s.quantity || 0})`)
+          .join(", ");
+        // Total qty for reference
+        qtyStr = visibleSizesArr
+          .reduce((sum, s) => sum + (s.quantity || 0), 0)
+          .toString();
+        
+        // Log for debugging Issue #4
+        console.log(
+          `[AdminPage] Editing ${product.sku}: sizes="${sizesStr}" total_qty=${qtyStr}`,
+        );
+      } else {
+        // Fallback for old format (just strings)
+        sizesStr = visibleSizesArr.join(", ");
+        qtyStr = (product.totalQuantity || product.quantity || "").toString();
+      }
+    } else if (sizesArr.length > 0) {
+      // All sizes are "ONE SIZE"
+      const oneSize = sizesArr.find((s) => String(s?.size || "").trim().toUpperCase() === "ONE SIZE");
+      if (oneSize) {
+        qtyStr = (oneSize.quantity || product.totalQuantity || 0).toString();
+      }
     } else {
-      sizesStr = visibleSizesArr.join(", ");
       qtyStr = (product.totalQuantity || product.quantity || "").toString();
     }
+
     setProductForm({
       sku: product.sku || "",
       name: product.name || "",
@@ -471,13 +503,19 @@ export default function AdminPage() {
     try {
       let savedProduct;
       if (editingSku) {
-        const res = await updateProduct(editingSku, productForm);
-        savedProduct = res.product;
-        toast.success("Product updated.");
+        try {
+          const res = await updateProduct(editingSku, productForm);
+          savedProduct = res.product;
+          toast.success("Product updated successfully.");
+        } catch (updateErr) {
+          const errorMsg = updateErr?.response?.data?.error || updateErr?.response?.data?.details || updateErr.message || "Failed to update product.";
+          console.error("[AdminPage] Update error:", errorMsg);
+          throw updateErr;
+        }
       } else {
         const res = await addProduct(productForm);
         savedProduct = res.product;
-        toast.success("Product added.");
+        toast.success("Product added successfully.");
       }
 
       // Upload image if one was dragged onto the form
@@ -486,6 +524,7 @@ export default function AdminPage() {
           await uploadProductImage(savedProduct.sku, productImageFile);
           toast.success("Image uploaded successfully.");
         } catch (imgErr) {
+          console.error("[AdminPage] Image upload error:", imgErr);
           toast.error("Product saved but image upload failed: " + (imgErr?.response?.data?.error || imgErr.message));
         }
       }
@@ -495,7 +534,9 @@ export default function AdminPage() {
       loadStats();
       setTab("products");
     } catch (err) {
-      toast.error(err?.response?.data?.error || "Failed to save product.");
+      const displayError = err?.response?.data?.error || err.message || "Failed to save product.";
+      console.error("[AdminPage] Save failed:", displayError, err);
+      toast.error(displayError);
     } finally {
       setFormLoading(false);
     }

@@ -24,6 +24,7 @@ exports.placeOrder = async (req, res) => {
     // ── Validate each item against DB stock ──
     const orderItems = [];
     const stockUpdates = []; // bulk ops to deduct stock
+    const stockDebug = []; // for logging
 
     // ── MOQ thresholds (must match frontend api.js) ──
     const FOOTWEAR_THRESHOLD = 24;
@@ -45,7 +46,10 @@ exports.placeOrder = async (req, res) => {
       if (!product) {
         return res
           .status(404)
-          .json({ error: `Product ${item.sku} not found.` });
+          .json({ 
+            error: `Product ${item.sku} not found.`,
+            details: `Product not found in database. Check SKU spelling or if product is active.` 
+          });
       }
 
       const qty = parseInt(item.quantity);
@@ -56,6 +60,18 @@ exports.placeOrder = async (req, res) => {
       const hasSizeStock =
         sizeEntries.length > 0 && sizeEntries.some((s) => s.quantity > 0);
 
+      // Log for debugging Issue #5
+      stockDebug.push({
+        sku: product.sku,
+        name: product.name,
+        requestedQty: qty,
+        requestedSize: size || "N/A",
+        hasSizeData: sizeEntries.length > 0,
+        sizeEntries: sizeEntries.map((s) => ({ size: s.size, qty: s.quantity })),
+        totalQuantity: product.totalQuantity,
+        hasSizeStock,
+      });
+
       if (hasSizeStock) {
         // Per-size stock mode using new sizes array
         const sizeEntry = sizeEntries.find((s) => s.size === size);
@@ -63,6 +79,10 @@ exports.placeOrder = async (req, res) => {
         if (!sizeEntry || available <= 0) {
           return res.status(400).json({
             error: `Size ${size || "N/A"} is out of stock for ${product.name}.`,
+            debug: process.env.NODE_ENV === "production" ? undefined : {
+              message: "No inventory for selected size",
+              availableSizes: sizeEntries.map((s) => ({ size: s.size, qty: s.quantity }))
+            }
           });
         }
         if (qty > available) {
@@ -96,6 +116,11 @@ exports.placeOrder = async (req, res) => {
             update: { $inc: { totalQuantity: -qty } },
           },
         });
+      } else {
+        // No stock data — log warning
+        console.warn(
+          `[ORDER] No stock info for ${product.sku}: no sizes array and totalQuantity=0. May need diagnostic.`,
+        );
       }
       // If totalQuantity == 0, we allow ordering (wholesale — no strict stock enforcement)
 
