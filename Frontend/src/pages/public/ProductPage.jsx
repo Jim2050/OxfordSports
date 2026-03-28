@@ -20,6 +20,8 @@ export default function ProductPage() {
   const [loading, setLoading] = useState(true);
   // Total qty the customer wants to order
   const [orderQty, setOrderQty] = useState(1);
+  // Size selection for multi-size products
+  const [selectedSize, setSelectedSize] = useState("");
   const { addToCart, isInCart, openDrawer } = useCart();
 
   useEffect(() => {
@@ -106,12 +108,19 @@ export default function ProductPage() {
       return;
     }
 
-    // Single total-qty ordering  
+    // Single total-qty ordering
     if (orderQty <= 0) {
       toast.error("Enter a quantity.");
       return;
     }
-    addToCart(product, isOneSize ? productSizes[0].size : "", orderQty);
+    
+    // Validate size selection for multi-size products
+    if (hasSizes && !isOneSize && !selectedSize) {
+      toast.error("Please select a size.");
+      return;
+    }
+    
+    addToCart(product, isOneSize ? productSizes[0].size : selectedSize, orderQty);
     toast.success(`${orderQty} × ${product.name} added to cart!`);
   };
 
@@ -205,6 +214,48 @@ export default function ProductPage() {
                     </span>
                   ))}
                 </div>
+              </div>
+            )}
+
+            {/* ── Size selection for multi-size products (when not mustBuyAll) ── */}
+            {!mustBuyAll && hasSizes && !isOneSize && displaySizes.length > 0 && (
+              <div style={{ marginBottom: "1.5rem" }}>
+                <label
+                  htmlFor="size-select"
+                  style={{
+                    display: "block",
+                    marginBottom: "0.5rem",
+                    fontWeight: 600,
+                    color: "#0f2d5c",
+                  }}
+                >
+                  Select Size:
+                </label>
+                <select
+                  id="size-select"
+                  value={selectedSize}
+                  onChange={(e) => setSelectedSize(e.target.value)}
+                  style={{
+                    padding: "0.5rem 0.75rem",
+                    border: "1px solid #d1d5db",
+                    borderRadius: "0.375rem",
+                    fontSize: "1rem",
+                    width: "100%",
+                    maxWidth: "200px",
+                    backgroundColor: selectedSize ? "#fff" : "#f9fafb",
+                  }}
+                >
+                  <option value="">-- Select a size --</option>
+                  {displaySizes.map((s) => (
+                    <option
+                      key={s.size}
+                      value={s.size}
+                      disabled={s.quantity === 0}
+                    >
+                      {s.size}{s.quantity === 0 ? " (out of stock)" : ` (${s.quantity})`}
+                    </option>
+                  ))}
+                </select>
               </div>
             )}
 

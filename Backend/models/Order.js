@@ -13,6 +13,7 @@ const orderItemSchema = new mongoose.Schema(
     sku: { type: String, required: true },
     name: { type: String, required: true },
     size: { type: String, default: "" },
+    allocatedSize: { type: String, default: "" }, // Track backend auto-selected size
     quantity: { type: Number, required: true, min: 1 },
     unitPrice: { type: Number, required: true, min: 0 },
     lineTotal: { type: Number, required: true, min: 0 },

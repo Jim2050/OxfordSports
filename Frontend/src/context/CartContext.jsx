@@ -131,6 +131,7 @@ export function CartProvider({ children }) {
           lotItem,
           category: product.category || "",
           moqStep: (product.category || "").toUpperCase() === "FOOTWEAR" ? 12 : 25,
+          allocatedSize: "", // Will be populated when order returns with allocation info
         },
       ];
     });

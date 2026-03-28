@@ -151,11 +151,14 @@ exports.placeOrder = async (req, res) => {
       // If totalQuantity == 0, we allow ordering (wholesale — no strict stock enforcement)
 
       const unitPrice = product.salePrice;
+      // Track if backend auto-selected this size
+      const wasAllocated = !item.size && size; // user didn't specify, backend picked it
       orderItems.push({
         product: product._id,
         sku: product.sku,
         name: product.name,
         size,
+        allocatedSize: wasAllocated ? size : "", // Set if auto-allocated
         quantity: qty,
         unitPrice,
         lineTotal: +(unitPrice * qty).toFixed(2),
@@ -243,12 +246,18 @@ exports.placeOrder = async (req, res) => {
       notes: notes || "",
     });
 
-    // ── Send order confirmation email (non-blocking) ──
-    sendOrderEmail(order).catch((err) =>
-      console.error("Order email error:", err.message),
-    );
+    // ── Send order confirmation email with error handling ──
+    let emailStatus = { sent: false };
+    try {
+      await sendOrderEmail(order);
+      emailStatus.sent = true;
+    } catch (emailErr) {
+      emailStatus.sent = false;
+      emailStatus.error = emailErr.message;
+      console.error(`[ORDER EMAIL FAILED] Order ${order.orderNumber}:`, emailErr.message);
+    }
 
-    res.status(201).json({ success: true, order });
+    res.status(201).json({ success: true, order, emailStatus });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -256,18 +265,15 @@ exports.placeOrder = async (req, res) => {
 
 /**
  * Send order confirmation email to admin + customer.
+ * Throws error if SMTP fails; caller should handle with try-catch.
  */
 async function sendOrderEmail(order) {
   const smtpUser = process.env.SMTP_USER;
   const smtpPass = process.env.SMTP_PASS;
+  
+  // Early return if SMTP not configured
   if (!smtpUser || !smtpPass) {
-    console.log(`[ORDER EMAIL] SMTP not configured — skipping email for ${order.orderNumber}`);
-    console.log(`  Customer: ${order.customerName} <${order.customerEmail}>`);
-    console.log(`  Phone: ${order.customerPhone || "N/A"}`);
-    console.log(`  Address: ${order.deliveryAddress || "N/A"}`);
-    console.log(`  Total: £${order.totalAmount.toFixed(2)}`);
-    console.log(`  Items: ${order.items.length}`);
-    return;
+    throw new Error("SMTP not configured. Email delivery disabled.");
   }
 
   const transporter = nodemailer.createTransport({
@@ -281,15 +287,18 @@ async function sendOrderEmail(order) {
 
   const itemRows = order.items
     .map(
-      (i) =>
-        `<tr>
+      (i) => {
+        // Show allocatedSize info in email when applicable
+        const sizeDisplay = i.allocatedSize ? `${i.size} (auto)` : (i.size || "—");
+        return `<tr>
           <td style="padding:6px 10px;border:1px solid #e5e7eb;">${i.name}</td>
           <td style="padding:6px 10px;border:1px solid #e5e7eb;">${i.sku}</td>
-          <td style="padding:6px 10px;border:1px solid #e5e7eb;">${i.size || "—"}</td>
+          <td style="padding:6px 10px;border:1px solid #e5e7eb;">${sizeDisplay}</td>
           <td style="padding:6px 10px;border:1px solid #e5e7eb;text-align:center;">${i.quantity}</td>
           <td style="padding:6px 10px;border:1px solid #e5e7eb;text-align:right;">£${i.unitPrice.toFixed(2)}</td>
           <td style="padding:6px 10px;border:1px solid #e5e7eb;text-align:right;">£${i.lineTotal.toFixed(2)}</td>
-        </tr>`,
+        </tr>`;
+      }
     )
     .join("");
 
@@ -329,22 +338,29 @@ async function sendOrderEmail(order) {
 
   const subject = `Order ${order.orderNumber} — £${order.totalAmount.toFixed(2)} — ${order.customerName}`;
 
-  // Send to admin
-  await transporter.sendMail({
-    from: `"Oxford Sports" <${smtpUser}>`,
-    to: adminEmail,
-    subject: `[NEW ORDER] ${subject}`,
-    html,
-  });
-
-  // Send confirmation to customer
-  if (order.customerEmail) {
+  // Wrap email sending in try-catch with detailed logging
+  try {
+    // Send to admin
     await transporter.sendMail({
       from: `"Oxford Sports" <${smtpUser}>`,
-      to: order.customerEmail,
-      subject: `Order Confirmed — ${order.orderNumber}`,
+      to: adminEmail,
+      subject: `[NEW ORDER] ${subject}`,
       html,
     });
+
+    // Send confirmation to customer
+    if (order.customerEmail) {
+      await transporter.sendMail({
+        from: `"Oxford Sports" <${smtpUser}>`,
+        to: order.customerEmail,
+        subject: `Order Confirmed — ${order.orderNumber}`,
+        html,
+      });
+    }
+    console.log(`[ORDER EMAIL SUCCESS] ${order.orderNumber} sent to ${order.customerEmail}`);
+  } catch (mailErr) {
+    console.error(`[ORDER EMAIL ERROR] ${order.orderNumber}:`, mailErr.message);
+    throw mailErr; // Bubble up for caller to handle
   }
 }
 

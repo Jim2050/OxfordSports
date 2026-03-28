@@ -102,11 +102,16 @@ export default function CartDrawer() {
                     />
                     <div className="cart-item-info">
                       <p className="cart-item-name">{item.name}</p>
-                      {item.size && (
-                        <span className="cart-item-size">
-                          Size: {item.size}
-                        </span>
-                      )}
+                      {/* Display size with allocation status */}
+                      <span className="cart-item-size">
+                        {item.allocatedSize && item.allocatedSize !== item.size ? (
+                          <>Size: {item.allocatedSize} (auto-allocated)</>
+                        ) : item.size ? (
+                          <>Size: {item.size}</>
+                        ) : (
+                          <>Size: Auto-select (first available)</>
+                        )}
+                      </span>
                       <span className="cart-item-price">
                         £{item.price.toFixed(2)}
                       </span>
