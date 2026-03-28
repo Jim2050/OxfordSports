@@ -386,9 +386,12 @@ export function getMOQInfo(product) {
   const cat = (product?.category || "").toUpperCase();
   const totalQty = getTotalQuantity(product);
   const isFootwear = cat === "FOOTWEAR";
-  const threshold = isFootwear ? 12 : 25;
-  const mustBuyAll = totalQty > 0 && totalQty < threshold;
-  return { threshold, mustBuyAll, totalQty };
+  // "Must-buy-all" thresholds (must match backend FOOTWEAR_THRESHOLD=24, DEFAULT_THRESHOLD=100)
+  const mustBuyAllThreshold = isFootwear ? 24 : 100;
+  // MOQ step for quantity validation
+  const moqStep = isFootwear ? 12 : 25;
+  const mustBuyAll = totalQty > 0 && totalQty < mustBuyAllThreshold;
+  return { threshold: mustBuyAllThreshold, moqStep, mustBuyAll, totalQty };
 }
 
 /**
