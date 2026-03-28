@@ -54,7 +54,8 @@ exports.placeOrder = async (req, res) => {
       }
 
       const qty = parseInt(item.quantity);
-      const size = (item.size || "").trim();
+      const incomingSize = (item.size || "").trim();
+      let size = incomingSize; // Will be updated if auto-allocated
 
       // ── Stock validation ──
       const sizeEntries = Array.isArray(product.sizes) ? product.sizes : [];
@@ -75,11 +76,14 @@ exports.placeOrder = async (req, res) => {
 
       if (hasSizeStock) {
         // Per-size stock mode using new sizes array
-        // Try to find exact size match first
-        let sizeEntry = sizeEntries.find((s) => s.size === size);
+        // Normalize the incoming size for consistent matching
+        const normalizedIncomingSize = size.trim();
+        
+        // Try to find exact size match first (with trimmed comparison)
+        let sizeEntry = sizeEntries.find((s) => s.size && s.size.trim() === normalizedIncomingSize);
         
         // If no exact match and user didn't specify size (empty string), use first available VALID size
-        if (!sizeEntry && (!size || size.trim() === "")) {
+        if (!sizeEntry && (!normalizedIncomingSize || normalizedIncomingSize === "")) {
           sizeEntry = sizeEntries.find((s) => isValidSizeCode(s.size, product.category));
           if (sizeEntry) {
             // Update size variable to the auto-selected size for stock deduction
@@ -119,7 +123,7 @@ exports.placeOrder = async (req, res) => {
             updateOne: {
               filter: {
                 _id: product._id,
-                "sizes.size": size,
+                "sizes.size": sizeEntry.size,  // Use the matched entry's size value directly
                 "sizes.quantity": { $gte: qty },
                 totalQuantity: { $gte: qty },
               },
@@ -151,8 +155,8 @@ exports.placeOrder = async (req, res) => {
       // If totalQuantity == 0, we allow ordering (wholesale — no strict stock enforcement)
 
       const unitPrice = product.salePrice;
-      // Track if backend auto-selected this size
-      const wasAllocated = !item.size && size; // user didn't specify, backend picked it
+      // Track if backend auto-selected this size (only auto-select if user didn't provide one)
+      const wasAllocated = !incomingSize && size && size !== incomingSize;
       orderItems.push({
         product: product._id,
         sku: product.sku,
@@ -200,7 +204,7 @@ exports.placeOrder = async (req, res) => {
         // Filter out invalid size codes (NS, N/A, etc.) to avoid false missing sizes
         const availableSizes = (product.sizes || [])
           .filter((s) => s.quantity > 0 && isValidSizeCode(s.size, product.category))
-          .map((s) => s.size);
+          .map((s) => s.size.trim()); // Trim database sizes for consistent comparison
         const orderedSizes = new Set(entry.items.map((i) => (i.size || "").trim()));
         const missingSizes = availableSizes.filter((s) => !orderedSizes.has(s));
         if (missingSizes.length > 0) {
