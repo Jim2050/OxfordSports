@@ -19,7 +19,7 @@ const {
   deriveSubcategoryCanonical,
   parseSizeEntries,
 } = require("../utils/taxonomyUtils");
-const { normalizeSizeEntries, isValidSizeCode } = require("../utils/sizeStockUtils");
+const { normalizeSizeEntries } = require("../utils/sizeStockUtils");
 
 function normalizeImportedSubcategory(category, subcategory, name, description = "") {
   const cat = String(category || "").trim().toUpperCase();
@@ -533,20 +533,6 @@ function consolidateBySku(rows) {
     const rowSizes = parsedSizes.entries;
     const normalizedRowSizes = normalizeSizeEntries(rowSizes, row.category);
     
-    // ── PHASE 2: Validate and filter invalid size codes ──
-    const validRowSizes = normalizedRowSizes.filter(
-      (s) => isValidSizeCode(s.size, row.category)
-    );
-    const invalidSizesFound = normalizedRowSizes.length > 0 && validRowSizes.length < normalizedRowSizes.length;
-    
-    // If all sizes are invalid, convert to ONE SIZE
-    let finalRowSizes = validRowSizes;
-    if (normalizedRowSizes.length > 0 && validRowSizes.length === 0) {
-      const totalQtyAllSizes = normalizedRowSizes.reduce((sum, s) => sum + (s.quantity || 0), 0);
-      finalRowSizes = [{ size: "ONE SIZE", quantity: totalQtyAllSizes }];
-      debug(`[IMPORT] Row ${sku}: All sizes invalid → converted to ONE SIZE(${totalQtyAllSizes})`);
-    }
-    
     const droppedDuringNormalization =
       rawSizeProvided && rowSizes.length > 0 && normalizedRowSizes.length < rowSizes.length;
     const strictSizeFailure =
@@ -578,7 +564,7 @@ function consolidateBySku(rows) {
       existing._rawSizeProvided = existing._rawSizeProvided || rawSizeProvided;
       existing._sizeParseFailed = existing._sizeParseFailed || strictSizeFailure;
 
-      if (rawSizeProvided && rowSizes.length > 0 && finalRowSizes.length === 0) {
+      if (rawSizeProvided && rowSizes.length > 0 && normalizedRowSizes.length === 0) {
         existing._sizeWarnings = existing._sizeWarnings || [];
         existing._sizeWarnings.push("All parsed sizes were rejected by validation/normalization rules");
       }

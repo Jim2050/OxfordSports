@@ -301,17 +301,6 @@ export function getTotalQuantity(product) {
  * Get sizes array in normalized format: [{size, quantity}]
  */
 export function getSizes(product) {
-  // Helper: Check if a size code is valid (not a placeholder/unknown value)
-  const isValidSize = (sizeStr) => {
-    const text = String(sizeStr || "").trim().toUpperCase();
-    // Reject known invalid/placeholder codes
-    const INVALID_PATTERNS = /^(NS|N\/A|NA|UNKNOWN|UNK|UNSET|NULL|NONE|EMPTY|TBD|—|\?|\.+)$/;
-    if (INVALID_PATTERNS.test(text)) return false;
-    // Reject if it doesn't have at least one alphanumeric character
-    if (!/[a-z0-9]/i.test(text)) return false;
-    return true;
-  };
-
   const normalizeDisplaySizeLabel = (rawSize) => {
     const text = String(rawSize || "")
       .replace(/[\u2212\u2012\u2013\u2014\u2015]/g, "-")
@@ -358,8 +347,6 @@ export function getSizes(product) {
     for (const entry of expanded) {
       const size = normalizeDisplaySizeLabel(entry?.size);
       if (!size) continue;
-      // SAFETY CHECK: Skip invalid size codes
-      if (!isValidSize(size)) continue;
       const quantity = Number(entry?.quantity) || 0;
       if (quantity <= 0) continue;
       merged.set(size, (merged.get(size) || 0) + quantity);
@@ -376,11 +363,7 @@ export function getSizes(product) {
       size: String(s),
       quantity: sizeStock[String(s)] || 0,
     }))
-    .filter((entry) => {
-      // SAFETY CHECK: Also filter out invalid codes in legacy format
-      if (!entry.size.trim()) return false;
-      return isValidSize(entry.size);
-    });
+    .filter((entry) => entry.size.trim() !== "");
 }
 
 // ═══════════════════════════════════════════════════════════════

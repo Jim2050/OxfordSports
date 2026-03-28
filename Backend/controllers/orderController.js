@@ -1,7 +1,6 @@
 const Order = require("../models/Order");
 const Product = require("../models/Product");
 const nodemailer = require("nodemailer");
-const { isValidSizeCode } = require("../utils/sizeStockUtils");
 
 // ══════════════════════════════════════════
 //  Member: Place an order (from cart)
@@ -57,22 +56,7 @@ exports.placeOrder = async (req, res) => {
       const size = (item.size || "").trim();
 
       // ── Stock validation ──
-      let sizeEntries = Array.isArray(product.sizes) ? product.sizes : [];
-      
-      // Safety check: Filter out invalid size codes
-      const validSizeEntries = sizeEntries.filter(s => isValidSizeCode(s.size, product.category));
-      if (sizeEntries.length > 0 && validSizeEntries.length === 0) {
-        // All sizes are invalid placeholders - product should not allow checkout
-        console.error(`[Safety Check] Product ${product.sku} has only invalid size codes:`, sizeEntries.map(s => s.size));
-        return res.status(400).json({
-          error: `Product ${product.name} has invalid size configuration. Please contact support.`,
-          details: `Product inventory requires manual review.`
-        });
-      }
-      
-      // Use only valid sizes for checkout
-      sizeEntries = validSizeEntries.length > 0 ? validSizeEntries : sizeEntries;
-      
+      const sizeEntries = Array.isArray(product.sizes) ? product.sizes : [];
       const hasSizeStock =
         sizeEntries.length > 0 && sizeEntries.some((s) => s.quantity > 0);
 
