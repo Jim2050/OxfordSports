@@ -256,7 +256,24 @@ export default function ProductPage() {
                 <select
                   id="size-select"
                   value={selectedSize}
-                  onChange={(e) => setSelectedSize(e.target.value)}
+                  onChange={(e) => {
+                    const newSize = e.target.value;
+                    setSelectedSize(newSize);
+                    
+                    // Auto-update quantity when size is selected (ID3752 auto-populate)
+                    if (newSize) {
+                      const sizeData = productSizes.find((s) => s.size === newSize);
+                      if (sizeData) {
+                        // If size qty < MOQ, auto-set to available qty
+                        if (sizeData.quantity < qtyStep) {
+                          setOrderQty(sizeData.quantity);
+                        } else {
+                          // If size qty >= MOQ, auto-set to MOQ minimum
+                          setOrderQty(qtyStep);
+                        }
+                      }
+                    }
+                  }}
                   style={{
                     padding: "0.5rem 0.75rem",
                     border: "1px solid #d1d5db",
