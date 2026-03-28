@@ -179,8 +179,57 @@ function parseSizesInput(sizesInput, totalQuantity, category = "") {
   return normalizeSizeEntries(entries, category);
 }
 
+/**
+ * Validate if a size code is valid (not placeholder/unknown)
+ * Rejects: NS, N/A, NA, UNKNOWN, UNK, NULL, EMPTY, etc.
+ * Returns: true if size is valid, false if invalid
+ */
+function isValidSizeCode(sizeStr, category = "") {
+  const size = String(sizeStr || "").trim();
+
+  // Known invalid placeholder patterns
+  const INVALID_PATTERNS = [
+    /^NS$/i,
+    /^N\/A$/i,
+    /^NA$/i,
+    /^N\.A\.$/i,
+    /^UNKNOWN$/i,
+    /^UNK$/i,
+    /^UNSET$/i,
+    /^NULL$/i,
+    /^NONE$/i,
+    /^EMPTY$/i,
+    /^TBD$/i,
+    /^N$/,
+    /^A$/,
+    /^X$/, 
+    /^—+$/,
+    /^\?+$/,
+    /^\.+$/,
+    /^\s*$/, // whitespace only
+  ];
+
+  // Check each invalid pattern
+  if (INVALID_PATTERNS.some((pattern) => pattern.test(size))) {
+    return false;
+  }
+
+  // Must have at least some alphanumeric content
+  if (!/[a-z0-9]/i.test(size)) {
+    return false;
+  }
+
+  // Must not be ONLY special characters
+  if (!/[a-z0-9\s]/i.test(size)) {
+    return false;
+  }
+
+  return true;
+}
+
 module.exports = {
   normalizeFootwearSizeLabel,
   normalizeSizeEntries,
   parseSizesInput,
+  isValidSizeCode,
 };
