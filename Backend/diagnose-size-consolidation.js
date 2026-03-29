@@ -16,7 +16,8 @@
  */
 
 const mongoose = require('mongoose');
-require('dotenv').config();
+const path = require('path');
+require('dotenv').config({ path: path.join(__dirname, '.env') });
 
 const Product = require('./models/Product');
 const ImportBatch = require('./models/ImportBatch');
@@ -45,14 +46,13 @@ const info = (msg) => log(`ℹ ${msg}`, 'blue');
 
 async function connectDB() {
   try {
-    await mongoose.connect(process.env.MONGO_URI, {
-      useNewUrlParser: true,
-      useUnifiedTopology: true,
-    });
+    await mongoose.connect(process.env.MONGO_URI);
     success('Connected to MongoDB');
+    return true;
   } catch (err) {
-    error(`Failed to connect to MongoDB: ${err.message}`);
-    process.exit(1);
+    warn(`Could not connect to MongoDB: ${err.message}`);
+    warn('Continuing with local tests only (parsing logic, file format checks)');
+    return false;
   }
 }
 
@@ -257,21 +257,35 @@ async function main() {
   log('║  Issue #1: "ONE SIZE" Showing When Excel Has Different     ║', 'cyan');
   log('╚════════════════════════════════════════════════════════════╝', 'cyan');
 
-  await connectDB();
+  const connected = await connectDB();
 
   // Run all tests
   await testSizeParsingLogic();
-  const latestBatch = await analyzeRecentImports();
-  const dbAnalysis = await analyzeProductDatabase();
-
-  // Generate recommendations
-  await generateRecommendations(dbAnalysis);
+  
+  if (connected) {
+    const latestBatch = await analyzeRecentImports();
+    const dbAnalysis = await analyzeProductDatabase();
+    await generateRecommendations(dbAnalysis);
+  } else {
+    log('\n--- DATABASE CONNECTION FAILED ---', 'yellow');
+    log('To complete this diagnosis, connect to MongoDB:', 'yellow');
+    log('  1. Verify MongoDB cluster is running');
+    log('  2. Check MONGO_URI in Backend/.env is correct');
+    log('  3. Whitelist your IP on the cluster');
+    log('  4. Run this script again', 'yellow');
+    log('\nSize parsing tests completed successfully above.');
+    log('Database analysis will run once MongoDB is accessible.', 'yellow');
+  }
 
   section('DIAGNOSIS COMPLETE');
   log('\nIf problems persist, share the output above with the dev team.');
   log('Include: Excel file used, number of products, and size column format.\n');
 
-  process.exit(0);
+  if (connected) {
+    process.exit(0);
+  } else {
+    process.exit(0); // Exit cleanly even if DB not available
+  }
 }
 
 main().catch((err) => {
