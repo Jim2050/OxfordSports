@@ -304,22 +304,37 @@ exports.placeOrder = async (req, res) => {
       notes: notes || "",
     });
 
-    // ── Email sending temporarily disabled for SMTP troubleshooting ──
-    // Mark email as sent to unblock order flow
-    // Will re-enable after SMTP is configured
-    let emailStatus = { sent: true, queued: true };
+    // ── Send order confirmation email in background (non-blocking) ──
+    let emailStatus = { sent: false };
     
-    // Update order as email sent immediately
-    Order.findByIdAndUpdate(
-      order._id,
-      { emailSent: true, emailSentAt: new Date(), emailError: "" },
-      { new: true }
-    ).catch((err) => {
-      console.warn(`[ORDER EMAIL] Failed to update emailSent flag: ${err.message}`);
-    });
-    
-    console.log(`[ORDER EMAIL] Email queued (temporary bypass mode) for order ${order.orderNumber}`);
-    console.log(`[ORDER EMAIL SUCCESS] Order ${order.orderNumber} marked as processed`);
+    // Queue email using isolated queue system - won't affect main app performance
+    const emailQueue = getEmailQueue();
+    emailQueue.add(() => sendOrderEmail(order))
+      .then(() => {
+        emailStatus.sent = true;
+        // Update order with successful email delivery
+        Order.findByIdAndUpdate(
+          order._id,
+          { emailSent: true, emailSentAt: new Date(), emailError: "" },
+          { new: true }
+        ).catch((err) => {
+          console.warn(`[ORDER EMAIL] Failed to update emailSent flag: ${err.message}`);
+        });
+        console.log(`[ORDER EMAIL SUCCESS] Order ${order.orderNumber} sent`);
+      })
+      .catch((emailErr) => {
+        emailStatus.sent = false;
+        emailStatus.error = emailErr.message;
+        // Update order with email error
+        Order.findByIdAndUpdate(
+          order._id,
+          { emailSent: false, emailError: emailErr.message },
+          { new: true }
+        ).catch((err) => {
+          console.warn(`[ORDER EMAIL] Failed to update emailError flag: ${err.message}`);
+        });
+        console.error(`[ORDER EMAIL FAILED] Order ${order.orderNumber}:`, emailErr.message);
+      });
 
     res.status(201).json({ success: true, order, emailStatus });
   } catch (err) {
@@ -334,28 +349,45 @@ exports.placeOrder = async (req, res) => {
 async function sendOrderEmail(order) {
   console.log(`[ORDER EMAIL] Starting email send for order ${order.orderNumber}...`);
   
-  const smtpUser = process.env.SMTP_USER;
-  const smtpPass = process.env.SMTP_PASS;
+  // Use Gmail with app-specific password (most reliable)
+  // If SMTP_PASS is configured and working, use it; otherwise use Gmail fallback
+  const useGmail = !process.env.SMTP_PASS || process.env.SMTP_PASS.includes("CONFIGURE");
   
-  // Early return if SMTP not configured
-  if (!smtpUser || !smtpPass) {
-    const msg = "SMTP not configured. Email delivery disabled.";
-    console.error(`[SMTP DEBUG] ${msg}`);
-    throw new Error(msg);
+  let emailConfig = {
+    host: useGmail ? "smtp.gmail.com" : (process.env.SMTP_HOST || "smtp.office365.com"),
+    port: 587,
+    secure: false,
+    connectionTimeout: 5000,
+    socketTimeout: 5000,
+    greetingTimeout: 5000,
+  };
+
+  // Use Gmail if configured, otherwise use SMTP settings
+  if (useGmail) {
+    // Gmail app password must be set in environment
+    const gmailPass = process.env.GMAIL_PASS;
+    if (!gmailPass || gmailPass === "CONFIGURE_ME_LATER") {
+      throw new Error("Gmail not configured. Set GMAIL_PASS in environment variables.");
+    }
+    emailConfig.auth = {
+      user: "noreply@oxfordsports.net",
+      pass: gmailPass,
+    };
+    console.log(`[SMTP CONFIG] Using Gmail SMTP: smtp.gmail.com:587`);
+  } else {
+    // Use configured SMTP (Outlook or other)
+    const smtpUser = process.env.SMTP_USER;
+    const smtpPass = process.env.SMTP_PASS;
+    if (!smtpUser || !smtpPass) {
+      throw new Error("SMTP not configured.");
+    }
+    emailConfig.auth = { user: smtpUser, pass: smtpPass };
+    console.log(`[SMTP CONFIG] Using SMTP: ${process.env.SMTP_HOST}:${process.env.SMTP_PORT}`);
   }
 
-  // Try primary provider (Outlook or configured SMTP)
-  let transporter = nodemailer.createTransport({
-    host: process.env.SMTP_HOST || "smtp.office365.com",
-    port: parseInt(process.env.SMTP_PORT || "587"),
-    secure: false,
-    auth: { user: smtpUser, pass: smtpPass },
-    connectionTimeout: 5000,  // 5 seconds to connect
-    socketTimeout: 5000,      // 5 seconds for operations
-    greetingTimeout: 5000,    // 5 seconds for greeting
-  });
+  let transporter = nodemailer.createTransport(emailConfig);
   
-  console.log(`[SMTP DEBUG] Creating transporter for ${smtpUser}...`);
+  console.log(`[SMTP DEBUG] Creating transporter...`);
 
   const adminEmail = process.env.CONTACT_EMAIL_TO || "sales@oxfordsports.net";
 
