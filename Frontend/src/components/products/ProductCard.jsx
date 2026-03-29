@@ -179,7 +179,7 @@ export default function ProductCard({ product }) {
         {hasDisplaySizes && (
           <div className="sizes-section">
             <span className="sizes-header">
-              Available Sizes ({totalQty}{" "}
+              Available Sizes ({totalQty > 50 ? "50+" : totalQty}{" "}
               {totalQty === 1 ? "unit" : "units"})
             </span>
             <div className="sizes-preview">

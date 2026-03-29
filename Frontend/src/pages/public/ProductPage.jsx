@@ -105,23 +105,21 @@ export default function ProductPage() {
 
   /**
    * Add to cart handler:
-   * - mustBuyAll → buy entire lot, all sizes, all quantities (no editing)
-   * - otherwise  → user picks a total qty, sizes distributed by pro rata on backend
+   * - isLot/mustBuyAll → buy entire lot as ONE consolidated entry (not per-size)
+   * - otherwise → user picks qty, single item added
    */
   const handleAddToCart = () => {
-    if (isLot) {
+    if (isLot || mustBuyAll) {
       // Lot items: add complete lot as qty=1, no customization
+      // Check if already in cart
+      if (isInCart(product.sku, "")) {
+        toast.info(`Complete lot already in your cart`);
+        openDrawer();
+        return;
+      }
       addToCart(product, "", 1, true);
       toast.success(`Complete lot (${totalQty} units) added to cart!`);
-      return;
-    }
-    
-    if (mustBuyAll && !isLot) {
-      // Add every size at its full quantity, mark as lot item
-      productSizes.forEach((s) => {
-        if (s.quantity > 0) addToCart(product, s.size, s.quantity, true);
-      });
-      toast.success(`Entire lot of ${product.name} added to cart!`);
+      openDrawer();
       return;
     }
 
@@ -247,16 +245,7 @@ export default function ProductPage() {
             )}
 
             {/* ── Size selection for multi-size products (when not mustBuyAll) ── */}
-            {isLot ? (
-                    <div style={{ marginBottom: "1.5rem" }}>
-                      <p style={{ color: "#d9534f", fontWeight: 600, fontSize: "1rem", marginBottom: "0.5rem" }}>
-                        ⚠️ Clearance Lot Item
-                      </p>
-                      <p style={{ color: "#666", fontSize: "0.9rem", marginBottom: "1rem" }}>
-                        This item contains {totalQty} mixed products and must be purchased as a complete lot. No customization available.
-                      </p>
-                    </div>
-                  ) : !mustBuyAll && hasSizes && !isOneSize && displaySizes.length > 0 && (
+            {!mustBuyAll && hasSizes && !isOneSize && displaySizes.length > 0 && (
               <div style={{ marginBottom: "1.5rem" }}>
                 <label
                   htmlFor="size-select"

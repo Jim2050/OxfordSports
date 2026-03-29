@@ -118,16 +118,19 @@ export default function CartDrawer() {
                     </div>
                     <div className="cart-item-controls">
                       {item.lotItem ? (
-                        <span
+                        <div
                           style={{
-                            fontSize: "0.75rem",
-                            color: "#6b7280",
+                            fontSize: "0.85rem",
+                            color: "#0f2d5c",
                             fontWeight: 600,
                             whiteSpace: "nowrap",
+                            backgroundColor: "#f0f4f8",
+                            padding: "0.25rem 0.5rem",
+                            borderRadius: "0.25rem",
                           }}
                         >
-                          Qty: {item.quantity}
-                        </span>
+                          ✓ Complete Lot
+                        </div>
                       ) : (
                         <>
                           <button
