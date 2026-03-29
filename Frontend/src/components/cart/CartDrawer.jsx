@@ -33,11 +33,14 @@ export default function CartDrawer() {
 
     setSubmitting(true);
     try {
+      // Include maxStock and lotItem metadata for accurate backend pricing
       const payload = {
         items: items.map((i) => ({
           sku: i.sku,
           size: i.size,
           quantity: i.quantity,
+          maxStock: i.maxStock,  // Send for lot items
+          lotItem: i.lotItem,    // Send lot flag
         })),
       };
       const res = await API.post("/orders", payload, {
@@ -45,11 +48,18 @@ export default function CartDrawer() {
       });
 
       const order = res.data.order;
-      toast.success(`Order ${order.orderNumber} placed successfully!`);
+      const emailStatus = res.data.emailStatus;
 
-      // Open mailto link with order details
-      const mailtoLink = buildOrderMailto(order);
-      window.location.href = mailtoLink;
+      // Email was sent automatically by backend
+      if (emailStatus?.sent) {
+        toast.success(`Order ${order.orderNumber} placed! Confirmation sent to your email.`);
+      } else {
+        // Email failed - provide fallback
+        toast.warning(`Order ${order.orderNumber} placed but email failed. Check your dashboard.`);
+        // Only open mailto as fallback if email wasn't sent
+        const mailtoLink = buildOrderMailto(order);
+        window.location.href = mailtoLink;
+      }
 
       clearCart();
       closeDrawer();

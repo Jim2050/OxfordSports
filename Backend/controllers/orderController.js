@@ -157,6 +157,10 @@ exports.placeOrder = async (req, res) => {
       const unitPrice = product.salePrice;
       // Track if backend auto-selected this size (only auto-select if user didn't provide one)
       const wasAllocated = !incomingSize && size && size !== incomingSize;
+      // For lot items (buying ALL units), use maxStock. Otherwise use quantity.
+      // Frontend sends maxStock when item.lotItem = true
+      const priceQuantity = item.maxStock && item.lotItem ? item.maxStock : qty;
+      
       orderItems.push({
         product: product._id,
         sku: product.sku,
@@ -164,8 +168,10 @@ exports.placeOrder = async (req, res) => {
         size,
         allocatedSize: wasAllocated ? size : "", // Set if auto-allocated
         quantity: qty,
+        maxStock: item.maxStock || undefined,  // Store for reference
+        lotItem: item.lotItem || false,        // Store lot flag
         unitPrice,
-        lineTotal: +(unitPrice * qty).toFixed(2),
+        lineTotal: +(unitPrice * priceQuantity).toFixed(2),  // Use maxStock for lots
       });
     }
 
