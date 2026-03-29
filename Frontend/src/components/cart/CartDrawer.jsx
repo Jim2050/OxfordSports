@@ -52,10 +52,19 @@ export default function CartDrawer() {
 
       // Open mailto link with order details
       const mailtoLink = buildOrderMailto(order);
-      window.location.href = mailtoLink;
+      
+      // Use DOM element + click for reliable email client opening
+      const link = document.createElement('a');
+      link.href = mailtoLink;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
 
-      clearCart();
-      closeDrawer();
+      // Delay clearing cart to let email client launch
+      setTimeout(() => {
+        clearCart();
+        closeDrawer();
+      }, 500);
     } catch (err) {
       toast.error(err?.response?.data?.error || "Failed to place order.");
     } finally {
