@@ -150,11 +150,13 @@ export default function AllProductsPage() {
               onChange={(e) => {
                 setCategory(e.target.value);
                 resetPage();
+                const newParams = new URLSearchParams(searchParams);
                 if (e.target.value) {
-                  setSearchParams({ category: e.target.value });
+                  newParams.set("category", e.target.value);
+                  setSearchParams(newParams);
                 } else {
-                  searchParams.delete("category");
-                  setSearchParams(searchParams);
+                  newParams.delete("category");
+                  setSearchParams(newParams);
                 }
               }}
               className="filter-select"
@@ -170,7 +172,17 @@ export default function AllProductsPage() {
             {subcategories.length > 0 && (
               <select
                 value={subcategory}
-                onChange={(e) => { setSubcategory(e.target.value); resetPage(); }}
+                onChange={(e) => {
+                  setSubcategory(e.target.value);
+                  resetPage();
+                  const newParams = new URLSearchParams(searchParams);
+                  if (e.target.value) {
+                    newParams.set("subcategory", e.target.value);
+                  } else {
+                    newParams.delete("subcategory");
+                  }
+                  setSearchParams(newParams);
+                }}
                 className="filter-select"
               >
                 <option value="">All Sub-categories</option>

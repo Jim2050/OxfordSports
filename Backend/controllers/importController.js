@@ -1394,6 +1394,42 @@ exports.importProducts = async (req, res) => {
       );
     }
 
+    // ── Mark products NOT in this upload as sold out (quantity = 0) ──
+    const uploadedSkus = new Set(consolidated.map(p => p.sku));
+    debug(`[IMPORT] Marking missing SKUs as sold out (uploaded: ${uploadedSkus.size} SKUs)...`);
+    
+    try {
+      const existingAll = await Product.find({}, { sku: 1, _id: 1 });
+      const skusToMarkSoldOut = existingAll.filter(p => !uploadedSkus.has(p.sku));
+      
+      if (skusToMarkSoldOut.length > 0) {
+        debug(`[IMPORT] Found ${skusToMarkSoldOut.length} products not in upload — marking as sold out`);
+        const markSoldOutOps = skusToMarkSoldOut.map(p => ({
+          updateOne: {
+            filter: { _id: p._id },
+            update: {
+              $set: {
+                sizes: [],
+                totalQuantity: 0,
+              },
+            },
+          },
+        }));
+        
+        // Execute in batches of 500
+        for (let i = 0; i < markSoldOutOps.length; i += BATCH_SIZE) {
+          const chunk = markSoldOutOps.slice(i, i + BATCH_SIZE);
+          await Product.bulkWrite(chunk, { ordered: false });
+        }
+        debug(`[IMPORT] Successfully marked ${skusToMarkSoldOut.length} products as sold out`);
+      } else {
+        debug(`[IMPORT] No products to mark as sold out (all existing products are in upload)`);
+      }
+    } catch (err) {
+      console.error("[IMPORT] Error marking missing SKUs as sold out:", err.message);
+      debug(`[IMPORT WARNING] Failed to mark missing SKUs as sold out: ${err.message}`);
+    }
+
     const elapsed = ((Date.now() - startTime) / 1000).toFixed(2);
 
     // ── Post-import: auto-resolve images from Google search URLs (async, non-blocking) ──
