@@ -60,6 +60,9 @@ const orderSchema = new mongoose.Schema(
       index: true,
     },
     notes: { type: String, default: "" },
+    emailSent: { type: Boolean, default: false },
+    emailError: { type: String, default: "" },
+    emailSentAt: { type: Date, default: null },
   },
   { timestamps: true },
 );
@@ -68,6 +71,7 @@ const orderSchema = new mongoose.Schema(
 orderSchema.index({ customerEmail: 1 });
 orderSchema.index({ createdAt: -1 });
 orderSchema.index({ customer: 1, createdAt: -1 });
+orderSchema.index({ emailSent: 1 });
 
 /**
  * Auto-generate a readable order number before save.

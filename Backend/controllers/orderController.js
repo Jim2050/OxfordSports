@@ -312,11 +312,27 @@ exports.placeOrder = async (req, res) => {
     emailQueue.add(() => sendOrderEmail(order))
       .then(() => {
         emailStatus.sent = true;
+        // Update order with successful email delivery
+        Order.findByIdAndUpdate(
+          order._id,
+          { emailSent: true, emailSentAt: new Date(), emailError: "" },
+          { new: true }
+        ).catch((err) => {
+          console.warn(`[ORDER EMAIL] Failed to update emailSent flag: ${err.message}`);
+        });
         console.log(`[ORDER EMAIL SUCCESS] Order ${order.orderNumber} sent`);
       })
       .catch((emailErr) => {
         emailStatus.sent = false;
         emailStatus.error = emailErr.message;
+        // Update order with email error
+        Order.findByIdAndUpdate(
+          order._id,
+          { emailSent: false, emailError: emailErr.message },
+          { new: true }
+        ).catch((err) => {
+          console.warn(`[ORDER EMAIL] Failed to update emailError flag: ${err.message}`);
+        });
         console.error(`[ORDER EMAIL FAILED] Order ${order.orderNumber}:`, emailErr.message);
       });
 
@@ -331,12 +347,16 @@ exports.placeOrder = async (req, res) => {
  * Throws error if SMTP fails; caller should handle with try-catch.
  */
 async function sendOrderEmail(order) {
+  console.log(`[ORDER EMAIL] Starting email send for order ${order.orderNumber}...`);
+  
   const smtpUser = process.env.SMTP_USER;
   const smtpPass = process.env.SMTP_PASS;
   
   // Early return if SMTP not configured
   if (!smtpUser || !smtpPass) {
-    throw new Error("SMTP not configured. Email delivery disabled.");
+    const msg = "SMTP not configured. Email delivery disabled.";
+    console.error(`[SMTP DEBUG] ${msg}`);
+    throw new Error(msg);
   }
 
   const transporter = nodemailer.createTransport({
@@ -345,6 +365,8 @@ async function sendOrderEmail(order) {
     secure: false,
     auth: { user: smtpUser, pass: smtpPass },
   });
+  
+  console.log(`[SMTP DEBUG] Creating transporter for ${smtpUser}...`);
 
   const adminEmail = process.env.CONTACT_EMAIL_TO || "sales@oxfordsports.net";
 
@@ -403,9 +425,11 @@ async function sendOrderEmail(order) {
 
   // Wrap email sending in try-catch with detailed logging
   try {
+    console.log(`[SMTP DEBUG] Attempting to send emails for order ${order.orderNumber}...`);
     console.log(`[SMTP CONFIG] Host: ${process.env.SMTP_HOST}, Port: ${process.env.SMTP_PORT}, User: ${smtpUser}`);
     
     // Send to admin
+    console.log(`[SMTP DEBUG] Sending admin email to ${adminEmail}...`);
     await transporter.sendMail({
       from: `"Oxford Sports" <${smtpUser}>`,
       to: adminEmail,
