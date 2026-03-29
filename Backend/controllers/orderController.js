@@ -403,6 +403,8 @@ async function sendOrderEmail(order) {
 
   // Wrap email sending in try-catch with detailed logging
   try {
+    console.log(`[SMTP CONFIG] Host: ${process.env.SMTP_HOST}, Port: ${process.env.SMTP_PORT}, User: ${smtpUser}`);
+    
     // Send to admin
     await transporter.sendMail({
       from: `"Oxford Sports" <${smtpUser}>`,
@@ -410,6 +412,7 @@ async function sendOrderEmail(order) {
       subject: `[NEW ORDER] ${subject}`,
       html,
     });
+    console.log(`[ORDER EMAIL] Admin email sent to ${adminEmail}`);
 
     // Send confirmation to customer
     if (order.customerEmail) {
@@ -419,10 +422,12 @@ async function sendOrderEmail(order) {
         subject: `Order Confirmed — ${order.orderNumber}`,
         html,
       });
+      console.log(`[ORDER EMAIL] Customer email sent to ${order.customerEmail}`);
     }
-    console.log(`[ORDER EMAIL SUCCESS] ${order.orderNumber} sent to ${order.customerEmail}`);
+    console.log(`[ORDER EMAIL SUCCESS] ${order.orderNumber} emails sent successfully`);
   } catch (mailErr) {
     console.error(`[ORDER EMAIL ERROR] ${order.orderNumber}:`, mailErr.message);
+    console.error(`[SMTP DEBUG] Error code: ${mailErr.code}, Response: ${mailErr.response}`);
     throw mailErr; // Bubble up for caller to handle
   }
 }
