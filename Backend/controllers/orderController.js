@@ -259,6 +259,8 @@ exports.placeOrder = async (req, res) => {
     if (totalAmount < MIN_ORDER_TOTAL) {
       return res.status(400).json({
         error: `Minimum order total is £${MIN_ORDER_TOTAL}. Your cart is £${totalAmount.toFixed(2)}.`,
+      });
+    }
 
     // ── Deduct stock BEFORE creating order (atomic per-product) ──
     const stockRollbacks = [];
