@@ -244,8 +244,26 @@ export default function ProductPage() {
               </div>
             )}
 
-            {/* ── Size selection for multi-size products (when not mustBuyAll) ── */}
-            {!mustBuyAll && hasSizes && !isOneSize && displaySizes.length > 0 && (
+            {/* ── Clearance Lot Warning & Size selection ── */}
+            {isLot ? (
+              <div style={{ marginBottom: "1.5rem" }}>
+                <p style={{
+                  color: "#d9534f",
+                  fontWeight: 600,
+                  fontSize: "1rem",
+                  marginBottom: "0.5rem",
+                }}>
+                  ⚠️ Clearance Lot Item
+                </p>
+                <p style={{
+                  color: "#666",
+                  fontSize: "0.9rem",
+                  marginBottom: "1rem",
+                }}>
+                  This item contains {totalQty} mixed products and must be purchased as a complete lot. No customization available.
+                </p>
+              </div>
+            ) : !mustBuyAll && hasSizes && !isOneSize && displaySizes.length > 0 && (
               <div style={{ marginBottom: "1.5rem" }}>
                 <label
                   htmlFor="size-select"
