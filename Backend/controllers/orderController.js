@@ -363,6 +363,8 @@ async function sendOrderEmail(order) {
   };
 
   // Use Gmail if configured, otherwise use SMTP settings
+  let smtpUser; // Declare at function scope so it's available in try block
+  
   if (useGmail) {
     // Gmail app password must be set in environment
     const gmailPass = process.env.GMAIL_PASS;
@@ -373,10 +375,11 @@ async function sendOrderEmail(order) {
       user: "noreply@oxfordsports.net",
       pass: gmailPass,
     };
+    smtpUser = "noreply@oxfordsports.net"; // Set for logging
     console.log(`[SMTP CONFIG] Using Gmail SMTP: smtp.gmail.com:587`);
   } else {
     // Use configured SMTP (Outlook or other)
-    const smtpUser = process.env.SMTP_USER;
+    smtpUser = process.env.SMTP_USER;
     const smtpPass = process.env.SMTP_PASS;
     if (!smtpUser || !smtpPass) {
       throw new Error("SMTP not configured.");
