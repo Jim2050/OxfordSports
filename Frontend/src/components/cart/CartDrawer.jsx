@@ -21,6 +21,7 @@ export default function CartDrawer() {
   const { isAuthenticated, token } = useAuth();
   const [submitting, setSubmitting] = useState(false);
   const [confirmedOrder, setConfirmedOrder] = useState(null);
+  const [emailStatus, setEmailStatus] = useState(null);
   const belowMinimum = totalAmount < MIN_CART_TOTAL;
 
   /** Place order via API. */
@@ -47,9 +48,11 @@ export default function CartDrawer() {
       });
 
       const order = res.data.order;
+      const emailStatusResponse = res.data.emailStatus || { sent: false };
       
-      // Show confirmation modal instead of mailto
+      // Show confirmation modal with email status
       setConfirmedOrder(order);
+      setEmailStatus(emailStatusResponse);
       toast.success(`Order ${order.orderNumber} placed successfully!`);
       
       // Clear cart immediately after successful order
@@ -63,6 +66,7 @@ export default function CartDrawer() {
 
   const handleCloseConfirmation = () => {
     setConfirmedOrder(null);
+    setEmailStatus(null);
     closeDrawer();
   };
 
@@ -276,13 +280,39 @@ export default function CartDrawer() {
               </div>
             </div>
 
-            <div style={{ backgroundColor: "#e8f4f8", padding: "1rem", borderRadius: "0.5rem", marginBottom: "1.5rem", borderLeft: "4px solid #0f2d5c" }}>
-              <p style={{ margin: 0, fontSize: "0.9rem", color: "#0f2d5c" }}>
-                <strong>📧 Confirmation email is being sent to sales@oxfordsports.net</strong>
-              </p>
-              <p style={{ margin: "0.5rem 0 0 0", fontSize: "0.85rem", color: "#666" }}>
-                Your order details have been recorded. Our team will review and confirm your order shortly.
-              </p>
+            <div style={{ backgroundColor: emailStatus?.sent ? "#e8f4f8" : emailStatus?.error ? "#fff3cd" : "#e8f4f8", padding: "1rem", borderRadius: "0.5rem", marginBottom: "1.5rem", borderLeft: `4px solid ${emailStatus?.sent ? "#0f2d5c" : emailStatus?.error ? "#ff9800" : "#0f2d5c"}` }}>
+              {emailStatus?.sent ? (
+                <>
+                  <p style={{ margin: 0, fontSize: "0.9rem", color: "#0f2d5c" }}>
+                    <strong>✅ Confirmation emails sent successfully</strong>
+                  </p>
+                  <p style={{ margin: "0.5rem 0 0 0", fontSize: "0.85rem", color: "#666" }}>
+                    Order confirmation sent to <strong>{confirmedOrder.customerEmail}</strong> and sales team.<br />
+                    Our team will review and confirm your order shortly.
+                  </p>
+                </>
+              ) : emailStatus?.error ? (
+                <>
+                  <p style={{ margin: 0, fontSize: "0.9rem", color: "#d32f2f" }}>
+                    <strong>⚠️ Email delivery note</strong>
+                  </p>
+                  <p style={{ margin: "0.5rem 0 0 0", fontSize: "0.85rem", color: "#666" }}>
+                    Your order has been saved (Order #{confirmedOrder.orderNumber}). Email confirmation could not be sent automatically.
+                  </p>
+                  <p style={{ margin: "0.5rem 0 0 0", fontSize: "0.8rem", color: "#999" }}>
+                    Our team has been notified of your order and will follow up with you shortly.
+                  </p>
+                </>
+              ) : (
+                <>
+                  <p style={{ margin: 0, fontSize: "0.9rem", color: "#0f2d5c" }}>
+                    <strong>📧 Confirmation email is being sent</strong>
+                  </p>
+                  <p style={{ margin: "0.5rem 0 0 0", fontSize: "0.85rem", color: "#666" }}>
+                    Order confirmation being sent to {confirmedOrder.customerEmail}...
+                  </p>
+                </>
+              )}
             </div>
 
             <div style={{ display: "flex", gap: "0.75rem" }}>
