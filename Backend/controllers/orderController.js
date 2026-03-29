@@ -303,16 +303,18 @@ exports.placeOrder = async (req, res) => {
       notes: notes || "",
     });
 
-    // ── Send order confirmation email with error handling ──
+    // ── Send order confirmation email in background (non-blocking) ──
     let emailStatus = { sent: false };
-    try {
-      await sendOrderEmail(order);
+    
+    // Send email asynchronously without blocking response
+    sendOrderEmail(order).then(() => {
       emailStatus.sent = true;
-    } catch (emailErr) {
+      console.log(`[ORDER EMAIL SUCCESS] Order ${order.orderNumber} sent`);
+    }).catch((emailErr) => {
       emailStatus.sent = false;
       emailStatus.error = emailErr.message;
       console.error(`[ORDER EMAIL FAILED] Order ${order.orderNumber}:`, emailErr.message);
-    }
+    });
 
     res.status(201).json({ success: true, order, emailStatus });
   } catch (err) {
