@@ -22,6 +22,8 @@ export default function CartDrawer() {
   const [submitting, setSubmitting] = useState(false);
   const [confirmedOrder, setConfirmedOrder] = useState(null);
   const [emailStatus, setEmailStatus] = useState(null);
+  const [emailButtonLoading, setEmailButtonLoading] = useState(false);
+  const [emailButtonSuccess, setEmailButtonSuccess] = useState(false);
   const belowMinimum = totalAmount < MIN_CART_TOTAL;
 
   /** Place order via API. */
@@ -67,7 +69,65 @@ export default function CartDrawer() {
   const handleCloseConfirmation = () => {
     setConfirmedOrder(null);
     setEmailStatus(null);
+    setEmailButtonLoading(false);
+    setEmailButtonSuccess(false);
     closeDrawer();
+  };
+
+  /** Opens email client with pre-filled order details */
+  const handleEmailOrder = () => {
+    if (!confirmedOrder) return;
+    
+    setEmailButtonLoading(true);
+    
+    // Generate order summary for email
+    const itemsList = confirmedOrder.items
+      .map((item) => `  • ${item.name} (${item.sku}) - Size: ${item.size || "N/A"}, Qty: ${item.quantity}, £${item.lineTotal.toFixed(2)}`)
+      .join("\n");
+
+    const taxAmount = (confirmedOrder.totalAmount * 0.2).toFixed(2); // Estimate 20% tax
+    const subtotal = (confirmedOrder.totalAmount - taxAmount).toFixed(2);
+
+    const emailBody = encodeURIComponent(
+      `Hello Oxford Sports Team,\n\n` +
+      `I have just placed an order and wanted to confirm the details:\n\n` +
+      `ORDER DETAILS\n` +
+      `─────────────────────────\n` +
+      `Order Number: ${confirmedOrder.orderNumber}\n` +
+      `Order Date: ${new Date(confirmedOrder.createdAt).toLocaleDateString("en-GB")}\n` +
+      `Customer Email: ${confirmedOrder.customerEmail}\n` +
+      `Customer Name: ${confirmedOrder.customerName}\n\n` +
+      `ITEMS ORDERED\n` +
+      `─────────────────────────\n` +
+      `${itemsList}\n\n` +
+      `ORDER SUMMARY\n` +
+      `─────────────────────────\n` +
+      `Subtotal: £${subtotal}\n` +
+      `Tax (20%): £${taxAmount}\n` +
+      `Total: £${confirmedOrder.totalAmount.toFixed(2)}\n\n` +
+      `DELIVERY ADDRESS\n` +
+      `─────────────────────────\n` +
+      `${confirmedOrder.deliveryAddress || "Not specified"}\n\n` +
+      `Thank you for your order!\n` +
+      `Best regards`
+    );
+
+    const subject = encodeURIComponent(`Order Confirmation - ${confirmedOrder.orderNumber}`);
+    const mailtoLink = `mailto:sales@oxfordsports.net?subject=${subject}&body=${emailBody}`;
+
+    // Simulate sending
+    setTimeout(() => {
+      setEmailButtonLoading(false);
+      setEmailButtonSuccess(true);
+      
+      // Open email client
+      window.location.href = mailtoLink;
+
+      // Reset success state after 3 seconds
+      setTimeout(() => {
+        setEmailButtonSuccess(false);
+      }, 3000);
+    }, 600);
   };
 
   return (
@@ -232,6 +292,7 @@ export default function CartDrawer() {
             alignItems: "center",
             justifyContent: "center",
             zIndex: 9999,
+            animation: "fadeIn 0.3s ease-out",
           }}
           onClick={handleCloseConfirmation}
         >
@@ -244,7 +305,8 @@ export default function CartDrawer() {
               maxHeight: "80vh",
               overflowY: "auto",
               boxShadow: "0 10px 40px rgba(0, 0, 0, 0.2)",
-              animation: "slideUp 0.3s ease-out",
+              animation: "slideUp 0.4s ease-out",
+              border: "1px solid #e0e0e0",
             }}
             onClick={(e) => e.stopPropagation()}
           >
@@ -261,22 +323,49 @@ export default function CartDrawer() {
                 <strong>Order Number:</strong> {confirmedOrder.orderNumber}
               </p>
               <p style={{ margin: "0.5rem 0", fontSize: "0.9rem" }}>
-                <strong>Order Total:</strong> £{confirmedOrder.totalAmount.toFixed(2)}
+                <strong>Order Date:</strong> {new Date(confirmedOrder.createdAt).toLocaleDateString("en-GB", { weekday: 'short', year: 'numeric', month: 'short', day: 'numeric' })} at {new Date(confirmedOrder.createdAt).toLocaleTimeString("en-GB", { hour: '2-digit', minute: '2-digit' })}
               </p>
               <p style={{ margin: "0.5rem 0", fontSize: "0.9rem" }}>
-                <strong>Date:</strong> {new Date(confirmedOrder.createdAt).toLocaleDateString("en-GB")}
+                <strong>Customer:</strong> {confirmedOrder.customerName}
               </p>
+              <p style={{ margin: "0.5rem 0", fontSize: "0.9rem" }}>
+                <strong>Email:</strong> {confirmedOrder.customerEmail}
+              </p>
+              {confirmedOrder.deliveryAddress && (
+                <p style={{ margin: "0.5rem 0", fontSize: "0.9rem" }}>
+                  <strong>Delivery To:</strong> {confirmedOrder.deliveryAddress}
+                </p>
+              )}
             </div>
 
             <div style={{ marginBottom: "1.5rem" }}>
-              <h3 style={{ fontSize: "0.95rem", color: "#333", marginBottom: "0.75rem" }}>Order Items</h3>
-              <div style={{ fontSize: "0.85rem", color: "#555" }}>
+              <h3 style={{ fontSize: "0.95rem", color: "#333", marginBottom: "0.75rem" }}>Order Items ({confirmedOrder.items.length})</h3>
+              <div style={{ fontSize: "0.85rem", color: "#555", maxHeight: "200px", overflowY: "auto" }}>
                 {confirmedOrder.items.map((item, idx) => (
-                  <div key={idx} style={{ marginBottom: "0.5rem", paddingBottom: "0.5rem", borderBottom: "1px solid #eee" }}>
-                    <div style={{ fontWeight: 600 }}>{item.name} ({item.sku})</div>
-                    <div>Size: {item.size || "—"} | Qty: {item.quantity} | £{item.lineTotal.toFixed(2)}</div>
+                  <div key={idx} style={{ marginBottom: "0.75rem", paddingBottom: "0.75rem", borderBottom: "1px solid #eee", display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+                    <div>
+                      <div style={{ fontWeight: 600, marginBottom: "0.25rem" }}>{item.name}</div>
+                      <div style={{ fontSize: "0.8rem", color: "#999" }}>SKU: {item.sku}</div>
+                      <div style={{ fontSize: "0.8rem", color: "#999" }}>Size: {item.size || "N/A"} × {item.quantity} units</div>
+                    </div>
+                    <div style={{ textAlign: "right", fontWeight: 600 }}>£{item.lineTotal.toFixed(2)}</div>
                   </div>
                 ))}
+              </div>
+            </div>
+
+            <div style={{ backgroundColor: "#f0f4f8", padding: "1rem", borderRadius: "0.5rem", marginBottom: "1.5rem", borderTop: "2px solid #0f2d5c" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "0.5rem", fontSize: "0.9rem" }}>
+                <span>Subtotal:</span>
+                <span>£{(confirmedOrder.totalAmount * 0.833).toFixed(2)}</span>
+              </div>
+              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "0.75rem", fontSize: "0.9rem", borderBottom: "1px solid #d0d0d0", paddingBottom: "0.5rem" }}>
+                <span>Tax (20%):</span>
+                <span>£{(confirmedOrder.totalAmount * 0.167).toFixed(2)}</span>
+              </div>
+              <div style={{ display: "flex", justifyContent: "space-between", fontSize: "1.1rem", fontWeight: 700, color: "#0f2d5c" }}>
+                <span>Order Total:</span>
+                <span>£{confirmedOrder.totalAmount.toFixed(2)}</span>
               </div>
             </div>
 
@@ -320,9 +409,28 @@ export default function CartDrawer() {
                 style={{
                   flex: 1,
                   padding: "0.75rem 1rem",
-                  backgroundColor: "#0f2d5c",
+                  backgroundColor: emailButtonSuccess ? "#4caf50" : "#0f2d5c",
                   color: "white",
                   border: "none",
+                  borderRadius: "0.375rem",
+                  cursor: emailButtonLoading ? "wait" : "pointer",
+                  fontWeight: 600,
+                  fontSize: "0.9rem",
+                  transition: "background-color 0.3s ease",
+                  opacity: emailButtonLoading ? 0.7 : 1,
+                }}
+                onClick={handleEmailOrder}
+                disabled={emailButtonLoading}
+              >
+                {emailButtonLoading ? "Opening Email…" : emailButtonSuccess ? "✓ Email Opened" : "📧 Confirm via Email"}
+              </button>
+              <button
+                style={{
+                  flex: 1,
+                  padding: "0.75rem 1rem",
+                  backgroundColor: "#f0f0f0",
+                  color: "#333",
+                  border: "1px solid #d0d0d0",
                   borderRadius: "0.375rem",
                   cursor: "pointer",
                   fontWeight: 600,
@@ -346,6 +454,15 @@ export default function CartDrawer() {
           to {
             opacity: 1;
             transform: translateY(0);
+          }
+        }
+        
+        @keyframes fadeIn {
+          from {
+            opacity: 0;
+          }
+          to {
+            opacity: 1;
           }
         }
       `}</style>
