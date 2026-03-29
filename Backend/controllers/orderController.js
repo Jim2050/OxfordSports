@@ -360,10 +360,13 @@ async function sendOrderEmail(order) {
   }
 
   const transporter = nodemailer.createTransport({
-    host: process.env.SMTP_HOST || "smtp.gmail.com",
+    host: process.env.SMTP_HOST || "smtp.office365.com",
     port: parseInt(process.env.SMTP_PORT || "587"),
     secure: false,
     auth: { user: smtpUser, pass: smtpPass },
+    connectionTimeout: 5000,  // 5 seconds to connect
+    socketTimeout: 5000,      // 5 seconds for operations
+    greetingTimeout: 5000,    // 5 seconds for greeting
   });
   
   console.log(`[SMTP DEBUG] Creating transporter for ${smtpUser}...`);
@@ -423,29 +426,45 @@ async function sendOrderEmail(order) {
 
   const subject = `Order ${order.orderNumber} — £${order.totalAmount.toFixed(2)} — ${order.customerName}`;
 
+  // Helper function to send email with timeout
+  async function sendEmailWithTimeout(mailOptions, timeoutMs = 10000) {
+    return new Promise((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        reject(new Error(`Email send timeout after ${timeoutMs}ms - likely SMTP auth failure`));
+      }, timeoutMs);
+
+      transporter.sendMail(mailOptions, (err, info) => {
+        clearTimeout(timeout);
+        if (err) reject(err);
+        else resolve(info);
+      });
+    });
+  }
+
   // Wrap email sending in try-catch with detailed logging
   try {
     console.log(`[SMTP DEBUG] Attempting to send emails for order ${order.orderNumber}...`);
     console.log(`[SMTP CONFIG] Host: ${process.env.SMTP_HOST}, Port: ${process.env.SMTP_PORT}, User: ${smtpUser}`);
     
-    // Send to admin
+    // Send to admin with timeout
     console.log(`[SMTP DEBUG] Sending admin email to ${adminEmail}...`);
-    await transporter.sendMail({
+    await sendEmailWithTimeout({
       from: `"Oxford Sports" <${smtpUser}>`,
       to: adminEmail,
       subject: `[NEW ORDER] ${subject}`,
       html,
-    });
+    }, 10000);
     console.log(`[ORDER EMAIL] Admin email sent to ${adminEmail}`);
 
-    // Send confirmation to customer
+    // Send confirmation to customer with timeout
     if (order.customerEmail) {
-      await transporter.sendMail({
+      console.log(`[SMTP DEBUG] Sending customer email to ${order.customerEmail}...`);
+      await sendEmailWithTimeout({
         from: `"Oxford Sports" <${smtpUser}>`,
         to: order.customerEmail,
         subject: `Order Confirmed — ${order.orderNumber}`,
         html,
-      });
+      }, 10000);
       console.log(`[ORDER EMAIL] Customer email sent to ${order.customerEmail}`);
     }
     console.log(`[ORDER EMAIL SUCCESS] ${order.orderNumber} emails sent successfully`);
