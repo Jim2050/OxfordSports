@@ -574,8 +574,8 @@ function consolidateBySku(rows) {
       }
 
       // Merge sizes with quantities
-      if (finalRowSizes.length > 0) {
-        for (const entry of finalRowSizes) {
+      if (normalizedRowSizes.length > 0) {
+        for (const entry of normalizedRowSizes) {
           const found = existing.sizeEntries.find((e) => e.size === entry.size);
           if (found) {
             found.quantity += entry.quantity;
@@ -639,8 +639,8 @@ function consolidateBySku(rows) {
         sizeErrors.push("Some parsed sizes were rejected by normalization rules");
       }
 
-      if (finalRowSizes.length > 0) {
-        for (const entry of finalRowSizes) {
+      if (normalizedRowSizes.length > 0) {
+        for (const entry of normalizedRowSizes) {
           const found = sizeEntries.find((e) => e.size === entry.size);
           if (found) {
             found.quantity += entry.quantity;
