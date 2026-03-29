@@ -113,7 +113,11 @@ export default function CartDrawer() {
                         )}
                       </span>
                       <span className="cart-item-price">
-                        £{item.price.toFixed(2)}
+                        {item.lotItem ? (
+                          <>£{(item.price * item.maxStock).toFixed(2)} <span style={{fontSize: '0.75rem', color: '#999'}}>({item.maxStock} units)</span></>
+                        ) : (
+                          <>£{item.price.toFixed(2)}</>
+                        )}
                       </span>
                     </div>
                     <div className="cart-item-controls">

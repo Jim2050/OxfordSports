@@ -179,7 +179,12 @@ export function CartProvider({ children }) {
   /** Computed values. */
   const itemCount = items.reduce((sum, i) => sum + i.quantity, 0);
   const totalAmount = +items
-    .reduce((sum, i) => sum + i.price * i.quantity, 0)
+    .reduce((sum, i) => {
+      // For lot items: total = unit price × maxStock (all units)
+      // For regular items: total = unit price × quantity
+      const itemTotal = i.lotItem ? i.price * i.maxStock : i.price * i.quantity;
+      return sum + itemTotal;
+    }, 0)
     .toFixed(2);
 
   /** Check if a product+size is already in the cart. */
