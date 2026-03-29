@@ -2,6 +2,7 @@ const Order = require("../models/Order");
 const Product = require("../models/Product");
 const nodemailer = require("nodemailer");
 const { isValidSizeCode } = require("../utils/sizeStockUtils");
+const { getEmailQueue } = require("../utils/emailQueue");
 
 // ══════════════════════════════════════════
 //  Member: Place an order (from cart)
@@ -306,15 +307,18 @@ exports.placeOrder = async (req, res) => {
     // ── Send order confirmation email in background (non-blocking) ──
     let emailStatus = { sent: false };
     
-    // Send email asynchronously without blocking response
-    sendOrderEmail(order).then(() => {
-      emailStatus.sent = true;
-      console.log(`[ORDER EMAIL SUCCESS] Order ${order.orderNumber} sent`);
-    }).catch((emailErr) => {
-      emailStatus.sent = false;
-      emailStatus.error = emailErr.message;
-      console.error(`[ORDER EMAIL FAILED] Order ${order.orderNumber}:`, emailErr.message);
-    });
+    // Queue email using isolated queue system - won't affect main app performance
+    const emailQueue = getEmailQueue();
+    emailQueue.add(() => sendOrderEmail(order))
+      .then(() => {
+        emailStatus.sent = true;
+        console.log(`[ORDER EMAIL SUCCESS] Order ${order.orderNumber} sent`);
+      })
+      .catch((emailErr) => {
+        emailStatus.sent = false;
+        emailStatus.error = emailErr.message;
+        console.error(`[ORDER EMAIL FAILED] Order ${order.orderNumber}:`, emailErr.message);
+      });
 
     res.status(201).json({ success: true, order, emailStatus });
   } catch (err) {
