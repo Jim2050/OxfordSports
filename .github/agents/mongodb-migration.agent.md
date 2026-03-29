@@ -1,11 +1,6 @@
 ---
 name: mongodb-migration
 description: "Automated MongoDB migration agent: Exports current cluster, imports to client cluster, updates .env and Render credentials. Use when: migrating MongoDB to client account."
-toolRestrictions:
-  - run_in_terminal
-  - read_file
-  - replace_string_in_file
-  - get_terminal_output
 ---
 
 # MongoDB Migration Agent
