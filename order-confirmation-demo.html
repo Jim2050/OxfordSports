@@ -1,0 +1,417 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Order Confirmation - Oxford Sports</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+
+        .modal-backdrop {
+            position: fixed;
+            inset: 0;
+            background-color: rgba(0, 0, 0, 0.5);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 9999;
+            animation: fadeIn 0.3s ease-out;
+        }
+
+        .confirmation-modal {
+            background-color: white;
+            border-radius: 8px;
+            padding: 32px;
+            max-width: 600px;
+            max-height: 85vh;
+            overflow-y: auto;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
+            animation: slideUp 0.4s ease-out;
+            border: 1px solid #e0e0e0;
+        }
+
+        .header {
+            text-align: center;
+            margin-bottom: 24px;
+        }
+
+        .checkmark {
+            font-size: 48px;
+            margin-bottom: 8px;
+            display: inline-block;
+        }
+
+        .header h2 {
+            color: #0f2d5c;
+            margin-bottom: 8px;
+            font-size: 28px;
+        }
+
+        .header p {
+            color: #666;
+            font-size: 15px;
+        }
+
+        .order-header {
+            background-color: #f8f9fa;
+            padding: 16px;
+            border-radius: 8px;
+            margin-bottom: 24px;
+        }
+
+        .order-header p {
+            margin: 8px 0;
+            font-size: 14px;
+            line-height: 1.6;
+        }
+
+        .order-header strong {
+            color: #0f2d5c;
+            display: inline-block;
+            min-width: 140px;
+        }
+
+        .section-title {
+            font-size: 15px;
+            color: #333;
+            margin-bottom: 12px;
+            font-weight: 600;
+        }
+
+        .items-list {
+            font-size: 13px;
+            color: #555;
+            max-height: 200px;
+            overflow-y: auto;
+            margin-bottom: 24px;
+        }
+
+        .item-row {
+            margin-bottom: 12px;
+            padding-bottom: 12px;
+            border-bottom: 1px solid #eee;
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+        }
+
+        .item-row:last-child {
+            border-bottom: none;
+        }
+
+        .item-details {
+            flex: 1;
+        }
+
+        .item-details .name {
+            font-weight: 600;
+            margin-bottom: 4px;
+        }
+
+        .item-details .sku {
+            font-size: 12px;
+            color: #999;
+        }
+
+        .item-price {
+            text-align: right;
+            font-weight: 600;
+            min-width: 80px;
+        }
+
+        .order-summary {
+            background-color: #f0f4f8;
+            padding: 16px;
+            border-radius: 8px;
+            margin-bottom: 24px;
+            border-top: 2px solid #0f2d5c;
+        }
+
+        .summary-row {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 8px;
+            font-size: 14px;
+        }
+
+        .summary-row:last-child {
+            margin-bottom: 0;
+        }
+
+        .summary-row.total {
+            font-size: 18px;
+            font-weight: 700;
+            color: #0f2d5c;
+            padding-top: 8px;
+            border-top: 1px solid #d0d0d0;
+            margin-top: 8px;
+        }
+
+        .email-status {
+            background-color: #e8f4f8;
+            padding: 16px;
+            border-radius: 8px;
+            margin-bottom: 24px;
+            border-left: 4px solid #0f2d5c;
+        }
+
+        .email-status p {
+            margin: 0;
+            font-size: 14px;
+            line-height: 1.6;
+        }
+
+        .email-status strong {
+            color: #0f2d5c;
+            display: block;
+            margin-bottom: 4px;
+        }
+
+        .email-status .note {
+            font-size: 12px;
+            color: #666;
+            margin-top: 4px;
+        }
+
+        .buttons {
+            display: flex;
+            gap: 12px;
+        }
+
+        .btn {
+            flex: 1;
+            padding: 12px 16px;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: 600;
+            font-size: 14px;
+            transition: all 0.3s ease;
+        }
+
+        .btn-primary {
+            background-color: #0f2d5c;
+            color: white;
+        }
+
+        .btn-primary:hover {
+            background-color: #0a1e42;
+            box-shadow: 0 4px 12px rgba(15, 45, 92, 0.3);
+        }
+
+        .btn-primary.loading {
+            opacity: 0.7;
+            cursor: wait;
+        }
+
+        .btn-primary.success {
+            background-color: #4caf50;
+        }
+
+        .btn-secondary {
+            background-color: #f0f0f0;
+            color: #333;
+            border: 1px solid #d0d0d0;
+        }
+
+        .btn-secondary:hover {
+            background-color: #e5e5e5;
+        }
+
+        .btn-text {
+            transition: all 0.3s ease;
+        }
+
+        @keyframes slideUp {
+            from {
+                opacity: 0;
+                transform: translateY(20px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+            }
+            to {
+                opacity: 1;
+            }
+        }
+
+        @media (max-width: 640px) {
+            .confirmation-modal {
+                padding: 20px;
+            }
+
+            .buttons {
+                flex-direction: column;
+            }
+
+            .summary-row {
+                font-size: 13px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="modal-backdrop" id="backdrop">
+        <div class="confirmation-modal">
+            <!-- Header -->
+            <div class="header">
+                <div class="checkmark">✅</div>
+                <h2>Order Confirmed!</h2>
+                <p>Your order has been successfully placed and saved.</p>
+            </div>
+
+            <!-- Order Details -->
+            <div class="order-header">
+                <p><strong>Order Number:</strong> OS-20260330-0047</p>
+                <p><strong>Order Date:</strong> Sun, 30 Mar 2026 at 12:45 PM</p>
+                <p><strong>Customer:</strong> John Smith</p>
+                <p><strong>Email:</strong> john.smith@example.com</p>
+                <p><strong>Delivery To:</strong> 123 Main Street, London, UK</p>
+            </div>
+
+            <!-- Items List -->
+            <div>
+                <div class="section-title">Order Items (3)</div>
+                <div class="items-list">
+                    <div class="item-row">
+                        <div class="item-details">
+                            <div class="name">Premium Football Jersey</div>
+                            <div class="sku">SKU: JER-001</div>
+                            <div class="sku">Size: M × 5 units</div>
+                        </div>
+                        <div class="item-price">£149.95</div>
+                    </div>
+                    <div class="item-row">
+                        <div class="item-details">
+                            <div class="name">Athletic Training Shorts</div>
+                            <div class="sku">SKU: SHO-042</div>
+                            <div class="sku">Size: L × 3 units</div>
+                        </div>
+                        <div class="item-price">£89.97</div>
+                    </div>
+                    <div class="item-row">
+                        <div class="item-details">
+                            <div class="name">Performance Running Socks Pack</div>
+                            <div class="sku">SKU: SOC-156</div>
+                            <div class="sku">Size: One Size × 2 units</div>
+                        </div>
+                        <div class="item-price">£32.00</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Order Summary -->
+            <div class="order-summary">
+                <div class="summary-row">
+                    <span>Subtotal:</span>
+                    <span>£246.62</span>
+                </div>
+                <div class="summary-row">
+                    <span>Tax (20%):</span>
+                    <span>£49.32</span>
+                </div>
+                <div class="summary-row total">
+                    <span>Order Total:</span>
+                    <span>£295.94</span>
+                </div>
+            </div>
+
+            <!-- Email Status -->
+            <div class="email-status">
+                <p><strong>✅ Confirmation emails sent successfully</strong></p>
+                <p>Order confirmation sent to <strong>john.smith@example.com</strong> and sales team.<br/>Our team will review and confirm your order shortly.</p>
+            </div>
+
+            <!-- Action Buttons -->
+            <div class="buttons">
+                <button class="btn btn-primary" id="emailBtn" onclick="handleEmailClick()">
+                    <span class="btn-text">📧 Confirm via Email</span>
+                </button>
+                <button class="btn btn-secondary" onclick="handleClose()">
+                    Close
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        function handleEmailClick() {
+            const btn = document.getElementById('emailBtn');
+            const btnText = btn.querySelector('.btn-text');
+            
+            btn.classList.add('loading');
+            btnText.textContent = 'Opening Email…';
+            
+            setTimeout(() => {
+                btn.classList.remove('loading');
+                btn.classList.add('success');
+                btnText.textContent = '✓ Email Opened';
+                
+                // Simulate opening email client
+                const subject = encodeURIComponent('Order Confirmation - OS-20260330-0047');
+                const body = encodeURIComponent(
+                    'Hello Oxford Sports Team,\n\n' +
+                    'I have just placed an order and wanted to confirm the details:\n\n' +
+                    'ORDER DETAILS\n' +
+                    '─────────────────────────\n' +
+                    'Order Number: OS-20260330-0047\n' +
+                    'Order Date: Sun, 30 Mar 2026 at 12:45 PM\n' +
+                    'Customer Email: john.smith@example.com\n' +
+                    'Customer Name: John Smith\n\n' +
+                    'ITEMS ORDERED\n' +
+                    '─────────────────────────\n' +
+                    '  • Premium Football Jersey (JER-001) - Size: M, Qty: 5, £149.95\n' +
+                    '  • Athletic Training Shorts (SHO-042) - Size: L, Qty: 3, £89.97\n' +
+                    '  • Performance Running Socks Pack (SOC-156) - Size: One Size, Qty: 2, £32.00\n\n' +
+                    'ORDER SUMMARY\n' +
+                    '─────────────────────────\n' +
+                    'Subtotal: £246.62\n' +
+                    'Tax (20%): £49.32\n' +
+                    'Total: £295.94\n\n' +
+                    'DELIVERY ADDRESS\n' +
+                    '─────────────────────────\n' +
+                    '123 Main Street, London, UK\n\n' +
+                    'Thank you for your order!\n' +
+                    'Best regards'
+                );
+                
+                window.location.href = `mailto:sales@oxfordsports.net?subject=${subject}&body=${body}`;
+                
+                // Reset button after 3 seconds
+                setTimeout(() => {
+                    btn.classList.remove('success');
+                    btnText.textContent = '📧 Confirm via Email';
+                }, 3000);
+            }, 600);
+        }
+
+        function handleClose() {
+            document.getElementById('backdrop').style.opacity = '0';
+            setTimeout(() => {
+                document.getElementById('backdrop').style.display = 'none';
+            }, 300);
+        }
+    </script>
+</body>
+</html>
