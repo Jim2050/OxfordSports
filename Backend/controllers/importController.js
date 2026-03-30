@@ -1353,6 +1353,20 @@ exports.importProducts = async (req, res) => {
         delete productData._pendingImageQuery;
       }
 
+      // ── Check if category is locked (manually edited) ──
+      // If locked, don't overwrite category/subcategory during re-import
+      const existingProduct = await Product.findOne({ sku }).select('categoryLockedUntil').lean();
+      if (existingProduct?.categoryLockedUntil && new Date(existingProduct.categoryLockedUntil) > new Date()) {
+        // Category is locked - remove from $set to preserve manual edit
+        delete productData.category;
+        delete productData.subcategory;
+        delete productData.categoryCanonical;
+        delete productData.subcategoryCanonical;
+        if (process.env.NODE_ENV !== 'production') {
+          console.log(`[IMPORT] ${sku}: category locked until ${existingProduct.categoryLockedUntil}, skipping category overwrite`);
+        }
+      }
+
       // Separate image fields — only $set them when Excel provides a valid URL
       // Otherwise use $setOnInsert so existing images survive re-imports
       const hasExcelImage = !!productData.imageUrl;

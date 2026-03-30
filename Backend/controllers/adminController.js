@@ -161,6 +161,11 @@ exports.updateProduct = async (req, res) => {
       product.rrp = parseFloat(req.body.rrp);
     }
 
+    // When category is manually updated, lock it for 90 days to prevent re-import overwrite
+    if (req.body.category) {
+      product.categoryLockedUntil = new Date(Date.now() + 90 * 24 * 60 * 60 * 1000);
+    }
+
     const categoryForSizeParsing =
       req.body.category !== undefined ? req.body.category : product.category;
 
