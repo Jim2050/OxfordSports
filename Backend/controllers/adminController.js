@@ -185,9 +185,9 @@ exports.updateProduct = async (req, res) => {
         product.sizes = [];
       }
       
-      // LOG: Help debug Issue #3 (edits not saving)
-      if (process.env.NODE_ENV !== "production") {
-        console.log(`[UPDATE] ${sku}: sizes input="${req.body.sizes}" qty=${totalQtyInput} → result=${JSON.stringify(product.sizes)}`);
+      // Only log update in development mode (verbose logging disabled for performance)
+      if (process.env.DEBUG_UPDATES === "true") {
+        console.debug(`[UPDATE] ${sku}: sizes input="${req.body.sizes}" qty=${totalQtyInput} → result=${JSON.stringify(product.sizes)}`);
       }
     }
 

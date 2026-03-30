@@ -316,11 +316,11 @@ exports.placeOrder = async (req, res) => {
         Order.findByIdAndUpdate(
           order._id,
           { emailSent: true, emailSentAt: new Date(), emailError: "" },
-          { new: true }
+          { returnDocument: 'after' }
         ).catch((err) => {
-          console.warn(`[ORDER EMAIL] Failed to update emailSent flag: ${err.message}`);
+          if (process.env.DEBUG_EMAIL === 'true') console.warn(`[ORDER EMAIL] Failed to update emailSent flag: ${err.message}`);
         });
-        console.log(`[ORDER EMAIL SUCCESS] Order ${order.orderNumber} sent`);
+        if (process.env.DEBUG_EMAIL === 'true') console.log(`[ORDER EMAIL SUCCESS] Order ${order.orderNumber} sent`);
       })
       .catch((emailErr) => {
         emailStatus.sent = false;
@@ -329,11 +329,11 @@ exports.placeOrder = async (req, res) => {
         Order.findByIdAndUpdate(
           order._id,
           { emailSent: false, emailError: emailErr.message },
-          { new: true }
+          { returnDocument: 'after' }
         ).catch((err) => {
-          console.warn(`[ORDER EMAIL] Failed to update emailError flag: ${err.message}`);
+          if (process.env.DEBUG_EMAIL === 'true') console.warn(`[ORDER EMAIL] Failed to update emailError flag: ${err.message}`);
         });
-        console.error(`[ORDER EMAIL FAILED] Order ${order.orderNumber}:`, emailErr.message);
+        console.error(`[ORDER EMAIL FAILED] Order ${order.orderNumber}: ${emailErr.message}`);
       });
 
     res.status(201).json({ success: true, order, emailStatus });
@@ -376,7 +376,6 @@ async function sendOrderEmail(order) {
       pass: gmailPass,
     };
     smtpUser = "noreply@oxfordsports.net"; // Set for logging
-    console.log(`[SMTP CONFIG] Using Gmail SMTP: smtp.gmail.com:587`);
   } else {
     // Use configured SMTP (Outlook or other)
     smtpUser = process.env.SMTP_USER;
@@ -385,12 +384,9 @@ async function sendOrderEmail(order) {
       throw new Error("SMTP not configured.");
     }
     emailConfig.auth = { user: smtpUser, pass: smtpPass };
-    console.log(`[SMTP CONFIG] Using SMTP: ${process.env.SMTP_HOST}:${process.env.SMTP_PORT}`);
   }
 
   let transporter = nodemailer.createTransport(emailConfig);
-  
-  console.log(`[SMTP DEBUG] Creating transporter...`);
 
   const adminEmail = process.env.CONTACT_EMAIL_TO || "sales@oxfordsports.net";
 
@@ -462,36 +458,33 @@ async function sendOrderEmail(order) {
     });
   }
 
-  // Wrap email sending in try-catch with detailed logging
+  // Wrap email sending in try-catch with minimal logging
   try {
-    console.log(`[SMTP DEBUG] Attempting to send emails for order ${order.orderNumber}...`);
-    console.log(`[SMTP CONFIG] Host: ${process.env.SMTP_HOST}, Port: ${process.env.SMTP_PORT}, User: ${smtpUser}`);
+    if (process.env.DEBUG_EMAIL === 'true') console.log(`[SMTP DEBUG] Attempting to send emails for order ${order.orderNumber}...`);
     
     // Send to admin with timeout
-    console.log(`[SMTP DEBUG] Sending admin email to ${adminEmail}...`);
     await sendEmailWithTimeout({
       from: `"Oxford Sports" <${smtpUser}>`,
       to: adminEmail,
       subject: `[NEW ORDER] ${subject}`,
       html,
     }, 10000);
-    console.log(`[ORDER EMAIL] Admin email sent to ${adminEmail}`);
+    if (process.env.DEBUG_EMAIL === 'true') console.log(`[ORDER EMAIL] Admin email sent to ${adminEmail}`);
 
     // Send confirmation to customer with timeout
     if (order.customerEmail) {
-      console.log(`[SMTP DEBUG] Sending customer email to ${order.customerEmail}...`);
       await sendEmailWithTimeout({
         from: `"Oxford Sports" <${smtpUser}>`,
         to: order.customerEmail,
         subject: `Order Confirmed — ${order.orderNumber}`,
         html,
       }, 10000);
-      console.log(`[ORDER EMAIL] Customer email sent to ${order.customerEmail}`);
+      if (process.env.DEBUG_EMAIL === 'true') console.log(`[ORDER EMAIL] Customer email sent to ${order.customerEmail}`);
     }
-    console.log(`[ORDER EMAIL SUCCESS] ${order.orderNumber} emails sent successfully`);
+    if (process.env.DEBUG_EMAIL === 'true') console.log(`[ORDER EMAIL SUCCESS] ${order.orderNumber} emails sent successfully`);
   } catch (mailErr) {
-    console.error(`[ORDER EMAIL ERROR] ${order.orderNumber}:`, mailErr.message);
-    console.error(`[SMTP DEBUG] Error code: ${mailErr.code}, Response: ${mailErr.response}`);
+    console.error(`[ORDER EMAIL ERROR] ${order.orderNumber}: ${mailErr.message}`);
+    if (process.env.DEBUG_EMAIL === 'true') console.error(`[SMTP DEBUG] Error code: ${mailErr.code}, Response: ${mailErr.response}`);
     throw mailErr; // Bubble up for caller to handle
   }
 }
@@ -574,7 +567,7 @@ exports.updateOrderStatus = async (req, res) => {
     const order = await Order.findByIdAndUpdate(
       req.params.id,
       { status },
-      { new: true },
+      { returnDocument: 'after' },
     );
 
     if (!order) return res.status(404).json({ error: "Order not found." });

@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { useDropzone } from "react-dropzone";
 import toast, { Toaster } from "react-hot-toast";
 import AdminLogin from "./AdminLogin";
@@ -70,6 +70,29 @@ export default function AdminPage() {
   const [subcategoryList, setSubcategoryList] = useState([]);
   const [importBatches, setImportBatches] = useState([]);
   const PRODUCT_PAGE_SIZE = 100;
+  
+  // Debounce stats loading to prevent excessive API calls (store last load time)
+  const lastStatsLoadRef = useRef(0);
+  const statsLoadTimer = useRef(null);
+  
+  const debouncedLoadStats = useCallback(() => {
+    // Clear any pending timer
+    if (statsLoadTimer.current) clearTimeout(statsLoadTimer.current);
+    
+    // Only load if more than 3 seconds since last load
+    const now = Date.now();
+    if (now - lastStatsLoadRef.current >= 3000) {
+      lastStatsLoadRef.current = now;
+      loadStats();
+    } else {
+      // Schedule for later
+      const delay = 3000 - (now - lastStatsLoadRef.current);
+      statsLoadTimer.current = setTimeout(() => {
+        lastStatsLoadRef.current = Date.now();
+        loadStats();
+      }, delay);
+    }
+  }, []);
 
   useEffect(() => {
     if (authed) {
@@ -531,7 +554,7 @@ export default function AdminPage() {
 
       resetForm();
       loadProducts({ page: productPage, search: searchQuery });
-      loadStats();
+      debouncedLoadStats();
       setTab("products");
     } catch (err) {
       const displayError = err?.response?.data?.error || err.message || "Failed to save product.";
