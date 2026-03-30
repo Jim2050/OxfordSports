@@ -23,12 +23,10 @@ exports.placeOrder = async (req, res) => {
         .json({ error: "Order must contain at least one item." });
     }
 
-    // ── Validate each item against DB stock ──
     const orderItems = [];
-    const stockUpdates = []; // bulk ops to deduct stock
-    const stockDebug = []; // for logging
+    const stockUpdates = [];
+    const stockDebug = [];
 
-    // ── MOQ thresholds (must match frontend api.js) ──
     const FOOTWEAR_THRESHOLD = 24;
     const DEFAULT_THRESHOLD = 100;
     const MIN_ORDER_TOTAL = 300;
@@ -56,14 +54,12 @@ exports.placeOrder = async (req, res) => {
 
       const qty = parseInt(item.quantity);
       const incomingSize = (item.size || "").trim();
-      let size = incomingSize; // Will be updated if auto-allocated
+      let size = incomingSize;
 
-      // ── Stock validation ──
       const sizeEntries = Array.isArray(product.sizes) ? product.sizes : [];
       const hasSizeStock =
         sizeEntries.length > 0 && sizeEntries.some((s) => s.quantity > 0);
 
-      // Log for debugging Issue #5
       stockDebug.push({
         sku: product.sku,
         name: product.name,
@@ -76,25 +72,19 @@ exports.placeOrder = async (req, res) => {
       });
 
       if (hasSizeStock) {
-        // Per-size stock mode using new sizes array
-        // Normalize the incoming size for consistent matching
         const normalizedIncomingSize = size.trim();
         
-        // Try to find exact size match first (with trimmed comparison)
         let sizeEntry = sizeEntries.find((s) => s.size && s.size.trim() === normalizedIncomingSize);
         
-        // If no exact match and user didn't specify size (empty string), use first available VALID size
         if (!sizeEntry && (!normalizedIncomingSize || normalizedIncomingSize === "")) {
           sizeEntry = sizeEntries.find((s) => isValidSizeCode(s.size, product.category));
           if (sizeEntry) {
-            // Update size variable to the auto-selected size for stock deduction
             size = sizeEntry.size;
           }
         }
         
         const available = sizeEntry ? sizeEntry.quantity : 0;
         
-        // FALLBACK: If no valid size found but totalQuantity exists, use flat stock mode
         if (!sizeEntry && product.totalQuantity > 0) {
           if (qty > product.totalQuantity) {
             return res.status(400).json({
@@ -124,7 +114,7 @@ exports.placeOrder = async (req, res) => {
             updateOne: {
               filter: {
                 _id: product._id,
-                "sizes.size": sizeEntry.size,  // Use the matched entry's size value directly
+                "sizes.size": sizeEntry.size,
                 "sizes.quantity": { $gte: qty },
                 totalQuantity: { $gte: qty },
               },
@@ -135,7 +125,6 @@ exports.placeOrder = async (req, res) => {
           });
         }
       } else if (product.totalQuantity > 0) {
-        // Flat stock mode
         if (qty > product.totalQuantity) {
           return res.status(400).json({
             error: `Only ${product.totalQuantity} available for ${product.name}.`,
@@ -148,18 +137,13 @@ exports.placeOrder = async (req, res) => {
           },
         });
       } else {
-        // No stock data — log warning
         console.warn(
           `[ORDER] No stock info for ${product.sku}: no sizes array and totalQuantity=0. May need diagnostic.`,
         );
       }
-      // If totalQuantity == 0, we allow ordering (wholesale — no strict stock enforcement)
 
       const unitPrice = product.salePrice;
-      // Track if backend auto-selected this size (only auto-select if user didn't provide one)
       const wasAllocated = !incomingSize && size && size !== incomingSize;
-      // For lot items (buying ALL units), use maxStock. Otherwise use quantity.
-      // Frontend sends maxStock when item.lotItem = true
       const priceQuantity = item.maxStock && item.lotItem ? item.maxStock : qty;
       
       orderItems.push({
@@ -167,72 +151,61 @@ exports.placeOrder = async (req, res) => {
         sku: product.sku,
         name: product.name,
         size,
-        allocatedSize: wasAllocated ? size : "", // Set if auto-allocated
+        allocatedSize: wasAllocated ? size : "",
         quantity: qty,
-        maxStock: item.maxStock || undefined,  // Store for reference
-        lotItem: item.lotItem || false,        // Store lot flag
+        maxStock: item.maxStock || undefined,
+        lotItem: item.lotItem || false,
         unitPrice,
-        lineTotal: +(unitPrice * priceQuantity).toFixed(2),  // Use maxStock for lots
+        lineTotal: +(unitPrice * priceQuantity).toFixed(2),
       });
     }
 
-    // ── Calculate total BEFORE adding missing sizes ──
     let totalAmount = +orderItems
       .reduce((sum, i) => sum + i.lineTotal, 0)
       .toFixed(2);
 
-    // ── MOQ enforcement: must-buy-all products (auto-add missing sizes) ──
-    // Group order items by SKU to check per-product MOQ
     const skuMap = {};
     for (const oi of orderItems) {
       if (!skuMap[oi.sku]) skuMap[oi.sku] = { items: [], product: null };
       skuMap[oi.sku].items.push(oi);
     }
-    // Fetch products for MOQ check
     for (const sku of Object.keys(skuMap)) {
       const product = await Product.findOne({ sku: sku.toUpperCase(), isActive: true }).lean();
       if (product) skuMap[sku].product = product;
     }
-    // ── Auto-add missing sizes for "must-buy-all" products ──
+
     const LOT_CATEGORIES = ["JOB LOTS", "B GRADE", "UNDER £5"];
     for (const [sku, entry] of Object.entries(skuMap)) {
       const product = entry.product;
       if (!product) continue;
       const cat = (product.category || "").toUpperCase();
-      if (LOT_CATEGORIES.includes(cat)) {
-        continue;
-      }
+      if (LOT_CATEGORIES.includes(cat)) continue;
       const isFootwear = cat === "FOOTWEAR";
       const threshold = isFootwear ? FOOTWEAR_THRESHOLD : DEFAULT_THRESHOLD;
       const totalQty = product.totalQuantity || 0;
       if (totalQty > 0 && totalQty < threshold) {
-        // Must buy ALL available sizes — auto-add any missing sizes
-        // Filter out invalid size codes (NS, N/A, etc.) to avoid false missing sizes
         const availableSizes = (product.sizes || [])
           .filter((s) => s.quantity > 0 && isValidSizeCode(s.size, product.category));
         const orderedSizes = new Set(entry.items.map((i) => (i.size || "").trim()));
         const missingSizeEntries = availableSizes.filter((s) => !orderedSizes.has(s.size.trim()));
         
-        // Auto-add missing sizes to the order
         for (const sizeEntry of missingSizeEntries) {
           const missingSizeQty = sizeEntry.quantity;
           const trimmedSize = sizeEntry.size.trim();
           const unitPrice = product.salePrice;
           const lineTotal = +(unitPrice * missingSizeQty).toFixed(2);
           
-          // Add to orderItems
           orderItems.push({
             product: product._id,
             sku: product.sku,
             name: product.name,
             size: trimmedSize,
-            allocatedSize: "", // Not auto-allocated by system choice, but by missing-size requirement
+            allocatedSize: "",
             quantity: missingSizeQty,
             unitPrice,
             lineTotal,
           });
           
-          // Add stock deduction for this size
           stockUpdates.push({
             updateOne: {
               filter: {
@@ -247,7 +220,6 @@ exports.placeOrder = async (req, res) => {
             },
           });
           
-          // Add to entry.items for future reference
           entry.items.push({
             sku: product.sku,
             size: trimmedSize,
@@ -257,19 +229,16 @@ exports.placeOrder = async (req, res) => {
       }
     }
 
-    // ── Recalculate total AFTER adding missing sizes ──
     totalAmount = +orderItems
       .reduce((sum, i) => sum + i.lineTotal, 0)
       .toFixed(2);
 
-    // ── MOQ enforcement: minimum cart total ──
     if (totalAmount < MIN_ORDER_TOTAL) {
       return res.status(400).json({
         error: `Minimum order total is £${MIN_ORDER_TOTAL}. Your cart is £${totalAmount.toFixed(2)}.`,
       });
     }
 
-    // ── Deduct stock BEFORE creating order (atomic per-product) ──
     const stockRollbacks = [];
     try {
       for (const op of stockUpdates) {
@@ -280,7 +249,6 @@ exports.placeOrder = async (req, res) => {
         stockRollbacks.push(op);
       }
     } catch (stockErr) {
-      // Rollback any successful deductions
       for (const op of stockRollbacks) {
         const rollback = JSON.parse(JSON.stringify(op));
         const inc = rollback.updateOne.update.$inc;
@@ -307,33 +275,30 @@ exports.placeOrder = async (req, res) => {
     // ── Send order confirmation email in background (non-blocking) ──
     let emailStatus = { sent: false };
     
-    // Queue email using isolated queue system - won't affect main app performance
     const emailQueue = getEmailQueue();
     emailQueue.add(() => sendOrderEmail(order))
       .then(() => {
         emailStatus.sent = true;
-        // Update order with successful email delivery
         Order.findByIdAndUpdate(
           order._id,
           { emailSent: true, emailSentAt: new Date(), emailError: "" },
           { returnDocument: 'after' }
         ).catch((err) => {
-          if (process.env.DEBUG_EMAIL === 'true') console.warn(`[ORDER EMAIL] Failed to update emailSent flag: ${err.message}`);
+          console.warn(`[ORDER EMAIL] Failed to update emailSent flag: ${err.message}`);
         });
-        if (process.env.DEBUG_EMAIL === 'true') console.log(`[ORDER EMAIL SUCCESS] Order ${order.orderNumber} sent`);
+        console.log(`[ORDER EMAIL SUCCESS] Order ${order.orderNumber} emails sent`);
       })
       .catch((emailErr) => {
         emailStatus.sent = false;
         emailStatus.error = emailErr.message;
-        // Update order with email error
         Order.findByIdAndUpdate(
           order._id,
           { emailSent: false, emailError: emailErr.message },
           { returnDocument: 'after' }
-        ).catch((err) => {
-          if (process.env.DEBUG_EMAIL === 'true') console.warn(`[ORDER EMAIL] Failed to update emailError flag: ${err.message}`);
-        });
+        ).catch(() => {});
         console.error(`[ORDER EMAIL FAILED] Order ${order.orderNumber}: ${emailErr.message}`);
+        // Log full order details to Railway console as backup notification
+        logOrderToConsole(order);
       });
 
     res.status(201).json({ success: true, order, emailStatus });
@@ -343,17 +308,45 @@ exports.placeOrder = async (req, res) => {
 };
 
 /**
+ * Log order details to console — used as fallback when email fails
+ * so Jim can always find order details in Railway logs.
+ */
+function logOrderToConsole(order) {
+  const divider = "=".repeat(70);
+  const itemLines = order.items
+    .map((i) => `  • ${i.name} (${i.sku}) | Size: ${i.size || "N/A"} | Qty: ${i.quantity} | £${i.lineTotal.toFixed(2)}`)
+    .join("\n");
+
+  console.log(`
+${divider}
+[ORDER DETAILS — EMAIL FAILED, CHECK HERE]
+${divider}
+Order Number : ${order.orderNumber}
+Date         : ${new Date(order.createdAt).toLocaleString("en-GB")}
+Customer     : ${order.customerName}
+Email        : ${order.customerEmail}
+Company      : ${order.customerCompany || "N/A"}
+Phone        : ${order.customerPhone || "N/A"}
+Address      : ${order.deliveryAddress || "N/A"}
+
+Items:
+${itemLines}
+
+TOTAL: £${order.totalAmount.toFixed(2)}
+${order.notes ? `Notes: ${order.notes}` : ""}
+${divider}
+`);
+}
+
+/**
  * Send order confirmation email to admin + customer.
- * Provider cascade: Outlook → Gmail → console log
- * Does not throw; logs all outcomes for Railway debugging.
+ * Tries Outlook first, then Gmail as fallback if GMAIL_PASS is set.
  */
 async function sendOrderEmail(order) {
   console.log(`[ORDER EMAIL] Starting email send for order ${order.orderNumber}...`);
-
+  
   const adminEmail = process.env.CONTACT_EMAIL_TO || "sales@oxfordsports.net";
-  let lastError = null;
 
-  // Build email content once (used by all transport attempts)
   const itemRows = order.items
     .map((i) => {
       const sizeDisplay = i.allocatedSize ? `${i.size} (auto)` : (i.size || "—");
@@ -404,165 +397,118 @@ async function sendOrderEmail(order) {
 
   const subject = `Order ${order.orderNumber} — £${order.totalAmount.toFixed(2)} — ${order.customerName}`;
 
-  // Helper: Send with timeout
-  async function sendEmailWithTimeout(transporter, mailOptions, timeoutMs = 15000) {
-    return new Promise((resolve, reject) => {
-      const timeout = setTimeout(() => {
-        reject(new Error(`SMTP timeout after ${timeoutMs}ms`));
-      }, timeoutMs);
+  // ── Try each provider in sequence ──
+  const providers = buildEmailProviders();
+  
+  if (providers.length === 0) {
+    throw new Error("No SMTP providers configured. Set SMTP_PASS or GMAIL_PASS in Railway environment variables.");
+  }
 
-      transporter.sendMail(mailOptions, (err, info) => {
-        clearTimeout(timeout);
-        if (err) reject(err);
-        else resolve(info);
-      });
+  let lastError = null;
+  for (const provider of providers) {
+    try {
+      console.log(`[ORDER EMAIL] Trying provider: ${provider.name} (${provider.user})`);
+      const transporter = nodemailer.createTransport(provider.config);
+      
+      await sendMailWithTimeout(transporter, {
+        from: `"Oxford Sports" <${provider.user}>`,
+        to: adminEmail,
+        subject: `[NEW ORDER] ${subject}`,
+        html,
+      }, 12000);
+      console.log(`[ORDER EMAIL] Admin email sent via ${provider.name} to ${adminEmail}`);
+
+      if (order.customerEmail) {
+        await sendMailWithTimeout(transporter, {
+          from: `"Oxford Sports" <${provider.user}>`,
+          to: order.customerEmail,
+          subject: `Order Confirmed — ${order.orderNumber}`,
+          html,
+        }, 12000);
+        console.log(`[ORDER EMAIL] Customer email sent via ${provider.name} to ${order.customerEmail}`);
+      }
+
+      console.log(`[ORDER EMAIL SUCCESS] ${order.orderNumber} sent via ${provider.name}`);
+      return; // Success — exit
+    } catch (err) {
+      console.error(`[ORDER EMAIL] Provider ${provider.name} failed: ${err.message}`);
+      lastError = err;
+      // Continue to next provider
+    }
+  }
+
+  // All providers failed
+  throw lastError || new Error("All email providers failed");
+}
+
+/**
+ * Build list of email providers to try, in priority order.
+ * Outlook first (if configured), then Gmail (if GMAIL_PASS set).
+ */
+function buildEmailProviders() {
+  const providers = [];
+  const baseConfig = {
+    port: 587,
+    secure: false,
+    connectionTimeout: 8000,
+    socketTimeout: 8000,
+    greetingTimeout: 5000,
+  };
+
+  // Provider 1: Outlook / Office365 (existing config)
+  const smtpUser = process.env.SMTP_USER;
+  const smtpPass = process.env.SMTP_PASS;
+  if (smtpUser && smtpPass && !smtpPass.includes("CONFIGURE")) {
+    providers.push({
+      name: "Outlook",
+      user: smtpUser,
+      config: {
+        ...baseConfig,
+        host: process.env.SMTP_HOST || "smtp.office365.com",
+        auth: { user: smtpUser, pass: smtpPass },
+      },
     });
   }
 
-  const mailOptions = {
-    subject,
-    html,
-  };
-
-  // ════════════════════════════════════════════════════════════════
-  // STEP A: Try Outlook (Configured SMTP)
-  // ════════════════════════════════════════════════════════════════
-  const hasOutlookConfig =
-    process.env.SMTP_HOST &&
-    process.env.SMTP_USER &&
-    process.env.SMTP_PASS &&
-    !process.env.SMTP_PASS.includes("CONFIGURE");
-
-  if (hasOutlookConfig) {
-    try {
-      console.log(`[ORDER EMAIL] Step A: Trying Outlook SMTP...`);
-      const outlookTransporter = nodemailer.createTransport({
-        host: process.env.SMTP_HOST,
-        port: parseInt(process.env.SMTP_PORT || "587", 10),
-        secure: false, // STARTTLS
-        connectionTimeout: 15000,
-        socketTimeout: 15000,
-        auth: {
-          user: process.env.SMTP_USER,
-          pass: process.env.SMTP_PASS,
-        },
-      });
-
-      // Send to admin
-      await sendEmailWithTimeout(
-        outlookTransporter,
-        {
-          ...mailOptions,
-          from: `"Oxford Sports" <${process.env.SMTP_USER}>`,
-          to: adminEmail,
-          subject: `[NEW ORDER] ${subject}`,
-        },
-        15000
-      );
-
-      // Send to customer
-      if (order.customerEmail) {
-        await sendEmailWithTimeout(
-          outlookTransporter,
-          {
-            ...mailOptions,
-            from: `"Oxford Sports" <${process.env.SMTP_USER}>`,
-            to: order.customerEmail,
-            subject: `Order Confirmed — ${order.orderNumber}`,
-          },
-          15000
-        );
-      }
-
-      console.log(`[ORDER EMAIL SUCCESS] Order ${order.orderNumber} sent via Outlook`);
-      return; // Success!
-    } catch (err) {
-      console.error(`[ORDER EMAIL] Step A failed (Outlook): ${err.message}`);
-      lastError = err;
-    }
-  }
-
-  // ════════════════════════════════════════════════════════════════
-  // STEP B: Try Gmail (Fallback)
-  // ════════════════════════════════════════════════════════════════
-  const hasGmailConfig =
-    process.env.GMAIL_PASS &&
-    !process.env.GMAIL_PASS.includes("CONFIGURE");
-
-  if (hasGmailConfig) {
-    try {
-      console.log(`[ORDER EMAIL] Step B: Trying Gmail SMTP...`);
-      const gmailTransporter = nodemailer.createTransport({
+  // Provider 2: Gmail fallback (set GMAIL_PASS in Railway to enable)
+  const gmailPass = process.env.GMAIL_PASS;
+  const gmailUser = process.env.GMAIL_USER || "noreply@oxfordsports.net";
+  if (gmailPass && !gmailPass.includes("CONFIGURE")) {
+    providers.push({
+      name: "Gmail",
+      user: gmailUser,
+      config: {
+        ...baseConfig,
         host: "smtp.gmail.com",
-        port: 587,
-        secure: false, // STARTTLS
-        connectionTimeout: 15000,
-        socketTimeout: 15000,
-        auth: {
-          user: "noreply@oxfordsports.net",
-          pass: process.env.GMAIL_PASS,
-        },
-      });
-
-      // Send to admin
-      await sendEmailWithTimeout(
-        gmailTransporter,
-        {
-          ...mailOptions,
-          from: `"Oxford Sports" <noreply@oxfordsports.net>`,
-          to: adminEmail,
-          subject: `[NEW ORDER] ${subject}`,
-        },
-        15000
-      );
-
-      // Send to customer
-      if (order.customerEmail) {
-        await sendEmailWithTimeout(
-          gmailTransporter,
-          {
-            ...mailOptions,
-            from: `"Oxford Sports" <noreply@oxfordsports.net>`,
-            to: order.customerEmail,
-            subject: `Order Confirmed — ${order.orderNumber}`,
-          },
-          15000
-        );
-      }
-
-      console.log(`[ORDER EMAIL SUCCESS] Order ${order.orderNumber} sent via Gmail`);
-      return; // Success!
-    } catch (err) {
-      console.error(`[ORDER EMAIL] Step B failed (Gmail): ${err.message}`);
-      lastError = err;
-    }
+        auth: { user: gmailUser, pass: gmailPass },
+      },
+    });
   }
 
-  // ════════════════════════════════════════════════════════════════
-  // STEP C: Fallback — Log full order to console for manual follow-up
-  // ════════════════════════════════════════════════════════════════
-  console.error(
-    `[ORDER EMAIL] FALLBACK: Email providers unavailable. Logging order to Railway console.`
-  );
-  console.error(`[ORDER FALLBACK] Order ${order.orderNumber} not emailed.`);
-  console.error(`[ORDER FALLBACK] Last error: ${lastError?.message || "Unknown"}`);
-  console.error(`[ORDER FALLBACK] Full order data:`);
-  console.error(JSON.stringify(order, null, 2));
+  return providers;
+}
 
-  // Do NOT throw — order should still be created even if email fails
-  console.warn(
-    `[ORDER EMAIL WARNING] Order ${order.orderNumber} created but email delivery failed. Check Railway logs.`
-  );
+/**
+ * Send email with timeout protection.
+ */
+function sendMailWithTimeout(transporter, mailOptions, timeoutMs = 12000) {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      reject(new Error(`Email send timeout after ${timeoutMs}ms`));
+    }, timeoutMs);
+
+    transporter.sendMail(mailOptions, (err, info) => {
+      clearTimeout(timer);
+      if (err) reject(err);
+      else resolve(info);
+    });
+  });
 }
 
 // ══════════════════════════════════════════
 //  Member: View own orders
 // ══════════════════════════════════════════
 
-/**
- * GET /api/orders/mine
- * Returns the authenticated user's orders.
- */
 exports.getMyOrders = async (req, res) => {
   try {
     const orders = await Order.find({ customer: req.user._id })
@@ -578,10 +524,6 @@ exports.getMyOrders = async (req, res) => {
 //  Admin: View all orders
 // ══════════════════════════════════════════
 
-/**
- * GET /api/admin/orders
- * Query: ?status=pending&page=1&limit=50
- */
 exports.getOrders = async (req, res) => {
   try {
     const { status, page = 1, limit = 50 } = req.query;
@@ -611,10 +553,6 @@ exports.getOrders = async (req, res) => {
   }
 };
 
-/**
- * PUT /api/admin/orders/:id/status
- * Body: { status: "confirmed" | "processing" | ... }
- */
 exports.updateOrderStatus = async (req, res) => {
   try {
     const { status } = req.body;
@@ -648,11 +586,6 @@ exports.updateOrderStatus = async (req, res) => {
 //  Admin: Export orders as CSV
 // ══════════════════════════════════════════
 
-/**
- * GET /api/admin/export-orders
- * Query: ?status=confirmed&from=2026-01-01&to=2026-12-31
- * Returns CSV file download.
- */
 exports.exportOrders = async (req, res) => {
   try {
     const { status, from, to } = req.query;
@@ -666,7 +599,6 @@ exports.exportOrders = async (req, res) => {
 
     const orders = await Order.find(filter).sort({ createdAt: -1 }).lean();
 
-    // ── Build CSV rows (one row per order item — Adidas spreadsheet format) ──
     const headers = [
       "Order ID",
       "Date",
@@ -687,7 +619,6 @@ exports.exportOrders = async (req, res) => {
 
     const csvRows = [headers.join(",")];
 
-    // Sanitize CSV cell values to prevent formula injection
     function csvSafe(val) {
       const str = String(val || "").replace(/"/g, '""');
       if (/^[=+\-@\t\r]/.test(str)) return `"'${str}"`;

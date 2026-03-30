@@ -1156,7 +1156,14 @@ exports.importProducts = async (req, res) => {
         if (!isLicensedTeam && /\bREPLICA\b/.test(`${combined} ${upperColor}`)) isLicensedTeam = true;
       }
 
-      if (isLicensedTeam) {
+        const EXPLICIT_MAIN_CATEGORIES = new Set([
+        "FOOTWEAR", "CLOTHING", "ACCESSORIES", "B GRADE", "JOB LOTS", "UNDER £5"
+      ]);
+      const excelCategoryIsExplicit = EXPLICIT_MAIN_CATEGORIES.has(
+        (canonicalFromInput || "").toUpperCase()
+      );
+ 
+      if (isLicensedTeam && !excelCategoryIsExplicit) {
         productData.category = "LICENSED TEAM CLOTHING";
         // Keep subcategory from TEAM_MAP if not already set
         if (!productData.subcategory) {
@@ -1168,6 +1175,7 @@ exports.importProducts = async (req, res) => {
           }
         }
       }
+ 
 
       // ── Step 0b: B Grade detection — brand contains "B grade" ──
       const upperBrand = (productData.brand || "").toUpperCase();

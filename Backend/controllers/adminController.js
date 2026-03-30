@@ -6,6 +6,10 @@ const generateToken = require("../utils/generateToken");
 const cloudinary = require("../config/cloudinary");
 const fs = require("fs");
 const { parseSizesInput } = require("../utils/sizeStockUtils");
+const {
+  deriveCategoryCanonical,
+  deriveSubcategoryCanonical,
+} = require("../utils/taxonomyUtils");
 
 /**
  * POST /api/admin/login
@@ -185,7 +189,6 @@ exports.updateProduct = async (req, res) => {
         product.sizes = [];
       }
       
-      // Only log update in development mode (verbose logging disabled for performance)
       if (process.env.DEBUG_UPDATES === "true") {
         console.debug(`[UPDATE] ${sku}: sizes input="${req.body.sizes}" qty=${totalQtyInput} → result=${JSON.stringify(product.sizes)}`);
       }
@@ -205,7 +208,6 @@ exports.updateProduct = async (req, res) => {
 
     res.json({ success: true, product: savedProduct, updated: 1 });
   } catch (err) {
-    // Enhanced error logging for debugging
     console.error(`[ERROR] updateProduct failed:`, err.message, err.stack);
     res.status(500).json({ 
       error: err.message,
@@ -227,7 +229,6 @@ exports.deleteProduct = async (req, res) => {
       return res.status(404).json({ error: "Product not found." });
     }
 
-    // Backup the single product before deleting
     await DeletedProductBatch.create({
       deletedBy: req.user?._id,
       reason: `Single product deleted: ${sku}`,
@@ -246,10 +247,6 @@ exports.deleteProduct = async (req, res) => {
 /**
  * DELETE /api/admin/products
  * Clear ALL products — requires confirmation code.
- * Creates a full backup before deletion so products can be restored.
- *
- * Body: { confirmCode: "DELETE-ALL-<count>" }
- * The frontend must send the exact confirmation code matching the product count.
  */
 exports.deleteAllProducts = async (req, res) => {
   try {
@@ -259,7 +256,6 @@ exports.deleteAllProducts = async (req, res) => {
       return res.json({ success: true, message: "No products to delete." });
     }
 
-    // Require confirmation code: "DELETE-ALL-<count>"
     const expectedCode = `DELETE-ALL-${count}`;
     const providedCode = (req.body?.confirmCode || "").trim();
 
@@ -271,7 +267,6 @@ exports.deleteAllProducts = async (req, res) => {
       });
     }
 
-    // Create backup snapshot of ALL products
     const allProducts = await Product.find({}).lean();
     await DeletedProductBatch.create({
       deletedBy: req.user?._id,
@@ -280,7 +275,6 @@ exports.deleteAllProducts = async (req, res) => {
       products: allProducts,
     });
 
-    // Now delete
     const result = await Product.deleteMany({});
     res.json({
       success: true,
@@ -295,7 +289,6 @@ exports.deleteAllProducts = async (req, res) => {
 
 /**
  * GET /api/admin/deleted-batches
- * List all backup batches available for restore.
  */
 exports.getDeletedBatches = async (_req, res) => {
   try {
@@ -312,9 +305,6 @@ exports.getDeletedBatches = async (_req, res) => {
 
 /**
  * POST /api/admin/restore-products/:batchId
- * Restore products from a deleted batch backup.
- * This re-inserts all products from the backup snapshot.
- * Skips products whose SKU already exists (to avoid duplicates).
  */
 exports.restoreProducts = async (req, res) => {
   try {
@@ -331,22 +321,15 @@ exports.restoreProducts = async (req, res) => {
     let skipped = 0;
 
     for (const p of products) {
-      // Remove MongoDB internal fields so we can re-insert cleanly
       const { _id, __v, createdAt, updatedAt, ...productData } = p;
       try {
         await Product.create(productData);
         restored++;
       } catch (e) {
-        // Duplicate key (SKU already exists) — skip
-        if (e.code === 11000) {
-          skipped++;
-        } else {
-          skipped++;
-        }
+        skipped++;
       }
     }
 
-    // Mark batch as restored
     batch.restored = true;
     batch.restoredAt = new Date();
     await batch.save();
@@ -365,7 +348,6 @@ exports.restoreProducts = async (req, res) => {
 
 /**
  * GET /api/admin/categories
- * Get categories from Category collection + distinct product categories.
  */
 exports.getCategories = async (_req, res) => {
   try {
@@ -390,14 +372,9 @@ exports.getCategories = async (_req, res) => {
 
 /**
  * POST /api/admin/fix-subcategories
- * One-time migration: scan all products lacking a subcategory,
- * auto-detect Rugby / Football / Footwear from their name,
- * and write the result back to MongoDB.
- * Safe to call multiple times — only updates products with empty subcategory.
  */
 exports.fixSubcategories = async (_req, res) => {
   try {
-    // ── Footwear subcategory rules (must match nav menu) ──
     const FOOTBALL_BOOTS_RE = /\b(NEMEZIZ|COPA|PREDATOR|SPEEDFLOW|X SPEEDPORTAL|X CRAZYFAST|PREDSTRIKE|SOCCER SHOE|FOOTBALL BOOT)\b|\b(FG|SG|TF|AG|FxG|MG|HG)\b/i;
     const RUGBY_BOOTS_RE = /\b(RUGBY|KAKARI|MALICE|FLANKER)\b/i;
     const GOLF_SHOES_RE = /\b(GOLF|CODECHAOS|ZG21|TOUR360|S2G|SOLARMOTION|REBELCROSS)\b/i;
@@ -405,7 +382,6 @@ exports.fixSubcategories = async (_req, res) => {
     const BEACH_RE = /\b(SLIDE|SLIDES|SANDAL|SANDALS|FLIP FLOP|FLIP FLOPS|SHOWER|ADILETTE|COMFORT SLIDE)\b/i;
     const SPECIALIST_RE = /\b(TERREX|HIKING|TRAIL|OUTDOOR|WALKING)\b/i;
 
-    // ── Category detection regexes ──
     const FOOTWEAR_MODELS = /\b(SUPERSTAR|STAN SMITH|GAZELLE|SAMBA|CAMPUS|FORUM|NMD|ULTRA\s?BOOST|ULTRABOOST|YEEZY|OZWEEGO|ZX|CONTINENTAL|SUPERNOVA|PURE\s?BOOST|SOLAR\s?BOOST|RESPONSE|ADIZERO|ADISTAR|QUESTAR|DURAMO|GALAXY|RUNFALCON|LITE RACER|SWIFT RUN|MULTIX|NITE JOGGER|RETROPY|OZELIA|OZRAH|RIVALRY|DROPSET|DROPSTEP|STREETBALL|HOOPS|ENTRAP|TENSAUR|FORTARUN|RAPIDARUN|4DFWD|DAME|HARDEN|D\.O\.N\.|TRAE|ADILETTE|CLOUDFOAM)\b/i;
     const FOOTWEAR_STUDS = /\b(FG|SG|AG|TF|FxG|MG|HG|IN|IC|FIRM GROUND|SOFT GROUND|TURF|INDOOR|ARTIFICIAL GROUND|MOULDED)\b/i;
     const FOOTWEAR_KEYWORDS = /\b(SHOE|SHOES|BOOT|BOOTS|TRAINER|TRAINERS|SNEAKER|SNEAKERS|CLEAT|CLEATS|FOOTWEAR|SLIDER|SLIDERS|SLIDE|SANDAL|FLIP FLOP|RUNNING SHOE|FOOTBALL BOOT|RUGBY BOOT|GOLF SHOE|TENNIS SHOE)\b/i;
@@ -414,7 +390,6 @@ exports.fixSubcategories = async (_req, res) => {
     const ACCESSORIES_KEYWORDS = /\b(BAG|BAGS|BALL|BALLS|TOWEL|TOWELS|BOTTLE|BOTTLES|SHIN|SHIN GUARD|SHIN PAD|SHINGUARD|GLOVE|GLOVES|CAP|CAPS|HAT|HATS|SCARF|SCARVES|BEANIE|BEANIES|HEADBAND|WRISTBAND|ARMBAND|SOCK|SOCKS|BACKPACK|DUFFEL|DUFFLE|RUCKSACK|HOLDALL|WASHBAG|KEYRING|LANYARD|WALLET|PURSE|WATCH|SUNGLASSES|BELT)\b/i;
     const GENDER_ONLY = /^(MENS?|WOMENS?|WOMEN|FEMALE|LADIES|JUNIOR|JUNIORS|KIDS|YOUTH|BOYS?|GIRLS?|UNISEX|INFANT|BABY|TODDLER)$/i;
 
-    // ── Old category → new category+subcategory mapping ──
     const OLD_CAT_MAP = {
       "football shorts": ["CLOTHING", "Shorts"], "shorts": ["CLOTHING", "Shorts"],
       "t-shirts": ["CLOTHING", "Shirts"], "polo shirts": ["CLOTHING", "Shirts"],
@@ -441,7 +416,6 @@ exports.fixSubcategories = async (_req, res) => {
       "assorted accessories": ["ACCESSORIES", "Bags & Holdalls"], "mens belts": ["ACCESSORIES", "Bags & Holdalls"],
     };
 
-    // ── Team / sport subcategory rules ──
     const TEAM_MAP = {
       "MUFC": "Manchester United", "MAN UTD": "Manchester United",
       "AFC": "Arsenal", "ARSENAL": "Arsenal",
@@ -509,28 +483,28 @@ exports.fixSubcategories = async (_req, res) => {
         let sub = (p.subcategory || "").trim();
         const updateFields = {};
 
-        // Step 1: Fix old/non-standard categories
         const catLower = cat.toLowerCase();
         if (OLD_CAT_MAP[catLower]) {
           const [newCat, newSub] = OLD_CAT_MAP[catLower];
           updateFields.category = newCat;
+          updateFields.categoryCanonical = deriveCategoryCanonical(newCat);
           cat = newCat;
           if (!sub) { updateFields.subcategory = newSub; sub = newSub; }
         } else if (GENDER_ONLY.test(cat)) {
           const newCat = detectCategory(combined);
           updateFields.category = newCat;
+          updateFields.categoryCanonical = deriveCategoryCanonical(newCat);
           cat = newCat;
         } else if (!["FOOTWEAR", "CLOTHING", "ACCESSORIES"].includes(cat.toUpperCase())) {
           const newCat = detectCategory(combined);
           updateFields.category = newCat;
+          updateFields.categoryCanonical = deriveCategoryCanonical(newCat);
           cat = newCat;
         }
 
         const catUpper = cat.toUpperCase();
 
-        // Step 2: Fix subcategory if still empty
         if (!sub) {
-          // Footwear-specific subcategories
           if (catUpper === "FOOTWEAR") {
             if (FOOTBALL_BOOTS_RE.test(combined)) sub = "Football Boots";
             else if (RUGBY_BOOTS_RE.test(combined)) sub = "Rugby Boots";
@@ -541,7 +515,6 @@ exports.fixSubcategories = async (_req, res) => {
             else sub = "Trainers";
           }
 
-          // Clothing-specific subcategories
           if (!sub && catUpper === "CLOTHING") {
             if (/\b(JSY|JERSEY|SHIRT|POLO|TEE|T-SHIRT|T SHIRT|SS TEE|LS TEE|GRAPHIC TEE|TOP|CROP TOP|TANK)\b/.test(combined)) sub = "Shirts";
             else if (/\bSHO\b|\b(SHORTS|SHORT)\b/.test(combined)) sub = "Shorts";
@@ -556,7 +529,6 @@ exports.fixSubcategories = async (_req, res) => {
             else sub = "Shirts";
           }
 
-          // Accessories-specific subcategories
           if (!sub && catUpper === "ACCESSORIES") {
             if (/\b(BALL|BALLS|FOOTBALL|MATCH BALL|TRAINING BALL)\b/.test(combined)) sub = "Balls";
             else if (/\b(BAG|BAGS|BACKPACK|HOLDALL|DUFFEL|RUCKSACK|GYMSACK|GYM SACK|TOTE)\b/.test(combined)) sub = "Bags & Holdalls";
@@ -571,21 +543,23 @@ exports.fixSubcategories = async (_req, res) => {
             else if (/\b(BOTTLE|WATER)\b/.test(combined)) sub = "Bags & Holdalls";
           }
 
-          // Team/country subcategories
           if (!sub) {
             for (const [key, subcat] of Object.entries(TEAM_MAP)) {
               if (combined.includes(key)) { sub = subcat; break; }
             }
           }
 
-          // Sport keyword subcategories
           if (!sub) {
             for (const [key, subcat] of Object.entries(SPORT_MAP)) {
               if (new RegExp(`\\b${key}\\b`).test(combined)) { sub = subcat; break; }
             }
           }
 
-          if (sub) updateFields.subcategory = sub;
+          if (sub) {
+            updateFields.subcategory = sub;
+            // FIX: Also update subcategoryCanonical so queries work correctly
+            updateFields.subcategoryCanonical = deriveSubcategoryCanonical(cat, sub);
+          }
         }
 
         if (Object.keys(updateFields).length > 0) {
@@ -619,9 +593,6 @@ exports.fixSubcategories = async (_req, res) => {
 
 /**
  * POST /api/admin/fix-brands
- * One-time migration: set brand = "adidas" on all products that have an empty brand.
- * Safe to call multiple times — only touches products where brand is currently empty.
- * Accepts optional body: { brand: "adidas" } to override the default.
  */
 exports.fixBrands = async (req, res) => {
   try {
@@ -642,7 +613,6 @@ exports.fixBrands = async (req, res) => {
 
 /**
  * GET /api/admin/export
- * Export all products as JSON. Frontend converts to CSV.
  */
 exports.exportProducts = async (_req, res) => {
   try {
@@ -655,7 +625,6 @@ exports.exportProducts = async (_req, res) => {
 
 /**
  * GET /api/admin/products
- * Admin-only product listing with optional search and inactive inclusion.
  */
 exports.getProducts = async (req, res) => {
   try {
@@ -710,7 +679,6 @@ exports.getProducts = async (req, res) => {
 
 /**
  * GET /api/admin/stats
- * Dashboard statistics.
  */
 exports.getStats = async (_req, res) => {
   try {
@@ -758,8 +726,6 @@ exports.getStats = async (_req, res) => {
 
 /**
  * POST /api/admin/products/:sku/upload-image
- * Upload a single image for a product (via Cloudinary).
- * Expects multipart form with file field "image".
  */
 exports.uploadProductImage = async (req, res) => {
   try {
@@ -773,7 +739,6 @@ exports.uploadProductImage = async (req, res) => {
       return res.status(400).json({ error: "No image file provided." });
     }
 
-    // Upload to Cloudinary
     const result = await cloudinary.uploader.upload(req.file.path, {
       folder: "oxford-sports",
       public_id: sku.replace(/[^a-zA-Z0-9_-]/g, "_"),
@@ -781,10 +746,8 @@ exports.uploadProductImage = async (req, res) => {
       transformation: [{ width: 800, height: 800, crop: "limit", quality: "auto" }],
     });
 
-    // Clean up temp file
     try { fs.unlinkSync(req.file.path); } catch {}
 
-    // Update product
     product.imageUrl = result.secure_url;
     product.imagePublicId = result.public_id;
     await product.save();
@@ -795,7 +758,6 @@ exports.uploadProductImage = async (req, res) => {
       product,
     });
   } catch (err) {
-    // Clean up temp file on error
     if (req.file?.path) try { fs.unlinkSync(req.file.path); } catch {}
     res.status(500).json({ error: err.message });
   }
@@ -803,9 +765,8 @@ exports.uploadProductImage = async (req, res) => {
 
 /**
  * PUT /api/admin/products/bulk-recategorize
- * Move products from one category to another, or recategorize a list of SKUs.
- * Body: { skus: ["SKU1","SKU2"], category: "NEW_CAT", subcategory: "NEW_SUB" }
- * OR: { fromCategory: "OLD_CAT", category: "NEW_CAT", subcategory: "NEW_SUB" }
+ * FIX: Now also updates categoryCanonical and subcategoryCanonical so
+ * products are immediately findable after recategorization.
  */
 exports.bulkRecategorize = async (req, res) => {
   try {
@@ -824,46 +785,24 @@ exports.bulkRecategorize = async (req, res) => {
       return res.status(400).json({ error: "Provide skus array or fromCategory." });
     }
 
+    // Build update — always include canonical fields so filtering works immediately
     const update = {};
-    if (category) update.category = category;
-    if (subcategory) update.subcategory = subcategory;
+    if (category) {
+      update.category = category;
+      update.categoryCanonical = deriveCategoryCanonical(category);
+    }
+    if (subcategory) {
+      update.subcategory = subcategory;
+      // Use the provided category (or empty string) for canonical derivation
+      update.subcategoryCanonical = deriveSubcategoryCanonical(category || "", subcategory);
+    }
 
     const result = await Product.updateMany(filter, { $set: update });
-
-    // ══════════════════════════════════════════════════════════════
-    // FIX: Recalculate canonical fields after bulk update
-    // Products.updateMany() bypasses pre-save hooks, so we must
-    // explicitly set categoryCanonical and subcategoryCanonical
-    // ══════════════════════════════════════════════════════════════
-    const affectedProducts = await Product.find(filter).select(
-      "_id category subcategory"
-    );
-
-    for (const product of affectedProducts) {
-      const newCategory = update.category || product.category;
-      const newSubcategory = update.subcategory || product.subcategory;
-
-      const newCategoryCanonical = deriveCategoryCanonical(newCategory);
-      const newSubcategoryCanonical = deriveSubcategoryCanonical(
-        newCategory,
-        newSubcategory
-      );
-
-      await Product.updateOne(
-        { _id: product._id },
-        {
-          $set: {
-            categoryCanonical: newCategoryCanonical,
-            subcategoryCanonical: newSubcategoryCanonical,
-          },
-        }
-      );
-    }
 
     res.json({
       success: true,
       updated: result.modifiedCount,
-      message: `${result.modifiedCount} products recategorized and canonical fields updated.`,
+      message: `${result.modifiedCount} products recategorized.`,
     });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -872,8 +811,6 @@ exports.bulkRecategorize = async (req, res) => {
 
 /**
  * POST /api/admin/fix-prices
- * One-time cleanup: round all product prices to 2 decimal places.
- * Fixes floating-point artifacts like 17.64444444444445.
  */
 exports.fixPrices = async (_req, res) => {
   try {
@@ -912,8 +849,6 @@ exports.fixPrices = async (_req, res) => {
 
 /**
  * POST /api/admin/cleanup-categories
- * Remove Category documents that have 0 products and are not in the
- * expected main categories list (FOOTWEAR, CLOTHING, ACCESSORIES, etc.).
  */
 exports.cleanupCategories = async (_req, res) => {
   try {
@@ -927,7 +862,6 @@ exports.cleanupCategories = async (_req, res) => {
 
     for (const cat of allCats) {
       if (KEEP.has(cat.name.toUpperCase())) continue;
-      // Check if any products still use this category
       const count = await Product.countDocuments({
         category: { $regex: `^${cat.name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`, $options: "i" },
       });

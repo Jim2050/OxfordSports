@@ -40,40 +40,27 @@ export default function AllProductsPage() {
       .catch(() => setCategories([]));
   }, []);
 
-  // Sync ALL filter params from URL when navigating (e.g. nav dropdown links)
+  // Sync ALL filter params from URL when navigating (e.g. nav dropdown links).
+  // FIX: Always reset to page 1 when URL params change — this was the cause of
+  // categories like "Tracksuit Sets" needing 3 refreshes to show products.
+  // When a user was on page 2 of another category and clicked a nav link, the
+  // page state stayed at 2, returning empty results.
   useEffect(() => {
     const urlCat = searchParams.get("category") || "";
     const urlSearch = searchParams.get("search") || "";
     const urlSubcat = searchParams.get("subcategory") || "";
     const urlBrand = searchParams.get("brand") || "";
     const urlGender = searchParams.get("gender") || "";
-    
-    let filterChanged = false;
-    
-    if (urlCat !== category) {
-      setCategory(urlCat);
-      filterChanged = true;
-    }
-    if (urlSearch !== search) {
-      setSearch(urlSearch);
-      filterChanged = true;
-    }
-    if (urlSubcat !== subcategory) {
-      setSubcategory(urlSubcat);
-      filterChanged = true;
-    }
-    if (urlBrand !== brand) {
-      setBrand(urlBrand);
-      filterChanged = true;
-    }
-    if (urlGender !== gender) {
-      setGender(urlGender);
-      filterChanged = true;
-    }
-    
-    // FIX: Reset pagination when any filter changes
-    // Prevents stale page numbers (e.g. page=2 with no results)
-    if (filterChanged) {
+
+    let filtersChanged = false;
+    if (urlCat !== category) { setCategory(urlCat); filtersChanged = true; }
+    if (urlSearch !== search) { setSearch(urlSearch); filtersChanged = true; }
+    if (urlSubcat !== subcategory) { setSubcategory(urlSubcat); filtersChanged = true; }
+    if (urlBrand !== brand) { setBrand(urlBrand); filtersChanged = true; }
+    if (urlGender !== gender) { setGender(urlGender); filtersChanged = true; }
+
+    // Always reset page to 1 on any URL navigation so we don't skip results
+    if (filtersChanged) {
       setPage(1);
     }
   }, [searchParams]);
@@ -82,7 +69,6 @@ export default function AllProductsPage() {
   useEffect(() => {
     if (!category) {
       setSubcategories([]);
-      // Only reset subcategory if URL doesn't have one
       if (!searchParams.get("subcategory")) setSubcategory("");
       return;
     }
@@ -90,7 +76,7 @@ export default function AllProductsPage() {
     setSubcategories(Array.isArray(selectedCategory?.subcategories) ? selectedCategory.subcategories : []);
   }, [category, categories, searchParams]);
 
-  // Debounce price inputs (500ms) so we don't fire a request per keystroke
+  // Debounce price inputs (500ms)
   useEffect(() => {
     clearTimeout(priceTimerRef.current);
     priceTimerRef.current = setTimeout(() => {
@@ -120,7 +106,6 @@ export default function AllProductsPage() {
       .finally(() => setLoading(false));
   }, [search, brand, gender, category, subcategory, debouncedMinPrice, debouncedMaxPrice, page]);
 
-  // Reset to page 1 when any filter changes
   const resetPage = () => setPage(1);
 
   const clearFilters = () => {
