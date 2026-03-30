@@ -1135,20 +1135,26 @@ exports.importProducts = async (req, res) => {
 
       // ── Step 0: Licensed Team Clothing detection (#4) ──
       // Check BEFORE general category assignment — takes priority
+      // BUT: Only apply auto-detection if Excel didn't explicitly set a recognized main category
       const upperType = (row.type ? String(row.type).trim() : "").toUpperCase();
       const upperColor = (productData.color || "").toUpperCase();
       let isLicensedTeam = false;
 
-      // Rule 1: TEAM_MAP match in name/desc/sku
-      for (const key of Object.keys(TEAM_MAP)) {
-        if (combined.includes(key)) { isLicensedTeam = true; break; }
+      // FIX: Only auto-detect if input category was blank or unrecognized
+      const shouldAutoDetectTeam = !canonicalFromInput || canonicalFromInput === "UNCLASSIFIED";
+
+      if (shouldAutoDetectTeam) {
+        // Rule 1: TEAM_MAP match in name/desc/sku
+        for (const key of Object.keys(TEAM_MAP)) {
+          if (combined.includes(key)) { isLicensedTeam = true; break; }
+        }
+        // Rule 2: JSY abbreviation (adidas jersey code)
+        if (!isLicensedTeam && /\bJSY\b/.test(combined)) isLicensedTeam = true;
+        // Rule 3: "Football Shirts" in Type column
+        if (!isLicensedTeam && /FOOTBALL SHIRT/i.test(upperType)) isLicensedTeam = true;
+        // Rule 4: REPLICA keyword in name/desc/color
+        if (!isLicensedTeam && /\bREPLICA\b/.test(`${combined} ${upperColor}`)) isLicensedTeam = true;
       }
-      // Rule 2: JSY abbreviation (adidas jersey code)
-      if (!isLicensedTeam && /\bJSY\b/.test(combined)) isLicensedTeam = true;
-      // Rule 3: "Football Shirts" in Type column
-      if (!isLicensedTeam && /FOOTBALL SHIRT/i.test(upperType)) isLicensedTeam = true;
-      // Rule 4: REPLICA keyword in name/desc/color
-      if (!isLicensedTeam && /\bREPLICA\b/.test(`${combined} ${upperColor}`)) isLicensedTeam = true;
 
       if (isLicensedTeam) {
         productData.category = "LICENSED TEAM CLOTHING";

@@ -47,11 +47,35 @@ export default function AllProductsPage() {
     const urlSubcat = searchParams.get("subcategory") || "";
     const urlBrand = searchParams.get("brand") || "";
     const urlGender = searchParams.get("gender") || "";
-    if (urlCat !== category) setCategory(urlCat);
-    if (urlSearch !== search) setSearch(urlSearch);
-    if (urlSubcat !== subcategory) setSubcategory(urlSubcat);
-    if (urlBrand !== brand) setBrand(urlBrand);
-    if (urlGender !== gender) setGender(urlGender);
+    
+    let filterChanged = false;
+    
+    if (urlCat !== category) {
+      setCategory(urlCat);
+      filterChanged = true;
+    }
+    if (urlSearch !== search) {
+      setSearch(urlSearch);
+      filterChanged = true;
+    }
+    if (urlSubcat !== subcategory) {
+      setSubcategory(urlSubcat);
+      filterChanged = true;
+    }
+    if (urlBrand !== brand) {
+      setBrand(urlBrand);
+      filterChanged = true;
+    }
+    if (urlGender !== gender) {
+      setGender(urlGender);
+      filterChanged = true;
+    }
+    
+    // FIX: Reset pagination when any filter changes
+    // Prevents stale page numbers (e.g. page=2 with no results)
+    if (filterChanged) {
+      setPage(1);
+    }
   }, [searchParams]);
 
   // Load subcategory OPTIONS when category changes (for the dropdown filter)

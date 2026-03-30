@@ -344,67 +344,28 @@ exports.placeOrder = async (req, res) => {
 
 /**
  * Send order confirmation email to admin + customer.
- * Throws error if SMTP fails; caller should handle with try-catch.
+ * Provider cascade: Outlook → Gmail → console log
+ * Does not throw; logs all outcomes for Railway debugging.
  */
 async function sendOrderEmail(order) {
   console.log(`[ORDER EMAIL] Starting email send for order ${order.orderNumber}...`);
-  
-  // Use Gmail with app-specific password (most reliable)
-  // If SMTP_PASS is configured and working, use it; otherwise use Gmail fallback
-  const useGmail = !process.env.SMTP_PASS || process.env.SMTP_PASS.includes("CONFIGURE");
-  
-  let emailConfig = {
-    host: useGmail ? "smtp.gmail.com" : (process.env.SMTP_HOST || "smtp.office365.com"),
-    port: 587,
-    secure: false,
-    connectionTimeout: 5000,
-    socketTimeout: 5000,
-    greetingTimeout: 5000,
-  };
-
-  // Use Gmail if configured, otherwise use SMTP settings
-  let smtpUser; // Declare at function scope so it's available in try block
-  
-  if (useGmail) {
-    // Gmail app password must be set in environment
-    const gmailPass = process.env.GMAIL_PASS;
-    if (!gmailPass || gmailPass === "CONFIGURE_ME_LATER") {
-      throw new Error("Gmail not configured. Set GMAIL_PASS in environment variables.");
-    }
-    emailConfig.auth = {
-      user: "noreply@oxfordsports.net",
-      pass: gmailPass,
-    };
-    smtpUser = "noreply@oxfordsports.net"; // Set for logging
-  } else {
-    // Use configured SMTP (Outlook or other)
-    smtpUser = process.env.SMTP_USER;
-    const smtpPass = process.env.SMTP_PASS;
-    if (!smtpUser || !smtpPass) {
-      throw new Error("SMTP not configured.");
-    }
-    emailConfig.auth = { user: smtpUser, pass: smtpPass };
-  }
-
-  let transporter = nodemailer.createTransport(emailConfig);
 
   const adminEmail = process.env.CONTACT_EMAIL_TO || "sales@oxfordsports.net";
+  let lastError = null;
 
+  // Build email content once (used by all transport attempts)
   const itemRows = order.items
-    .map(
-      (i) => {
-        // Show allocatedSize info in email when applicable
-        const sizeDisplay = i.allocatedSize ? `${i.size} (auto)` : (i.size || "—");
-        return `<tr>
-          <td style="padding:6px 10px;border:1px solid #e5e7eb;">${i.name}</td>
-          <td style="padding:6px 10px;border:1px solid #e5e7eb;">${i.sku}</td>
-          <td style="padding:6px 10px;border:1px solid #e5e7eb;">${sizeDisplay}</td>
-          <td style="padding:6px 10px;border:1px solid #e5e7eb;text-align:center;">${i.quantity}</td>
-          <td style="padding:6px 10px;border:1px solid #e5e7eb;text-align:right;">£${i.unitPrice.toFixed(2)}</td>
-          <td style="padding:6px 10px;border:1px solid #e5e7eb;text-align:right;">£${i.lineTotal.toFixed(2)}</td>
-        </tr>`;
-      }
-    )
+    .map((i) => {
+      const sizeDisplay = i.allocatedSize ? `${i.size} (auto)` : (i.size || "—");
+      return `<tr>
+        <td style="padding:6px 10px;border:1px solid #e5e7eb;">${i.name}</td>
+        <td style="padding:6px 10px;border:1px solid #e5e7eb;">${i.sku}</td>
+        <td style="padding:6px 10px;border:1px solid #e5e7eb;">${sizeDisplay}</td>
+        <td style="padding:6px 10px;border:1px solid #e5e7eb;text-align:center;">${i.quantity}</td>
+        <td style="padding:6px 10px;border:1px solid #e5e7eb;text-align:right;">£${i.unitPrice.toFixed(2)}</td>
+        <td style="padding:6px 10px;border:1px solid #e5e7eb;text-align:right;">£${i.lineTotal.toFixed(2)}</td>
+      </tr>`;
+    })
     .join("");
 
   const html = `
@@ -443,11 +404,11 @@ async function sendOrderEmail(order) {
 
   const subject = `Order ${order.orderNumber} — £${order.totalAmount.toFixed(2)} — ${order.customerName}`;
 
-  // Helper function to send email with timeout
-  async function sendEmailWithTimeout(mailOptions, timeoutMs = 10000) {
+  // Helper: Send with timeout
+  async function sendEmailWithTimeout(transporter, mailOptions, timeoutMs = 15000) {
     return new Promise((resolve, reject) => {
       const timeout = setTimeout(() => {
-        reject(new Error(`Email send timeout after ${timeoutMs}ms - likely SMTP auth failure`));
+        reject(new Error(`SMTP timeout after ${timeoutMs}ms`));
       }, timeoutMs);
 
       transporter.sendMail(mailOptions, (err, info) => {
@@ -458,35 +419,140 @@ async function sendOrderEmail(order) {
     });
   }
 
-  // Wrap email sending in try-catch with minimal logging
-  try {
-    if (process.env.DEBUG_EMAIL === 'true') console.log(`[SMTP DEBUG] Attempting to send emails for order ${order.orderNumber}...`);
-    
-    // Send to admin with timeout
-    await sendEmailWithTimeout({
-      from: `"Oxford Sports" <${smtpUser}>`,
-      to: adminEmail,
-      subject: `[NEW ORDER] ${subject}`,
-      html,
-    }, 10000);
-    if (process.env.DEBUG_EMAIL === 'true') console.log(`[ORDER EMAIL] Admin email sent to ${adminEmail}`);
+  const mailOptions = {
+    subject,
+    html,
+  };
 
-    // Send confirmation to customer with timeout
-    if (order.customerEmail) {
-      await sendEmailWithTimeout({
-        from: `"Oxford Sports" <${smtpUser}>`,
-        to: order.customerEmail,
-        subject: `Order Confirmed — ${order.orderNumber}`,
-        html,
-      }, 10000);
-      if (process.env.DEBUG_EMAIL === 'true') console.log(`[ORDER EMAIL] Customer email sent to ${order.customerEmail}`);
+  // ════════════════════════════════════════════════════════════════
+  // STEP A: Try Outlook (Configured SMTP)
+  // ════════════════════════════════════════════════════════════════
+  const hasOutlookConfig =
+    process.env.SMTP_HOST &&
+    process.env.SMTP_USER &&
+    process.env.SMTP_PASS &&
+    !process.env.SMTP_PASS.includes("CONFIGURE");
+
+  if (hasOutlookConfig) {
+    try {
+      console.log(`[ORDER EMAIL] Step A: Trying Outlook SMTP...`);
+      const outlookTransporter = nodemailer.createTransport({
+        host: process.env.SMTP_HOST,
+        port: parseInt(process.env.SMTP_PORT || "587", 10),
+        secure: false, // STARTTLS
+        connectionTimeout: 15000,
+        socketTimeout: 15000,
+        auth: {
+          user: process.env.SMTP_USER,
+          pass: process.env.SMTP_PASS,
+        },
+      });
+
+      // Send to admin
+      await sendEmailWithTimeout(
+        outlookTransporter,
+        {
+          ...mailOptions,
+          from: `"Oxford Sports" <${process.env.SMTP_USER}>`,
+          to: adminEmail,
+          subject: `[NEW ORDER] ${subject}`,
+        },
+        15000
+      );
+
+      // Send to customer
+      if (order.customerEmail) {
+        await sendEmailWithTimeout(
+          outlookTransporter,
+          {
+            ...mailOptions,
+            from: `"Oxford Sports" <${process.env.SMTP_USER}>`,
+            to: order.customerEmail,
+            subject: `Order Confirmed — ${order.orderNumber}`,
+          },
+          15000
+        );
+      }
+
+      console.log(`[ORDER EMAIL SUCCESS] Order ${order.orderNumber} sent via Outlook`);
+      return; // Success!
+    } catch (err) {
+      console.error(`[ORDER EMAIL] Step A failed (Outlook): ${err.message}`);
+      lastError = err;
     }
-    if (process.env.DEBUG_EMAIL === 'true') console.log(`[ORDER EMAIL SUCCESS] ${order.orderNumber} emails sent successfully`);
-  } catch (mailErr) {
-    console.error(`[ORDER EMAIL ERROR] ${order.orderNumber}: ${mailErr.message}`);
-    if (process.env.DEBUG_EMAIL === 'true') console.error(`[SMTP DEBUG] Error code: ${mailErr.code}, Response: ${mailErr.response}`);
-    throw mailErr; // Bubble up for caller to handle
   }
+
+  // ════════════════════════════════════════════════════════════════
+  // STEP B: Try Gmail (Fallback)
+  // ════════════════════════════════════════════════════════════════
+  const hasGmailConfig =
+    process.env.GMAIL_PASS &&
+    !process.env.GMAIL_PASS.includes("CONFIGURE");
+
+  if (hasGmailConfig) {
+    try {
+      console.log(`[ORDER EMAIL] Step B: Trying Gmail SMTP...`);
+      const gmailTransporter = nodemailer.createTransport({
+        host: "smtp.gmail.com",
+        port: 587,
+        secure: false, // STARTTLS
+        connectionTimeout: 15000,
+        socketTimeout: 15000,
+        auth: {
+          user: "noreply@oxfordsports.net",
+          pass: process.env.GMAIL_PASS,
+        },
+      });
+
+      // Send to admin
+      await sendEmailWithTimeout(
+        gmailTransporter,
+        {
+          ...mailOptions,
+          from: `"Oxford Sports" <noreply@oxfordsports.net>`,
+          to: adminEmail,
+          subject: `[NEW ORDER] ${subject}`,
+        },
+        15000
+      );
+
+      // Send to customer
+      if (order.customerEmail) {
+        await sendEmailWithTimeout(
+          gmailTransporter,
+          {
+            ...mailOptions,
+            from: `"Oxford Sports" <noreply@oxfordsports.net>`,
+            to: order.customerEmail,
+            subject: `Order Confirmed — ${order.orderNumber}`,
+          },
+          15000
+        );
+      }
+
+      console.log(`[ORDER EMAIL SUCCESS] Order ${order.orderNumber} sent via Gmail`);
+      return; // Success!
+    } catch (err) {
+      console.error(`[ORDER EMAIL] Step B failed (Gmail): ${err.message}`);
+      lastError = err;
+    }
+  }
+
+  // ════════════════════════════════════════════════════════════════
+  // STEP C: Fallback — Log full order to console for manual follow-up
+  // ════════════════════════════════════════════════════════════════
+  console.error(
+    `[ORDER EMAIL] FALLBACK: Email providers unavailable. Logging order to Railway console.`
+  );
+  console.error(`[ORDER FALLBACK] Order ${order.orderNumber} not emailed.`);
+  console.error(`[ORDER FALLBACK] Last error: ${lastError?.message || "Unknown"}`);
+  console.error(`[ORDER FALLBACK] Full order data:`);
+  console.error(JSON.stringify(order, null, 2));
+
+  // Do NOT throw — order should still be created even if email fails
+  console.warn(
+    `[ORDER EMAIL WARNING] Order ${order.orderNumber} created but email delivery failed. Check Railway logs.`
+  );
 }
 
 // ══════════════════════════════════════════

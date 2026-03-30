@@ -830,10 +830,40 @@ exports.bulkRecategorize = async (req, res) => {
 
     const result = await Product.updateMany(filter, { $set: update });
 
+    // ══════════════════════════════════════════════════════════════
+    // FIX: Recalculate canonical fields after bulk update
+    // Products.updateMany() bypasses pre-save hooks, so we must
+    // explicitly set categoryCanonical and subcategoryCanonical
+    // ══════════════════════════════════════════════════════════════
+    const affectedProducts = await Product.find(filter).select(
+      "_id category subcategory"
+    );
+
+    for (const product of affectedProducts) {
+      const newCategory = update.category || product.category;
+      const newSubcategory = update.subcategory || product.subcategory;
+
+      const newCategoryCanonical = deriveCategoryCanonical(newCategory);
+      const newSubcategoryCanonical = deriveSubcategoryCanonical(
+        newCategory,
+        newSubcategory
+      );
+
+      await Product.updateOne(
+        { _id: product._id },
+        {
+          $set: {
+            categoryCanonical: newCategoryCanonical,
+            subcategoryCanonical: newSubcategoryCanonical,
+          },
+        }
+      );
+    }
+
     res.json({
       success: true,
       updated: result.modifiedCount,
-      message: `${result.modifiedCount} products recategorized.`,
+      message: `${result.modifiedCount} products recategorized and canonical fields updated.`,
     });
   } catch (err) {
     res.status(500).json({ error: err.message });
