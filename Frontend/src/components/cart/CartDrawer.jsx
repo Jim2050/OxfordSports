@@ -244,7 +244,7 @@ export default function CartDrawer() {
       </div>
 
       {/* Order Confirmation Modal */}
-      {confirmedOrder && !orderPlaced && (
+      {confirmedOrder && (
         <div
           style={{
             position: "fixed",
@@ -269,9 +269,96 @@ export default function CartDrawer() {
             }}
             onClick={(e) => e.stopPropagation()}
           >
-            {/* Review Phase */}
-            {!submitting ? (
+            {/* Success Phase (shown when orderPlaced = true) */}
+            {orderPlaced ? (
               <>
+                <div style={{ textAlign: "center", marginBottom: "1.5rem" }}>
+                  <div style={{ fontSize: "3rem", marginBottom: "0.5rem" }}>✅</div>
+                  <h2 style={{ color: "#0f2d5c", marginBottom: "0.5rem" }}>Order Successfully Placed</h2>
+                  <p style={{ color: "#666", fontSize: "0.95rem" }}>
+                    Your order has been confirmed and saved.
+                  </p>
+                </div>
+
+                {/* Order Summary */}
+                <div style={{ backgroundColor: "#f8f9fa", padding: "1rem", borderRadius: "0.5rem", marginBottom: "1.5rem" }}>
+                  <p style={{ margin: "0.5rem 0", fontSize: "0.9rem" }}>
+                    <strong>Order Number:</strong> {confirmedOrder.orderNumber}
+                  </p>
+                  <p style={{ margin: "0.5rem 0", fontSize: "0.9rem" }}>
+                    <strong>Order Total:</strong> £{confirmedOrder.totalAmount.toFixed(2)}
+                  </p>
+                  <p style={{ margin: "0.5rem 0", fontSize: "0.9rem" }}>
+                    <strong>Date:</strong> {new Date(confirmedOrder.createdAt).toLocaleDateString("en-GB")}
+                  </p>
+                </div>
+
+                {/* Items */}
+                <div style={{ marginBottom: "1.5rem" }}>
+                  <h3 style={{ fontSize: "0.95rem", color: "#333", marginBottom: "0.75rem" }}>Order Items</h3>
+                  <div style={{ fontSize: "0.85rem", color: "#555" }}>
+                    {confirmedOrder.items.map((item, idx) => (
+                      <div key={idx} style={{ marginBottom: "0.5rem", paddingBottom: "0.5rem", borderBottom: "1px solid #eee" }}>
+                        <div style={{ fontWeight: 600 }}>{item.name} ({item.sku})</div>
+                        <div>Size: {item.size || "—"} | Qty: {item.quantity} | £{item.lineTotal.toFixed(2)}</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Email Status */}
+                <div style={{ backgroundColor: emailStatus?.sent ? "#e8f4f8" : emailStatus?.error ? "#fff3cd" : "#e8f4f8", padding: "1rem", borderRadius: "0.5rem", marginBottom: "1.5rem", borderLeft: `4px solid ${emailStatus?.sent ? "#0f2d5c" : emailStatus?.error ? "#ff9800" : "#0f2d5c"}` }}>
+                  {emailStatus?.sent ? (
+                    <>
+                      <p style={{ margin: 0, fontSize: "0.9rem", color: "#0f2d5c" }}>
+                        <strong>✅ Email Status</strong>
+                      </p>
+                      <p style={{ margin: "0.5rem 0 0 0", fontSize: "0.85rem", color: "#666" }}>
+                        Confirmation sent to <strong>{confirmedOrder.customerEmail}</strong>
+                      </p>
+                    </>
+                  ) : emailStatus?.error ? (
+                    <>
+                      <p style={{ margin: 0, fontSize: "0.9rem", color: "#d32f2f" }}>
+                        <strong>⚠️ Email Delivery Note</strong>
+                      </p>
+                      <p style={{ margin: "0.5rem 0 0 0", fontSize: "0.85rem", color: "#666" }}>
+                        Order saved successfully. Email could not be sent automatically.
+                      </p>
+                    </>
+                  ) : (
+                    <>
+                      <p style={{ margin: 0, fontSize: "0.9rem", color: "#0f2d5c" }}>
+                        <strong>📧 Confirmation Email</strong>
+                      </p>
+                      <p style={{ margin: "0.5rem 0 0 0", fontSize: "0.85rem", color: "#666" }}>
+                        Confirmation being sent to {confirmedOrder.customerEmail}...
+                      </p>
+                    </>
+                  )}
+                </div>
+
+                {/* Close Button */}
+                <button
+                  onClick={handleCloseConfirmation}
+                  style={{
+                    width: "100%",
+                    padding: "0.75rem 1rem",
+                    backgroundColor: "#0f2d5c",
+                    color: "white",
+                    border: "none",
+                    borderRadius: "0.375rem",
+                    cursor: "pointer",
+                    fontWeight: 600,
+                    fontSize: "0.9rem",
+                  }}
+                >
+                  Done
+                </button>
+              </>
+            ) : (
+              <>
+                {/* Review Phase */}
                 {/* Header */}
                 <div style={{ marginBottom: "1.5rem" }}>
                   <h2 style={{ color: "#0f2d5c", marginBottom: "0.25rem", fontSize: "1.5rem" }}>
@@ -306,13 +393,6 @@ export default function CartDrawer() {
                       </div>
                     ))}
                   </div>
-                </div>
-
-                {/* Notice */}
-                <div style={{ backgroundColor: "#e3f2fd", padding: "0.75rem", borderRadius: "0.5rem", marginBottom: "1.5rem", borderLeft: "4px solid #0f2d5c" }}>
-                  <p style={{ margin: 0, fontSize: "0.85rem", color: "#0f2d5c" }}>
-                    ℹ️ Please check item, size, quantity, total amount, and email recipient before confirming.
-                  </p>
                 </div>
 
                 {/* Checkbox */}
@@ -385,122 +465,6 @@ export default function CartDrawer() {
                     Cancel
                   </button>
                 </div>
-              </>
-            ) : (
-              <>
-                {/* Success Phase */}
-                <div style={{ textAlign: "center", marginBottom: "1.5rem" }}>
-                  <div style={{ fontSize: "3rem", marginBottom: "0.5rem" }}>✅</div>
-                  <h2 style={{ color: "#0f2d5c", marginBottom: "0.5rem" }}>Order Successfully Placed</h2>
-                  <p style={{ color: "#666", fontSize: "0.95rem" }}>
-                    Your order has been confirmed and saved.
-                  </p>
-                </div>
-
-                {/* Order Details */}
-                <div style={{ backgroundColor: "#f8f9fa", padding: "1rem", borderRadius: "0.5rem", marginBottom: "1.5rem" }}>
-                  <p style={{ margin: "0.5rem 0", fontSize: "0.9rem" }}>
-                    <strong>Order Number:</strong> {confirmedOrder.orderNumber}
-                  </p>
-                  <p style={{ margin: "0.5rem 0", fontSize: "0.9rem" }}>
-                    <strong>Order Total:</strong> £{confirmedOrder.totalAmount.toFixed(2)}
-                  </p>
-                  <p style={{ margin: "0.5rem 0", fontSize: "0.9rem" }}>
-                    <strong>Date:</strong> {new Date(confirmedOrder.createdAt).toLocaleDateString("en-GB")}
-                  </p>
-                </div>
-
-                {/* Email Status */}
-                <div style={{ backgroundColor: emailStatus?.sent ? "#e8f4f8" : emailStatus?.error ? "#fff3cd" : "#e8f4f8", padding: "1rem", borderRadius: "0.5rem", marginBottom: "1.5rem", borderLeft: `4px solid ${emailStatus?.sent ? "#0f2d5c" : emailStatus?.error ? "#ff9800" : "#0f2d5c"}` }}>
-                  {emailStatus?.sent ? (
-                    <>
-                      <p style={{ margin: 0, fontSize: "0.9rem", color: "#0f2d5c" }}>
-                        <strong>✅ Email Status</strong>
-                      </p>
-                      <p style={{ margin: "0.5rem 0 0 0", fontSize: "0.85rem", color: "#666" }}>
-                        Confirmation sent to <strong>{confirmedOrder.customerEmail}</strong>
-                      </p>
-                    </>
-                  ) : emailStatus?.error ? (
-                    <>
-                      <p style={{ margin: 0, fontSize: "0.9rem", color: "#d32f2f" }}>
-                        <strong>⚠️ Email Delivery Note</strong>
-                      </p>
-                      <p style={{ margin: "0.5rem 0 0 0", fontSize: "0.85rem", color: "#666" }}>
-                        Order saved successfully. Email could not be sent automatically.
-                      </p>
-                    </>
-                  ) : (
-                    <>
-                      <p style={{ margin: 0, fontSize: "0.9rem", color: "#0f2d5c" }}>
-                        <strong>📧 Confirmation Email</strong>
-                      </p>
-                      <p style={{ margin: "0.5rem 0 0 0", fontSize: "0.85rem", color: "#666" }}>
-                        Confirmation being sent to {confirmedOrder.customerEmail}...
-                      </p>
-                    </>
-                  )}
-                </div>
-
-                {/* Mailto Button */}
-                <div style={{ marginBottom: "1rem" }}>
-                  {(() => {
-                    const itemsList = confirmedOrder.items
-                      .map((i) => `  • ${i.name} (${i.sku}) - Size: ${i.size || "N/A"}, Qty: ${i.quantity}, £${i.lineTotal.toFixed(2)}`)
-                      .join("\n");
-                    const taxAmount = (confirmedOrder.totalAmount * 0.2).toFixed(2);
-                    const subtotal = (confirmedOrder.totalAmount - taxAmount).toFixed(2);
-                    const subject = encodeURIComponent(`Order Confirmation - ${confirmedOrder.orderNumber}`);
-                    const body = encodeURIComponent(
-                      `Order Number: ${confirmedOrder.orderNumber}\n` +
-                      `Customer: ${confirmedOrder.customerName}\n` +
-                      `Email: ${confirmedOrder.customerEmail}\n` +
-                      `Delivery: ${confirmedOrder.deliveryAddress || "N/A"}\n\n` +
-                      `Items:\n${itemsList}\n\n` +
-                      `Subtotal: £${subtotal}\n` +
-                      `Tax: £${taxAmount}\n` +
-                      `Total: £${confirmedOrder.totalAmount.toFixed(2)}`
-                    );
-                    return (
-                      <a
-                        href={`mailto:sales@oxfordsports.net?subject=${subject}&body=${body}`}
-                        style={{
-                          display: "block",
-                          padding: "0.75rem 1rem",
-                          backgroundColor: "#0f2d5c",
-                          color: "white",
-                          border: "none",
-                          borderRadius: "0.375rem",
-                          cursor: "pointer",
-                          fontWeight: 600,
-                          fontSize: "0.9rem",
-                          textDecoration: "none",
-                          textAlign: "center",
-                        }}
-                      >
-                        📧 Confirm via Email
-                      </a>
-                    );
-                  })()}
-                </div>
-
-                {/* Close Button */}
-                <button
-                  onClick={handleCloseConfirmation}
-                  style={{
-                    width: "100%",
-                    padding: "0.75rem 1rem",
-                    backgroundColor: "#f0f0f0",
-                    color: "#333",
-                    border: "1px solid #d0d0d0",
-                    borderRadius: "0.375rem",
-                    cursor: "pointer",
-                    fontWeight: 600,
-                    fontSize: "0.9rem",
-                  }}
-                >
-                  Close
-                </button>
               </>
             )}
           </div>
