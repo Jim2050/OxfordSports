@@ -9,3 +9,20 @@ Backend/data/members.json
 dist/
 .DS_Store
 Thumbs.db
+
+# 🔒 SECURITY: Never commit test/debug files with credentials
+Backend/test-*.js
+Backend/diagnose-*.js
+Backend/fix-*.js
+Backend/verify-*.js
+Backend/*SMTP*.md
+Backend/*EMAIL*.md
+Backend/*VERIFY*.md
+Backend/FINAL_ACTION_SUMMARY.md
+Backend/COMPLETE_SMTP_SOLUTION.md
+Backend/QUICK_SMTP_FIX.md
+test-*.js
+migrate-mongodb.js
+
+# ⚠️  NEVER commit credentials — use Railway environment variables only!
+# Do not commit: SMTP_PASS, GMAIL_PASS, API_KEYS, TOKENS, SECRETS
