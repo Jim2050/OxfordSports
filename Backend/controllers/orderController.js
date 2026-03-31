@@ -502,21 +502,38 @@ function buildEmailProviders() {
     });
   }
 
-  // Provider 2: Gmail (set GMAIL_USER + GMAIL_PASS in Railway to enable)
+  // Provider 2: Gmail via port 587 STARTTLS (Railway often blocks port 465)
   const gmailPass = process.env.GMAIL_PASS;
   const gmailUser = process.env.GMAIL_USER || "noreply@oxfordsports.net";
   if (gmailPass && !gmailPass.includes("CONFIGURE")) {
+    // Try port 587 first (STARTTLS) — most likely to work on Railway
     providers.push({
-      name: "Gmail",
+      name: "Gmail-587",
+      user: gmailUser,
+      config: {
+        host: "smtp.gmail.com",
+        port: 587,
+        secure: false,
+        requireTLS: true,
+        auth: { user: gmailUser, pass: gmailPass },
+        connectionTimeout: 15000,
+        socketTimeout: 15000,
+        greetingTimeout: 10000,
+      },
+    });
+
+    // Fallback: port 465 (SSL direct)
+    providers.push({
+      name: "Gmail-465",
       user: gmailUser,
       config: {
         host: "smtp.gmail.com",
         port: 465,
         secure: true,
         auth: { user: gmailUser, pass: gmailPass },
-        connectionTimeout: 20000,
-        socketTimeout: 20000,
-        greetingTimeout: 15000,
+        connectionTimeout: 15000,
+        socketTimeout: 15000,
+        greetingTimeout: 10000,
       },
     });
   }

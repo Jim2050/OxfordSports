@@ -225,11 +225,11 @@ export default function CartDrawer() {
               )}
               <button
                 className="btn btn-accent"
-                style={{ width: "100%" }}
+                style={{ width: "100%", opacity: (submitting || belowMinimum) ? 0.6 : 1 }}
                 onClick={handleCheckout}
                 disabled={submitting || belowMinimum}
               >
-                {submitting ? "Placing order…" : belowMinimum ? `Min. order £${MIN_CART_TOTAL}` : "Place Order"}
+                {belowMinimum ? `Min. order £${MIN_CART_TOTAL}` : submitting ? "Placing order…" : "Place Order"}
               </button>
               <button
                 className="btn btn-outline btn-sm"

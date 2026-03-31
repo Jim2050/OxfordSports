@@ -113,7 +113,7 @@ export default function ProductPage() {
       // Lot items: add complete lot as qty=1, no customization
       // Check if already in cart
       if (isInCart(product.sku, "")) {
-        toast.info(`Complete lot already in your cart`);
+        toast(`Complete lot already in your cart`, { icon: "ℹ️" });
         openDrawer();
         return;
       }
