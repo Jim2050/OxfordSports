@@ -48,9 +48,9 @@ exports.placeOrder = async (req, res) => {
       if (!product) {
         return res
           .status(404)
-          .json({ 
+          .json({
             error: `Product ${item.sku} not found.`,
-            details: `Product not found in database. Check SKU spelling or if product is active.` 
+            details: `Product not found in database. Check SKU spelling or if product is active.`
           });
       }
 
@@ -75,18 +75,18 @@ exports.placeOrder = async (req, res) => {
 
       if (hasSizeStock) {
         const normalizedIncomingSize = size.trim();
-        
+
         let sizeEntry = sizeEntries.find((s) => s.size && s.size.trim() === normalizedIncomingSize);
-        
+
         if (!sizeEntry && (!normalizedIncomingSize || normalizedIncomingSize === "")) {
           sizeEntry = sizeEntries.find((s) => isValidSizeCode(s.size, product.category));
           if (sizeEntry) {
             size = sizeEntry.size;
           }
         }
-        
+
         const available = sizeEntry ? sizeEntry.quantity : 0;
-        
+
         if (!sizeEntry && product.totalQuantity > 0) {
           if (qty > product.totalQuantity) {
             return res.status(400).json({
@@ -147,7 +147,7 @@ exports.placeOrder = async (req, res) => {
       const unitPrice = product.salePrice;
       const wasAllocated = !incomingSize && size && size !== incomingSize;
       const priceQuantity = item.maxStock && item.lotItem ? item.maxStock : qty;
-      
+
       orderItems.push({
         product: product._id,
         sku: product.sku,
@@ -190,13 +190,13 @@ exports.placeOrder = async (req, res) => {
           .filter((s) => s.quantity > 0 && isValidSizeCode(s.size, product.category));
         const orderedSizes = new Set(entry.items.map((i) => (i.size || "").trim()));
         const missingSizeEntries = availableSizes.filter((s) => !orderedSizes.has(s.size.trim()));
-        
+
         for (const sizeEntry of missingSizeEntries) {
           const missingSizeQty = sizeEntry.quantity;
           const trimmedSize = sizeEntry.size.trim();
           const unitPrice = product.salePrice;
           const lineTotal = +(unitPrice * missingSizeQty).toFixed(2);
-          
+
           orderItems.push({
             product: product._id,
             sku: product.sku,
@@ -207,7 +207,7 @@ exports.placeOrder = async (req, res) => {
             unitPrice,
             lineTotal,
           });
-          
+
           stockUpdates.push({
             updateOne: {
               filter: {
@@ -221,7 +221,7 @@ exports.placeOrder = async (req, res) => {
               },
             },
           });
-          
+
           entry.items.push({
             sku: product.sku,
             size: trimmedSize,
@@ -257,7 +257,7 @@ exports.placeOrder = async (req, res) => {
         for (const key of Object.keys(inc)) {
           inc[key] = -inc[key];
         }
-        await Product.bulkWrite([rollback], { ordered: false }).catch(() => {});
+        await Product.bulkWrite([rollback], { ordered: false }).catch(() => { });
       }
       return res.status(500).json({ error: "Stock deduction failed. Please try again." });
     }
@@ -276,7 +276,7 @@ exports.placeOrder = async (req, res) => {
 
     // ── Send order confirmation email in background (non-blocking) ──
     let emailStatus = { sent: false };
-    
+
     const emailQueue = getEmailQueue();
     emailQueue.add(() => sendOrderEmail(order))
       .then(() => {
@@ -297,7 +297,7 @@ exports.placeOrder = async (req, res) => {
           order._id,
           { emailSent: false, emailError: emailErr.message },
           { returnDocument: 'after' }
-        ).catch(() => {});
+        ).catch(() => { });
         console.error(`[ORDER EMAIL FAILED] Order ${order.orderNumber}: ${emailErr.message}`);
         // Log full order details to Railway console as backup notification
         logOrderToConsole(order);
@@ -346,8 +346,7 @@ ${divider}
  */
 async function sendOrderEmail(order) {
   console.log(`[ORDER EMAIL] Starting email send for order ${order.orderNumber}...`);
-  
-  const adminEmail = process.env.CONTACT_EMAIL_TO || "sales@oxfordsports.net";
+  const adminEmail = process.env.CONTACT_EMAIL_TO || "uksportswarehouse@googlemail.com";
 
   const itemRows = order.items
     .map((i) => {
@@ -398,7 +397,7 @@ async function sendOrderEmail(order) {
   `;
 
   const subject = `Order ${order.orderNumber} — £${order.totalAmount.toFixed(2)} — ${order.customerName}`;
-  
+
   // ── Use Resend API via HTTP (Bypasses all SMTP Firewalls) ──
   const resendApiKey = process.env.RESEND_API_KEY;
 
