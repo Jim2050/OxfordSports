@@ -36,6 +36,13 @@ const SPORT_SLUGS = new Set([
   "footwear",
 ]);
 
+// ── In-Memory Caching for heavy aggregations ──
+const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+let brandsCache = null;
+let brandsCacheTimestamp = 0;
+let categoriesCache = null;
+let categoriesCacheTimestamp = 0;
+
 /**
  * GET /api/products
  * Public — returns products with optional filters.
@@ -235,11 +242,16 @@ exports.getProducts = async (req, res) => {
  */
 exports.getBrands = async (_req, res) => {
   try {
+    if (brandsCache && Date.now() - brandsCacheTimestamp < CACHE_TTL) {
+      return res.json({ brands: brandsCache });
+    }
     const brands = await Product.distinct("brand", {
       isActive: true,
       brand: { $ne: "" },
     });
-    res.json({ brands: brands.sort() });
+    brandsCache = brands.sort();
+    brandsCacheTimestamp = Date.now();
+    res.json({ brands: brandsCache });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -252,6 +264,9 @@ exports.getBrands = async (_req, res) => {
  */
 exports.getCategories = async (_req, res) => {
   try {
+    if (categoriesCache && Date.now() - categoriesCacheTimestamp < CACHE_TTL) {
+      return res.json({ categories: categoriesCache });
+    }
     const [categories, categoryCounts, rawCategoryCounts, subcategoryCounts, rawSubcategoryCounts, brandCounts, sportCounts, underFiveCount, brandTotalCount, sportTotalCount] =
       await Promise.all([
         Category.aggregate([
@@ -403,6 +418,8 @@ exports.getCategories = async (_req, res) => {
       };
     });
 
+    categoriesCache = withCounts;
+    categoriesCacheTimestamp = Date.now();
     res.json({ categories: withCounts });
   } catch (err) {
     res.status(500).json({ error: err.message });

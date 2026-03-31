@@ -10,6 +10,9 @@ function adminHeaders() {
 //  Public Product API
 // ══════════════════════════════════════════
 
+let cachedBrands = null;
+let cachedCategories = null;
+
 export const fetchProducts = (params) =>
   API.get("/products", { params }).then((r) => r.data);
 
@@ -21,11 +24,19 @@ export const fetchProductsByCategory = (category) =>
 export const fetchUnderFive = () =>
   API.get("/products?maxPrice=5").then((r) => r.data);
 
-export const fetchBrands = () =>
-  API.get("/products/brands").then((r) => r.data);
+export const fetchBrands = async () => {
+  if (cachedBrands) return { brands: cachedBrands };
+  const r = await API.get("/products/brands");
+  cachedBrands = r.data.brands;
+  return r.data;
+};
 
-export const fetchPublicCategories = () =>
-  API.get("/products/categories").then((r) => r.data);
+export const fetchPublicCategories = async () => {
+  if (cachedCategories) return { categories: cachedCategories };
+  const r = await API.get("/products/categories");
+  cachedCategories = r.data.categories;
+  return r.data;
+};
 
 export const fetchColors = () =>
   API.get("/products/colors").then((r) => r.data);

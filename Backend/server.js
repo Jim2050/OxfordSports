@@ -1,6 +1,9 @@
 const path = require("path");
 require("dotenv").config({ path: path.join(__dirname, ".env") });
 
+// ── Force IPv4 resolution to prevent Nodemailer ENETUNREACH error on Google domains ──
+require("dns").setDefaultResultOrder("ipv4first");
+
 // ── Validate required environment variables ──
 const REQUIRED_ENV = ["MONGO_URI", "JWT_SECRET"];
 const missingEnv = REQUIRED_ENV.filter((k) => !process.env[k]);
