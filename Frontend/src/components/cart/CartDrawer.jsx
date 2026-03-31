@@ -381,14 +381,15 @@ export default function CartDrawer() {
                       setReviewingLocal(false);
                       setReviewConfirmed(false);
                     }}
+                    disabled={submitting}
                     style={{
                       flex: 0.5,
                       padding: "0.75rem 1rem",
-                      backgroundColor: "#f0f0f0",
-                      color: "#333",
+                      backgroundColor: submitting ? "#f8f8f8" : "#f0f0f0",
+                      color: submitting ? "#aaa" : "#333",
                       border: "1px solid #d0d0d0",
                       borderRadius: "0.375rem",
-                      cursor: "pointer",
+                      cursor: submitting ? "not-allowed" : "pointer",
                       fontWeight: 600,
                       fontSize: "0.9rem",
                     }}
@@ -397,14 +398,15 @@ export default function CartDrawer() {
                   </button>
                   <button
                     onClick={handleCloseConfirmation}
+                    disabled={submitting}
                     style={{
                       flex: 0.5,
                       padding: "0.75rem 1rem",
                       backgroundColor: "transparent",
-                      color: "#666",
+                      color: submitting ? "#ccc" : "#666",
                       border: "1px solid #ddd",
                       borderRadius: "0.375rem",
-                      cursor: "pointer",
+                      cursor: submitting ? "not-allowed" : "pointer",
                       fontWeight: 600,
                       fontSize: "0.9rem",
                     }}
