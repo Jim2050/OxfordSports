@@ -3,7 +3,7 @@
  * Uses salePrice (with price fallback) as single source of truth.
  */
 export function buildMailto(product) {
-  const to = import.meta.env.VITE_ORDER_EMAIL || "sales@oxfordsports.net";
+  const to = import.meta.env.VITE_ORDER_EMAIL || "sales@oxfordsports.online";
   const price = Number(product.salePrice) || Number(product.price) || 0;
   const sizesArr = Array.isArray(product.sizes) ? product.sizes : [];
   const sizesStr = sizesArr

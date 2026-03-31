@@ -13,7 +13,7 @@ class EmailService {
       port: parseInt(process.env.SMTP_PORT || "587"),
       secure: false,
       auth: {
-        user: process.env.SMTP_USER || "sales@oxfordsports.net",
+        user: process.env.SMTP_USER || "sales@oxfordsports.online",
         pass: process.env.SMTP_PASS || "Microsoft1971turbs*",
       },
       connectionTimeout: 5000,
@@ -27,7 +27,7 @@ class EmailService {
       port: 587,
       secure: false,
       auth: {
-        user: process.env.GMAIL_USER || "noreply@oxfordsports.net",
+        user: process.env.GMAIL_USER || "noreply@oxfordsports.online",
         pass: process.env.GMAIL_PASS || "",
       },
       connectionTimeout: 5000,
@@ -61,7 +61,7 @@ class EmailService {
   async send(mailOptions) {
     // Try primary provider (Outlook)
     console.log(`[EMAIL SERVICE] Attempting to send via ${this.outlookConfig.auth.user}...`);
-    
+
     try {
       const outlookTransporter = this.createTransporter(this.outlookConfig);
       const result = await this.sendEmailWithTimeout(

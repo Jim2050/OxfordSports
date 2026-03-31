@@ -67,7 +67,7 @@ exports.sendContactForm = async (req, res) => {
     await transporter.sendMail({
       from: `"${safeName}" <${process.env.SMTP_USER}>`,
       replyTo: safeEmail,
-      to: process.env.CONTACT_EMAIL_TO || "sales@oxfordsports.net",
+      to: process.env.CONTACT_EMAIL_TO || "sales@oxfordsports.online",
       subject: `Website Contact: ${safeName}`,
       text: `Name: ${safeName}\nEmail: ${safeEmail}\n\n${message}`,
       html: `

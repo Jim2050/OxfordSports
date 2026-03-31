@@ -285,10 +285,10 @@ export default function RegisterPage() {
               </a>{" "}
               or email{" "}
               <a
-                href="mailto:sales@oxfordsports.net"
+                href="mailto:sales@oxfordsports.online"
                 style={{ color: "#1a1281", fontWeight: 600 }}
               >
-                sales@oxfordsports.net
+                sales@oxfordsports.online
               </a>
             </p>
           </div>

@@ -406,7 +406,7 @@ async function sendOrderEmail(order) {
   }
 
   // Resend requires a verified sender domain. If unverified, it defaults to their testing email.
-  const fromEmail = process.env.RESEND_FROM_EMAIL || "onboarding@resend.dev";
+  const fromEmail = process.env.RESEND_FROM_EMAIL || "sales@oxfordsports.online";
 
   console.log(`[ORDER EMAIL] Sending via Resend API from ${fromEmail}`);
 

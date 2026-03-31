@@ -154,7 +154,7 @@ async function seedAdmin() {
   try {
     const existing = await User.findOne({ role: "admin" });
     if (!existing) {
-      const adminEmail = process.env.ADMIN_EMAIL || "admin@oxfordsports.net";
+      const adminEmail = process.env.ADMIN_EMAIL || "admin@oxfordsports.online";
       const adminPass = process.env.ADMIN_PASSWORD;
       if (!adminPass) {
         console.warn("⚠️  ADMIN_PASSWORD env not set — skipping admin seed");

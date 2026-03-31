@@ -3,7 +3,7 @@
  * Opens user's email client with pre-filled order details
  */
 export function buildOrderMailto(order) {
-  const to = "sales@oxfordsports.net";
+  const to = "sales@oxfordsports.online";
 
   const subject = encodeURIComponent(
     `Order #${order.orderNumber || order._id} - ${order.customerName}`,

@@ -46,7 +46,7 @@ export default function ContactPage() {
 
             <h3>Email</h3>
             <p>
-              <a href="mailto:sales@oxfordsports.net">sales@oxfordsports.net</a>
+              <a href="mailto:sales@oxfordsports.online">sales@oxfordsports.online</a>
             </p>
 
             <h3>Address</h3>
