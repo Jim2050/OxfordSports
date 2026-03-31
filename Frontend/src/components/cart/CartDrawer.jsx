@@ -23,17 +23,23 @@ export default function CartDrawer() {
   const [confirmedOrder, setConfirmedOrder] = useState(null);
   const [emailStatus, setEmailStatus] = useState(null);
   const [reviewConfirmed, setReviewConfirmed] = useState(false);
-  const [orderPlaced, setOrderPlaced] = useState(false);
+  const [reviewingLocal, setReviewingLocal] = useState(false);
   const belowMinimum = totalAmount < MIN_CART_TOTAL;
 
-  /** Place order via API. */
-  const handleCheckout = async () => {
+  /** Open local review modal (does NOT hit API yet). */
+  const handleCheckout = () => {
     if (!isAuthenticated) {
       toast.error("Please sign in to place an order.");
       return;
     }
     if (items.length === 0) return;
 
+    setReviewingLocal(true);
+    setReviewConfirmed(false);
+  };
+
+  /** Actually submit the order to the backend after review confirmation. */
+  const handleConfirmOrder = async () => {
     setSubmitting(true);
     try {
       const payload = {
@@ -45,6 +51,7 @@ export default function CartDrawer() {
           lotItem: i.lotItem,
         })),
       };
+      
       const res = await API.post("/orders", payload, {
         headers: { Authorization: `Bearer ${token}` },
       });
@@ -52,34 +59,16 @@ export default function CartDrawer() {
       const order = res.data.order;
       const emailStatusResponse = res.data.emailStatus || { sent: false };
       
-      // Show review modal (not yet placed)
+      // Transition to exact success state
       setConfirmedOrder(order);
-      setOrderPlaced(false);
-      setReviewConfirmed(false);
       setEmailStatus(emailStatusResponse);
-      toast.success(`Review your order and confirm to complete the purchase.`);
-      
-      // Clear cart immediately after successful order
-      clearCart();
-    } catch (err) {
-      toast.error(err?.response?.data?.error || "Failed to place order.");
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  /** Confirm the reviewed order and show success state. */
-  const handleConfirmOrder = async () => {
-    setSubmitting(true);
-    try {
-      // Simulate confirmation delay (could be API call if needed)
-      await new Promise(resolve => setTimeout(resolve, 500));
-      
-      // Transition to success state
       setOrderPlaced(true);
+      setReviewingLocal(false);
+      clearCart();
       toast.success("Order confirmed!");
     } catch (err) {
-      toast.error("Failed to confirm order. Please try again.");
+      toast.error(err?.response?.data?.error || "Failed to confirm order. Please try again.");
+    } finally {
       setSubmitting(false);
     }
   };
@@ -89,6 +78,7 @@ export default function CartDrawer() {
     setEmailStatus(null);
     setReviewConfirmed(false);
     setOrderPlaced(false);
+    setReviewingLocal(false);
     closeDrawer();
   };
 
@@ -244,7 +234,7 @@ export default function CartDrawer() {
       </div>
 
       {/* Order Confirmation Modal */}
-      {confirmedOrder && (
+      {(reviewingLocal || confirmedOrder) && (
         <div
           style={{
             position: "fixed",
@@ -269,8 +259,8 @@ export default function CartDrawer() {
             }}
             onClick={(e) => e.stopPropagation()}
           >
-            {/* Success Phase (shown when orderPlaced = true) */}
-            {orderPlaced ? (
+            {/* Success Phase (shown when confirmedOrder exists) */}
+            {confirmedOrder ? (
               <>
                 <div style={{ textAlign: "center", marginBottom: "1.5rem" }}>
                   <div style={{ fontSize: "3rem", marginBottom: "0.5rem" }}>✅</div>
@@ -358,8 +348,7 @@ export default function CartDrawer() {
               </>
             ) : (
               <>
-                {/* Review Phase */}
-                {/* Header */}
+                {/* Local Review Phase */}
                 <div style={{ marginBottom: "1.5rem" }}>
                   <h2 style={{ color: "#0f2d5c", marginBottom: "0.25rem", fontSize: "1.5rem" }}>
                     Review Your Order
@@ -372,13 +361,10 @@ export default function CartDrawer() {
                 {/* Order Summary */}
                 <div style={{ backgroundColor: "#f8f9fa", padding: "1rem", borderRadius: "0.5rem", marginBottom: "1.5rem" }}>
                   <p style={{ margin: "0.5rem 0", fontSize: "0.9rem" }}>
-                    <strong>Order Number:</strong> {confirmedOrder.orderNumber}
+                    <strong>Order Total:</strong> £{totalAmount.toFixed(2)}
                   </p>
                   <p style={{ margin: "0.5rem 0", fontSize: "0.9rem" }}>
-                    <strong>Order Total:</strong> £{confirmedOrder.totalAmount.toFixed(2)}
-                  </p>
-                  <p style={{ margin: "0.5rem 0", fontSize: "0.9rem" }}>
-                    <strong>Date:</strong> {new Date(confirmedOrder.createdAt).toLocaleDateString("en-GB")}
+                    <strong>Total Items:</strong> {itemCount}
                   </p>
                 </div>
 
@@ -386,10 +372,10 @@ export default function CartDrawer() {
                 <div style={{ marginBottom: "1.5rem" }}>
                   <h3 style={{ fontSize: "0.95rem", color: "#333", marginBottom: "0.75rem" }}>Order Items</h3>
                   <div style={{ fontSize: "0.85rem", color: "#555" }}>
-                    {confirmedOrder.items.map((item, idx) => (
+                    {items.map((item, idx) => (
                       <div key={idx} style={{ marginBottom: "0.5rem", paddingBottom: "0.5rem", borderBottom: "1px solid #eee" }}>
                         <div style={{ fontWeight: 600 }}>{item.name} ({item.sku})</div>
-                        <div>Size: {item.size || "—"} | Qty: {item.quantity} | £{item.lineTotal.toFixed(2)}</div>
+                        <div>Size: {item.size || "—"} | Qty: {item.quantity} | £{(item.lotItem ? (item.price * item.maxStock) : (item.price * item.quantity)).toFixed(2)}</div>
                       </div>
                     ))}
                   </div>
@@ -431,7 +417,7 @@ export default function CartDrawer() {
                   </button>
                   <button
                     onClick={() => {
-                      setConfirmedOrder(null);
+                      setReviewingLocal(false);
                       setReviewConfirmed(false);
                     }}
                     style={{
