@@ -35,6 +35,7 @@ const cors = require("cors");
 const helmet = require("helmet");
 const morgan = require("morgan");
 const rateLimit = require("express-rate-limit");
+const compression = require("compression");
 const fs = require("fs");
 
 const connectDB = require("./config/db");
@@ -76,6 +77,7 @@ app.use(
     credentials: true,
   }),
 );
+app.use(compression());
 app.use(morgan(process.env.NODE_ENV === "production" ? "combined" : "dev"));
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true }));
@@ -109,7 +111,10 @@ app.use("/api/products", productRoutes);
 app.use("/api/admin", adminRoutes);
 app.use("/api/orders", orderRoutes);
 app.use("/api/contact", contactRoutes);
-app.use("/api/test", testRoutes);  // Test endpoints for health checks and verification
+
+if (process.env.NODE_ENV !== "production") {
+  app.use("/api/test", testRoutes);  // Test endpoints for health checks and verification
+}
 
 // ── Health check ──
 app.get("/api/health", async (_req, res) => {

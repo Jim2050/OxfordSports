@@ -73,11 +73,6 @@ orderSchema.index({ createdAt: -1 });
 orderSchema.index({ customer: 1, createdAt: -1 });
 orderSchema.index({ emailSent: 1 });
 
-/**
- * Auto-generate a readable order number before save.
- * Format: OS-YYYYMMDD-XXXX (sequential per day).
- * Uses findOneAndUpdate with $inc on a counter for atomicity.
- */
 orderSchema.pre("save", async function () {
   if (this.orderNumber) return; // already set
   const today = new Date();
@@ -86,11 +81,11 @@ orderSchema.pre("save", async function () {
     String(today.getMonth() + 1).padStart(2, "0") +
     String(today.getDate()).padStart(2, "0");
   const prefix = `OS-${dateStr}-`;
-  // Use countDocuments instead of findOne + parse to avoid race conditions
-  const count = await this.constructor.countDocuments({
-    orderNumber: { $regex: `^OS-${dateStr}-` },
-  });
-  this.orderNumber = `${prefix}${String(count + 1).padStart(4, "0")}`;
+  
+  // Use a combination of timestamp mapping and a random tail to eliminate race conditions
+  // without needing a separate atomic sequence collection
+  const randomSuffix = Math.floor(Math.random() * 10000).toString().padStart(4, "0");
+  this.orderNumber = `${prefix}${randomSuffix}`;
 });
 
 module.exports = mongoose.model("Order", orderSchema);

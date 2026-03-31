@@ -19,10 +19,10 @@ const {
 } = require("../controllers/productController");
 
 router.get("/", getProducts);
-router.get("/brands", getBrands);
-router.get("/categories", getCategories);
-router.get("/subcategories", getSubcategories);
-router.get("/colors", getColors);
+router.get("/brands", (req, res, next) => { res.set("Cache-Control", "public, max-age=300"); next(); }, getBrands);
+router.get("/categories", (req, res, next) => { res.set("Cache-Control", "public, max-age=300"); next(); }, getCategories);
+router.get("/subcategories", (req, res, next) => { res.set("Cache-Control", "public, max-age=300"); next(); }, getSubcategories);
+router.get("/colors", (req, res, next) => { res.set("Cache-Control", "public, max-age=300"); next(); }, getColors);
 router.get("/:sku", getProductBySku);
 
 module.exports = router;

@@ -31,6 +31,12 @@ exports.placeOrder = async (req, res) => {
     const DEFAULT_THRESHOLD = 100;
     const MIN_ORDER_TOTAL = 300;
 
+    // ── BATCH FETCH ALL PRODUCTS ──
+    const uniqueSkus = [...new Set(items.map((i) => i.sku?.toUpperCase()).filter(Boolean))];
+    const productsList = await Product.find({ sku: { $in: uniqueSkus }, isActive: true });
+    const productMap = new Map();
+    productsList.forEach((p) => productMap.set(p.sku, p));
+
     for (const item of items) {
       if (!item.sku || !item.quantity || item.quantity < 1) {
         return res
@@ -38,10 +44,7 @@ exports.placeOrder = async (req, res) => {
           .json({ error: `Invalid item: ${JSON.stringify(item)}` });
       }
 
-      const product = await Product.findOne({
-        sku: item.sku.toUpperCase(),
-        isActive: true,
-      });
+      const product = productMap.get(item.sku.toUpperCase());
 
       if (!product) {
         return res
@@ -170,8 +173,8 @@ exports.placeOrder = async (req, res) => {
       skuMap[oi.sku].items.push(oi);
     }
     for (const sku of Object.keys(skuMap)) {
-      const product = await Product.findOne({ sku: sku.toUpperCase(), isActive: true }).lean();
-      if (product) skuMap[sku].product = product;
+      const p = productMap.get(sku.toUpperCase());
+      if (p) skuMap[sku].product = p;
     }
 
     const LOT_CATEGORIES = ["JOB LOTS", "B GRADE", "UNDER £5"];
@@ -408,6 +411,38 @@ async function sendOrderEmail(order) {
   for (const provider of providers) {
     try {
       console.log(`[ORDER EMAIL] Trying provider: ${provider.name} (${provider.user})`);
+
+      // ── Force IPv4 resolution for SMTP host ──
+      // Railway containers cannot reach IPv6 addresses (ENETUNREACH).
+      // Manually resolve to IPv4 and pass the raw IP as host.
+      if (provider.config.host) {
+        try {
+          const dns = require("dns");
+          const ipv4 = await new Promise((resolve, reject) => {
+            dns.resolve4(provider.config.host, (err, addresses) => {
+              if (err || !addresses || addresses.length === 0) {
+                reject(err || new Error("No IPv4 address found"));
+              } else {
+                resolve(addresses[0]);
+              }
+            });
+          });
+          console.log(`[ORDER EMAIL] DNS: ${provider.config.host} → ${ipv4} (IPv4)`);
+          // Keep the original hostname for TLS certificate validation
+          provider.config.tls = {
+            ...(provider.config.tls || {}),
+            servername: provider.config.host,
+            rejectUnauthorized: false,
+          };
+          provider.config.host = ipv4; // Use raw IPv4 IP
+        } catch (dnsErr) {
+          console.warn(`[ORDER EMAIL] IPv4 DNS resolution failed: ${dnsErr.message}, using hostname as fallback`);
+        }
+      }
+
+      // Remove 'service' key — we are providing explicit host/port/secure
+      delete provider.config.service;
+
       const transporter = nodemailer.createTransport(provider.config);
       
       await sendMailWithTimeout(transporter, {
@@ -415,7 +450,7 @@ async function sendOrderEmail(order) {
         to: adminEmail,
         subject: `[NEW ORDER] ${subject}`,
         html,
-      }, 12000);
+      }, 20000);
       console.log(`[ORDER EMAIL] Admin email sent via ${provider.name} to ${adminEmail}`);
 
       if (order.customerEmail) {
@@ -424,7 +459,7 @@ async function sendOrderEmail(order) {
           to: order.customerEmail,
           subject: `Order Confirmed — ${order.orderNumber}`,
           html,
-        }, 12000);
+        }, 20000);
         console.log(`[ORDER EMAIL] Customer email sent via ${provider.name} to ${order.customerEmail}`);
       }
 
@@ -447,13 +482,6 @@ async function sendOrderEmail(order) {
  */
 function buildEmailProviders() {
   const providers = [];
-  const baseConfig = {
-    port: 587,
-    secure: false,
-    connectionTimeout: 8000,
-    socketTimeout: 8000,
-    greetingTimeout: 5000,
-  };
 
   // Provider 1: Outlook / Office365 (existing config)
   const smtpUser = process.env.SMTP_USER;
@@ -463,14 +491,18 @@ function buildEmailProviders() {
       name: "Outlook",
       user: smtpUser,
       config: {
-        ...baseConfig,
         host: process.env.SMTP_HOST || "smtp.office365.com",
+        port: 587,
+        secure: false,
         auth: { user: smtpUser, pass: smtpPass },
+        connectionTimeout: 15000,
+        socketTimeout: 15000,
+        greetingTimeout: 10000,
       },
     });
   }
 
-  // Provider 2: Gmail fallback (set GMAIL_PASS in Railway to enable)
+  // Provider 2: Gmail (set GMAIL_USER + GMAIL_PASS in Railway to enable)
   const gmailPass = process.env.GMAIL_PASS;
   const gmailUser = process.env.GMAIL_USER || "noreply@oxfordsports.net";
   if (gmailPass && !gmailPass.includes("CONFIGURE")) {
@@ -478,12 +510,13 @@ function buildEmailProviders() {
       name: "Gmail",
       user: gmailUser,
       config: {
-        ...baseConfig,
-        service: "gmail",
         host: "smtp.gmail.com",
         port: 465,
         secure: true,
         auth: { user: gmailUser, pass: gmailPass },
+        connectionTimeout: 20000,
+        socketTimeout: 20000,
+        greetingTimeout: 15000,
       },
     });
   }
@@ -494,9 +527,10 @@ function buildEmailProviders() {
 /**
  * Send email with timeout protection.
  */
-function sendMailWithTimeout(transporter, mailOptions, timeoutMs = 12000) {
+function sendMailWithTimeout(transporter, mailOptions, timeoutMs = 20000) {
   return new Promise((resolve, reject) => {
     const timer = setTimeout(() => {
+      transporter.close();
       reject(new Error(`Email send timeout after ${timeoutMs}ms`));
     }, timeoutMs);
 

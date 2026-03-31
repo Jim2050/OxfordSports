@@ -103,13 +103,15 @@ export function CartProvider({ children }) {
       const itemPrice = Number(product.salePrice) || Number(product.price) || 0;
 
       if (idx >= 0) {
+        // Update existing item
+        const updated = [...prev];
+
         // Check if item is a lot — prevent incrementing
         if (updated[idx].lotItem) {
           return prev; // Return unchanged — lot already in cart
         }
         
         // Update existing regular item
-        const updated = [...prev];
         const newQty = updated[idx].quantity + qty;
         const moqStep = (updated[idx].category || "").toUpperCase() === "FOOTWEAR" ? 12 : 25;
         updated[idx] = {
