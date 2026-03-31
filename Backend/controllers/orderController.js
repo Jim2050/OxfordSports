@@ -1,6 +1,5 @@
 const Order = require("../models/Order");
 const Product = require("../models/Product");
-const nodemailer = require("nodemailer");
 const { isValidSizeCode } = require("../utils/sizeStockUtils");
 const { getEmailQueue } = require("../utils/emailQueue");
 
@@ -399,164 +398,69 @@ async function sendOrderEmail(order) {
   `;
 
   const subject = `Order ${order.orderNumber} — £${order.totalAmount.toFixed(2)} — ${order.customerName}`;
-
-  // ── Try each provider in sequence ──
-  const providers = buildEmailProviders();
   
-  if (providers.length === 0) {
-    throw new Error("No SMTP providers configured. Set SMTP_PASS or GMAIL_PASS in Railway environment variables.");
+  // ── Use Resend API via HTTP (Bypasses all SMTP Firewalls) ──
+  const resendApiKey = process.env.RESEND_API_KEY;
+
+  if (!resendApiKey) {
+    throw new Error("RESEND_API_KEY environment variable is missing.");
   }
 
-  let lastError = null;
-  for (const provider of providers) {
-    try {
-      console.log(`[ORDER EMAIL] Trying provider: ${provider.name} (${provider.user})`);
+  // Resend requires a verified sender domain. If unverified, it defaults to their testing email.
+  const fromEmail = process.env.RESEND_FROM_EMAIL || "onboarding@resend.dev";
 
-      // ── Force IPv4 resolution for SMTP host ──
-      // Railway containers cannot reach IPv6 addresses (ENETUNREACH).
-      // Manually resolve to IPv4 and pass the raw IP as host.
-      if (provider.config.host) {
-        try {
-          const dns = require("dns");
-          const ipv4 = await new Promise((resolve, reject) => {
-            dns.resolve4(provider.config.host, (err, addresses) => {
-              if (err || !addresses || addresses.length === 0) {
-                reject(err || new Error("No IPv4 address found"));
-              } else {
-                resolve(addresses[0]);
-              }
-            });
-          });
-          console.log(`[ORDER EMAIL] DNS: ${provider.config.host} → ${ipv4} (IPv4)`);
-          // Keep the original hostname for TLS certificate validation
-          provider.config.tls = {
-            ...(provider.config.tls || {}),
-            servername: provider.config.host,
-            rejectUnauthorized: false,
-          };
-          provider.config.host = ipv4; // Use raw IPv4 IP
-        } catch (dnsErr) {
-          console.warn(`[ORDER EMAIL] IPv4 DNS resolution failed: ${dnsErr.message}, using hostname as fallback`);
-        }
-      }
+  console.log(`[ORDER EMAIL] Sending via Resend API from ${fromEmail}`);
 
-      // Remove 'service' key — we are providing explicit host/port/secure
-      delete provider.config.service;
-
-      const transporter = nodemailer.createTransport(provider.config);
-      
-      await sendMailWithTimeout(transporter, {
-        from: `"Oxford Sports" <${provider.user}>`,
+  try {
+    // 1. Send Admin Notification
+    const adminRes = await fetch("https://api.resend.com/emails", {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${resendApiKey}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        from: `Oxford Sports <${fromEmail}>`,
         to: adminEmail,
         subject: `[NEW ORDER] ${subject}`,
-        html,
-      }, 20000);
-      console.log(`[ORDER EMAIL] Admin email sent via ${provider.name} to ${adminEmail}`);
+        html: html
+      })
+    });
 
-      if (order.customerEmail) {
-        await sendMailWithTimeout(transporter, {
-          from: `"Oxford Sports" <${provider.user}>`,
+    if (!adminRes.ok) {
+      const errorText = await adminRes.text();
+      throw new Error(`Resend Admin API Error: ${adminRes.status} ${errorText}`);
+    }
+    console.log(`[ORDER EMAIL] Admin email sent via Resend to ${adminEmail}`);
+
+    // 2. Send Customer Notification
+    if (order.customerEmail) {
+      const customerRes = await fetch("https://api.resend.com/emails", {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${resendApiKey}`,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          from: `Oxford Sports <${fromEmail}>`,
           to: order.customerEmail,
           subject: `Order Confirmed — ${order.orderNumber}`,
-          html,
-        }, 20000);
-        console.log(`[ORDER EMAIL] Customer email sent via ${provider.name} to ${order.customerEmail}`);
+          html: html
+        })
+      });
+
+      if (!customerRes.ok) {
+        const errorText = await customerRes.text();
+        throw new Error(`Resend Customer API Error: ${customerRes.status} ${errorText}`);
       }
-
-      console.log(`[ORDER EMAIL SUCCESS] ${order.orderNumber} sent via ${provider.name}`);
-      return; // Success — exit
-    } catch (err) {
-      console.error(`[ORDER EMAIL] Provider ${provider.name} failed: ${err.message}`);
-      lastError = err;
-      // Continue to next provider
+      console.log(`[ORDER EMAIL] Customer email sent via Resend to ${order.customerEmail}`);
     }
+
+    console.log(`[ORDER EMAIL SUCCESS] ${order.orderNumber} sent perfectly via Resend API`);
+  } catch (err) {
+    console.error(`[ORDER EMAIL FINAL FAILURE] Resend API failed: ${err.message}`);
+    throw err;
   }
-
-  // All providers failed
-  throw lastError || new Error("All email providers failed");
-}
-
-/**
- * Build list of email providers to try, in priority order.
- * Outlook first (if configured), then Gmail (if GMAIL_PASS set).
- */
-function buildEmailProviders() {
-  const providers = [];
-
-  // Provider 1: Outlook / Office365 (existing config)
-  const smtpUser = process.env.SMTP_USER;
-  const smtpPass = process.env.SMTP_PASS;
-  if (smtpUser && smtpPass && !smtpPass.includes("CONFIGURE")) {
-    providers.push({
-      name: "Outlook",
-      user: smtpUser,
-      config: {
-        host: process.env.SMTP_HOST || "smtp.office365.com",
-        port: 587,
-        secure: false,
-        auth: { user: smtpUser, pass: smtpPass },
-        connectionTimeout: 15000,
-        socketTimeout: 15000,
-        greetingTimeout: 10000,
-      },
-    });
-  }
-
-  // Provider 2: Gmail via port 587 STARTTLS (Railway often blocks port 465)
-  const gmailPass = process.env.GMAIL_PASS;
-  const gmailUser = process.env.GMAIL_USER || "noreply@oxfordsports.net";
-  if (gmailPass && !gmailPass.includes("CONFIGURE")) {
-    // Try port 587 first (STARTTLS) — most likely to work on Railway
-    providers.push({
-      name: "Gmail-587",
-      user: gmailUser,
-      config: {
-        host: "smtp.gmail.com",
-        port: 587,
-        secure: false,
-        requireTLS: true,
-        auth: { user: gmailUser, pass: gmailPass },
-        connectionTimeout: 15000,
-        socketTimeout: 15000,
-        greetingTimeout: 10000,
-      },
-    });
-
-    // Fallback: port 465 (SSL direct)
-    providers.push({
-      name: "Gmail-465",
-      user: gmailUser,
-      config: {
-        host: "smtp.gmail.com",
-        port: 465,
-        secure: true,
-        auth: { user: gmailUser, pass: gmailPass },
-        connectionTimeout: 15000,
-        socketTimeout: 15000,
-        greetingTimeout: 10000,
-      },
-    });
-  }
-
-  return providers;
-}
-
-/**
- * Send email with timeout protection.
- */
-function sendMailWithTimeout(transporter, mailOptions, timeoutMs = 20000) {
-  return new Promise((resolve, reject) => {
-    const timer = setTimeout(() => {
-      transporter.close();
-      reject(new Error(`Email send timeout after ${timeoutMs}ms`));
-    }, timeoutMs);
-
-    transporter.sendMail(mailOptions, (err, info) => {
-      clearTimeout(timer);
-      if (err) reject(err);
-      else resolve(info);
-    });
-  });
 }
 
 // ══════════════════════════════════════════
