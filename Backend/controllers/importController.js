@@ -587,7 +587,7 @@ function consolidateBySku(rows) {
           }
         }
       }
-      // No fallback to ONE SIZE if size column is missing — results in 0 qty
+      // No fallback to ONE SIZE — if sizes are missing, product stays at 0 quantity
 
       const beforeNormalizeCount = existing.sizeEntries.length;
       existing.sizeEntries = normalizeSizeEntries(existing.sizeEntries, existing.category);
@@ -1321,13 +1321,8 @@ exports.importProducts = async (req, res) => {
       productData.brandCanonical = deriveBrandCanonical(productData.brand);
 
       // ── Image URL: store only direct image URLs ──
-      // PROTECT MANUAL EDITS: Do not overwrite if existing product has a Cloudinary image
       const rawImageUrl = row.imageUrl ? String(row.imageUrl).trim() : "";
-      const hasManualImage = existing?.imageUrl && existing.imageUrl.includes("res.cloudinary.com");
-      
-      if (hasManualImage) {
-        // Keep existing manual image (Cloudinary)
-      } else if (isDirectImageUrl(rawImageUrl)) {
+      if (isDirectImageUrl(rawImageUrl)) {
         productData.imageUrl = rawImageUrl;
       } else if (isValidImageUrl(rawImageUrl)) {
         // HTTP URL but not a direct image (Google search link) — queue for resolution

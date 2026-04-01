@@ -42,10 +42,13 @@ export default function ProductCard({ product }) {
 
   const { addToCart, isInCart, openDrawer } = useCart();
   const productSizes = getSizes(product);
-  // FIXED: Show all sizes except "ONE SIZE" to customers
   const displaySizes = productSizes.filter(s => (s.size || "").toUpperCase() !== "ONE SIZE");
-  const hasSizes = productSizes.length > 0;
-  const hasDisplaySizes = displaySizes.length > 0;
+  const displayTotalQty = displaySizes.reduce((sum, s) => sum + (s.quantity || 0), 0);
+  const hasDisplaySizes = displaySizes.length > 0 && displayTotalQty > 0;
+  const isOneSizeOnly = productSizes.length === 1 && (productSizes[0].size || "").toUpperCase() === "ONE SIZE";
+  
+  // Use the actual totalQty for Sold Out check, but displayTotalQty for stock info
+  const effectiveStock = (isOneSizeOnly && totalQty > 0) ? totalQty : displayTotalQty;
   const { mustBuyAll } = getMOQInfo(product);
 
   const [added, setAdded] = useState(false);
@@ -164,7 +167,10 @@ export default function ProductCard({ product }) {
           <h3>{product.name}</h3>
         </Link>
 
-        {product.brand && <p className="product-brand">{product.brand}</p>}
+        {/* Product brand — only show if it's not already at the start of the name */}
+        {product.brand && !product.name.toUpperCase().startsWith(product.brand.toUpperCase()) && (
+          <p className="product-brand">{product.brand}</p>
+        )}
 
         {/* ── Info tags — ALL same colour (R2 / R5 / #11) ── */}
         <div className="product-info-tags">
@@ -179,8 +185,8 @@ export default function ProductCard({ product }) {
         {hasDisplaySizes && (
           <div className="sizes-section">
             <span className="sizes-header">
-              Available Sizes ({totalQty > 50 ? "50+" : totalQty}{" "}
-              {totalQty === 1 ? "unit" : "units"})
+              Available Sizes ({displayTotalQty > 50 ? "50+" : displayTotalQty}{" "}
+              {displayTotalQty === 1 ? "unit" : "units"})
             </span>
             <div className="sizes-preview">
               {displaySizes.slice(0, 10).map((s) => (
@@ -214,7 +220,9 @@ export default function ProductCard({ product }) {
         </div>
 
         {/* ── Stock info — dark blue (R4) ── */}
-        {totalQty > 0 && <p className="stock-info">{totalQty} in stock</p>}
+        {effectiveStock > 0 && !isOneSizeOnly && (
+          <p className="stock-info">{effectiveStock} in stock</p>
+        )}
 
         {/* ── ORDER THIS ITEM + Heart (R10 / #13 / #19) ── */}
         <div style={{ display: "flex", gap: "0.5rem", alignItems: "center", marginTop: "auto" }}>
