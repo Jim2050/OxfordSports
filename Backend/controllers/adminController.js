@@ -94,6 +94,8 @@ exports.addProduct = async (req, res) => {
       description: description || "",
       category: category || "",
       subcategory: subcategory || "",
+      categoryCanonical: deriveCategoryCanonical(category || ""),
+      subcategoryCanonical: deriveSubcategoryCanonical(category || "", subcategory || ""),
       brand: brand || "",
       color: color || "",
       barcode: barcode || "",

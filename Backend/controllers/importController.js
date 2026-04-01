@@ -1003,13 +1003,14 @@ exports.importProducts = async (req, res) => {
       }
 
       if (row._sizeParseFailed || (row._rawSizeProvided && (!Array.isArray(row.sizeEntries) || row.sizeEntries.length === 0))) {
-        failed++;
-        pushErrorDetail({
+        // Best-effort: don't skip SKU if sizes are bad; update metadata and set 0 stock
+        warnings++;
+        pushWarningDetail({
           row: i + 1,
           sku,
-          reason: "Malformed sizes: provided size values could not be normalized",
+          reason: "Provided size values could not be normalized; product updated with 0 stock",
         });
-        continue;
+        row.sizeEntries = [];
       }
 
       // Name: use style/style desc, fall back to SKU
@@ -1409,39 +1410,24 @@ exports.importProducts = async (req, res) => {
     }
 
     // ── Mark products NOT in this upload as sold out (quantity = 0) ──
-    const uploadedSkus = new Set(consolidated.map(p => p.sku));
-    debug(`[IMPORT] Marking missing SKUs as sold out (uploaded: ${uploadedSkus.size} SKUs)...`);
-    
     try {
-      const existingAll = await Product.find({}, { sku: 1, _id: 1 });
-      const skusToMarkSoldOut = existingAll.filter(p => !uploadedSkus.has(p.sku));
+      const uploadedSkus = Array.from(new Set(consolidated.map(p => p.sku)));
+      debug(`[IMPORT] Synchronizing catalog: marking all products NOT in this upload as sold out...`);
       
-      if (skusToMarkSoldOut.length > 0) {
-        debug(`[IMPORT] Found ${skusToMarkSoldOut.length} products not in upload — marking as sold out`);
-        const markSoldOutOps = skusToMarkSoldOut.map(p => ({
-          updateOne: {
-            filter: { _id: p._id },
-            update: {
-              $set: {
-                sizes: [],
-                totalQuantity: 0,
-              },
-            },
-          },
-        }));
-        
-        // Execute in batches of 500
-        for (let i = 0; i < markSoldOutOps.length; i += BATCH_SIZE) {
-          const chunk = markSoldOutOps.slice(i, i + BATCH_SIZE);
-          await Product.bulkWrite(chunk, { ordered: false });
+      const syncResult = await Product.updateMany(
+        { sku: { $nin: uploadedSkus } },
+        { 
+          $set: { 
+            sizes: [], 
+            totalQuantity: 0 
+          } 
         }
-        debug(`[IMPORT] Successfully marked ${skusToMarkSoldOut.length} products as sold out`);
-      } else {
-        debug(`[IMPORT] No products to mark as sold out (all existing products are in upload)`);
-      }
+      );
+      
+      debug(`[IMPORT] Sync complete: ${syncResult.modifiedCount} products not in sheet marked as sold out`);
     } catch (err) {
-      console.error("[IMPORT] Error marking missing SKUs as sold out:", err.message);
-      debug(`[IMPORT WARNING] Failed to mark missing SKUs as sold out: ${err.message}`);
+      console.error("[IMPORT] Error during sold-out synchronization:", err.message);
+      debug(`[IMPORT WARNING] Failed to synchronize missing SKUs: ${err.message}`);
     }
 
     const elapsed = ((Date.now() - startTime) / 1000).toFixed(2);
