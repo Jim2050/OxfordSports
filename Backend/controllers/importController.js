@@ -100,7 +100,7 @@ function normalizeImportedName(name, category, subcategory) {
 
 // Production-safe logger — silent in production, verbose in development
 const isDev = process.env.NODE_ENV !== "production";
-const debug = isDev ? console.log.bind(console) : () => {};
+const debug = isDev ? console.log.bind(console) : () => { };
 
 // ═══════════════════════════════════════════════════════════════
 //  COLUMN ALIAS MAP — handles client Excel + generic formats
@@ -532,7 +532,7 @@ function consolidateBySku(rows) {
     const parsedSizes = parseSizeEntries(rawSize, rowQty);
     const rowSizes = parsedSizes.entries;
     const normalizedRowSizes = normalizeSizeEntries(rowSizes, row.category);
-    
+
     const droppedDuringNormalization =
       rawSizeProvided && rowSizes.length > 0 && normalizedRowSizes.length < rowSizes.length;
     const strictSizeFailure =
@@ -586,7 +586,7 @@ function consolidateBySku(rows) {
             });
           }
         }
-      } 
+      }
       // No fallback to ONE SIZE if size column is missing — results in 0 qty
 
       const beforeNormalizeCount = existing.sizeEntries.length;
@@ -874,7 +874,7 @@ exports.importProducts = async (req, res) => {
       totalSizeVariants: 0,
       sizeWarnings: 0,
     };
-    
+
     for (const prod of consolidated) {
       const sizeCount = Array.isArray(prod.sizeEntries) ? prod.sizeEntries.length : 0;
       if (sizeCount === 0) {
@@ -891,14 +891,14 @@ exports.importProducts = async (req, res) => {
         sizeConsolidationStats.sizeWarnings++;
       }
     }
-    
+
     debug(
       `[IMPORT] Size consolidation stats: ${sizeConsolidationStats.productsWithSizes} products have sizes, ` +
       `${sizeConsolidationStats.productsWithMultipleSizes} multi-size, ` +
       `${sizeConsolidationStats.productsWithNoSizes} no sizes, ` +
       `${sizeConsolidationStats.sizeWarnings} with warnings`,
     );
-    
+
     if (sizeConsolidationStats.productsWithNoSizes > consolidated.length * 0.7) {
       console.warn(
         `[IMPORT WARNING] Most products (${sizeConsolidationStats.productsWithNoSizes}/${consolidated.length}) have NO sizes! ` +
@@ -1071,9 +1071,9 @@ exports.importProducts = async (req, res) => {
       // ══════════════════════════════════════════════════════════════════
       const upperName = (name || "").toUpperCase();
       const upperDesc = (productData.description || "").toUpperCase();
-      const upperSku  = (sku || "").toUpperCase();
-      const combined  = `${upperName} ${upperDesc} ${upperSku}`;
-      const catUpper  = (productData.category || "").toUpperCase();
+      const upperSku = (sku || "").toUpperCase();
+      const combined = `${upperName} ${upperDesc} ${upperSku}`;
+      const catUpper = (productData.category || "").toUpperCase();
 
       // ── Footwear indicators ──
       const FOOTWEAR_MODELS = /\b(NEMEZIZ|COPA|PREDATOR|SPEEDFLOW|ULTRABOOST|ULTRA BOOST|NMD|SUPERSTAR|STAN SMITH|GAZELLE|SAMBA|FORUM|OZWEEGO|GRAND COURT|CONTINENTAL|RIVALRY|NIZZA|DAME|HARDEN|D\.O\.N|DONOVAN|TRAE|ADIZERO|DURAMO|SUPERNOVA|SOLAR|QUESTAR|RUNFALCON|RESPONSE|TERREX|SEELEY|ZX |YEEZY|4DFWD|ALPHABOOST|ALPHABOUNCE|SHOWTHEWAY|FLUIDFLOW|LITE RACER|RACER TR|KAPTIR|LITE 2|EDGE LUX|DROPSET|Court|COURTJAM|BARRICADE|SOLEMATCH|GAMECOURT|DROPSTEP|MIDCITY|HOOPS|BREAKNET|ADVANTAGE|ROGUERA|DAILY|VS PACE|BRAVADA|VULCRAID|VULC RAID)\b/;
@@ -1144,13 +1144,13 @@ exports.importProducts = async (req, res) => {
         if (!isLicensedTeam && /\bREPLICA\b/.test(`${combined} ${upperColor}`)) isLicensedTeam = true;
       }
 
-        const EXPLICIT_MAIN_CATEGORIES = new Set([
+      const EXPLICIT_MAIN_CATEGORIES = new Set([
         "FOOTWEAR", "CLOTHING", "ACCESSORIES", "B GRADE", "JOB LOTS", "UNDER £5"
       ]);
       const excelCategoryIsExplicit = EXPLICIT_MAIN_CATEGORIES.has(
         (canonicalFromInput || "").toUpperCase()
       );
- 
+
       if (isLicensedTeam && !excelCategoryIsExplicit) {
         productData.category = "LICENSED TEAM CLOTHING";
         // Keep subcategory from TEAM_MAP if not already set
@@ -1163,7 +1163,7 @@ exports.importProducts = async (req, res) => {
           }
         }
       }
- 
+
 
       // ── Step 0b: B Grade detection — brand contains "B grade" ──
       const upperBrand = (productData.brand || "").toUpperCase();
@@ -1321,26 +1321,24 @@ exports.importProducts = async (req, res) => {
       productData.brandCanonical = deriveBrandCanonical(productData.brand);
 
       // ── Image URL: store only direct image URLs ──
-      // Google/Bing search URLs saved to _pendingImageQuery for auto-resolution
-      // IMPORTANT: Do NOT set imageUrl to "" — it would overwrite images uploaded via ZIP
+      // PROTECT MANUAL EDITS: Do not overwrite if existing product has a Cloudinary image
       const rawImageUrl = row.imageUrl ? String(row.imageUrl).trim() : "";
-      if (isDirectImageUrl(rawImageUrl)) {
+      const hasManualImage = existing?.imageUrl && existing.imageUrl.includes("res.cloudinary.com");
+      
+      if (hasManualImage) {
+        // Keep existing manual image (Cloudinary)
+      } else if (isDirectImageUrl(rawImageUrl)) {
         productData.imageUrl = rawImageUrl;
       } else if (isValidImageUrl(rawImageUrl)) {
         // HTTP URL but not a direct image (Google search link) — queue for resolution
-        // Don't touch imageUrl — preserve any existing Cloudinary image
         productData._pendingImageQuery = rawImageUrl;
         if (i < 5) {
-          debug(
-            `[IMPORT] Row ${i + 1} imageUrl queued for auto-resolution: "${rawImageUrl.substring(0, 80)}"`,
-          );
+          debug(`[IMPORT] Row ${i + 1} imageUrl queued for resolution: "${rawImageUrl.substring(0, 80)}"`);
         }
       } else {
-        // No valid image in Excel — do NOT overwrite existing imageUrl
+        // No valid image in Excel
         if (rawImageUrl && i < 5) {
-          debug(
-            `[IMPORT] Row ${i + 1} imageUrl is not a valid URL: "${rawImageUrl}" — use ZIP image upload`,
-          );
+          debug(`[IMPORT] Row ${i + 1} imageUrl is not a valid URL: "${rawImageUrl}"`);
         }
       }
 
@@ -1400,17 +1398,17 @@ exports.importProducts = async (req, res) => {
     try {
       const uploadedSkus = Array.from(new Set(consolidated.map(p => p.sku)));
       debug(`[IMPORT] Synchronizing catalog: marking all products NOT in this upload as sold out...`);
-      
+
       const syncResult = await Product.updateMany(
         { sku: { $nin: uploadedSkus } },
-        { 
-          $set: { 
-            sizes: [], 
-            totalQuantity: 0 
-          } 
+        {
+          $set: {
+            sizes: [],
+            totalQuantity: 0
+          }
         }
       );
-      
+
       debug(`[IMPORT] Sync complete: ${syncResult.modifiedCount} products not in sheet marked as sold out`);
     } catch (err) {
       console.error("[IMPORT] Error during sold-out synchronization:", err.message);
@@ -1519,7 +1517,7 @@ exports.importProducts = async (req, res) => {
     if (batch) {
       batch.status = "failed";
       batch.errorLog.push({ row: 0, sku: "", reason: err.message });
-      await batch.save().catch(() => {});
+      await batch.save().catch(() => { });
     }
     cleanup(filePath);
     res.status(500).json({ error: `Import failed: ${err.message}` });
@@ -1700,7 +1698,7 @@ async function processImageBatch(imagesToProcess, filePath, tempExtractDir, job 
 
         if (cloudinaryEnabled) {
           if (product.imagePublicId) {
-            await cloudinary.uploader.destroy(product.imagePublicId).catch(() => {});
+            await cloudinary.uploader.destroy(product.imagePublicId).catch(() => { });
           }
           const upload = await cloudinary.uploader.upload(img.path, {
             folder: "oxford-sports/products",
@@ -1963,6 +1961,6 @@ function cleanup(filePath) {
   if (filePath) {
     try {
       fs.unlinkSync(filePath);
-    } catch {}
+    } catch { }
   }
 }

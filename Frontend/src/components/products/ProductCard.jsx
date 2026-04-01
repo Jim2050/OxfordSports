@@ -42,8 +42,8 @@ export default function ProductCard({ product }) {
 
   const { addToCart, isInCart, openDrawer } = useCart();
   const productSizes = getSizes(product);
-  // FIXED: Show all sizes including "ONE SIZE" to customers
-  const displaySizes = productSizes;
+  // FIXED: Show all sizes except "ONE SIZE" to customers
+  const displaySizes = productSizes.filter(s => (s.size || "").toUpperCase() !== "ONE SIZE");
   const hasSizes = productSizes.length > 0;
   const hasDisplaySizes = displaySizes.length > 0;
   const { mustBuyAll } = getMOQInfo(product);
