@@ -586,18 +586,8 @@ function consolidateBySku(rows) {
             });
           }
         }
-      } else if (!rawSizeProvided && rowQty > 0) {
-        // Row has quantity but no size — add to "ONE SIZE" bucket
-        const found = existing.sizeEntries.find((e) => e.size === "ONE SIZE");
-        if (found) {
-          found.quantity += rowQty;
-        } else if (existing.sizeEntries.length === 0) {
-          existing.sizeEntries.push({ size: "ONE SIZE", quantity: rowQty });
-        } else {
-          // Distribute to first entry if no specific size
-          existing.sizeEntries[0].quantity += rowQty;
-        }
-      }
+      } 
+      // No fallback to ONE SIZE if size column is missing — results in 0 qty
 
       const beforeNormalizeCount = existing.sizeEntries.length;
       existing.sizeEntries = normalizeSizeEntries(existing.sizeEntries, existing.category);
@@ -648,9 +638,6 @@ function consolidateBySku(rows) {
             sizeEntries.push({ size: entry.size, quantity: entry.quantity });
           }
         }
-      } else if (!rawSizeProvided && rowQty > 0) {
-        // No explicit size column value
-        sizeEntries.push({ size: "ONE SIZE", quantity: rowQty });
       } else if (rawSizeProvided) {
         sizeErrors.push("Provided size value could not be normalized");
       }

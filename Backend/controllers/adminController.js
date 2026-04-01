@@ -78,10 +78,7 @@ exports.addProduct = async (req, res) => {
     const totalQtyInput = isNaN(parsedTotalQty) ? 0 : Math.max(0, parsedTotalQty);
 
     // Build sizes array using shared parser for consistency with import pipeline.
-    let sizesArray = parseSizesInput(sizes, totalQtyInput, category);
-    if (sizesArray.length === 0 && totalQtyInput > 0) {
-      sizesArray = [{ size: "ONE SIZE", quantity: totalQtyInput }];
-    }
+    const sizesArray = parseSizesInput(sizes, totalQtyInput, category);
 
     const totalQuantity = sizesArray.reduce(
       (sum, s) => sum + (s.quantity || 0),
@@ -183,13 +180,7 @@ exports.updateProduct = async (req, res) => {
         categoryForSizeParsing,
       );
 
-      if (parsedSizes.length > 0) {
-        product.sizes = parsedSizes;
-      } else if (totalQtyInput > 0) {
-        product.sizes = [{ size: "ONE SIZE", quantity: totalQtyInput }];
-      } else {
-        product.sizes = [];
-      }
+      product.sizes = parsedSizes;
       
       if (process.env.DEBUG_UPDATES === "true") {
         console.debug(`[UPDATE] ${sku}: sizes input="${req.body.sizes}" qty=${totalQtyInput} → result=${JSON.stringify(product.sizes)}`);

@@ -740,10 +740,11 @@ ol {
   display: block;
   background: linear-gradient(135deg, #f8fafc 0%, #ffffff 100%);
   overflow: hidden;
-  height: 240px; /* Standardize height */
+  height: 200px; /* Reduced from 240px */
   display: flex;
   align-items: center;
   justify-content: center;
+  padding: 0.75rem;
 }
 
 .product-card-img {
@@ -759,7 +760,7 @@ ol {
 }
 
 .product-card-body {
-  padding: 1.1rem 1.35rem 1.35rem;
+  padding: 0.85rem 1rem 1rem; /* Tightened from 1.1rem 1.35rem 1.35rem */
   flex: 1;
   display: flex;
   flex-direction: column;
@@ -789,8 +790,8 @@ ol {
 
 /* Standardize brand and tags area */
 .product-card-meta {
-  height: 4.8rem; /* Enough for brand + tags without shifting layout */
-  margin-bottom: 0.5rem;
+  height: 3rem; /* Reduced from 4.8rem */
+  margin-bottom: 0.4rem;
 }
 
 .product-brand {
@@ -930,8 +931,8 @@ ol {
 
 /* Limit sizes preview height in product cards */
 .product-card-body .sizes-section {
-  margin-bottom: 1rem;
-  min-height: 4.5rem; /* Consistency when few sizes */
+  margin-bottom: 0.6rem;
+  min-height: 3.2rem; /* Reduced from 4.5rem */
 }
 
 .sizes-header {
@@ -2058,38 +2059,14 @@ ol {
 }
 
 @media (max-width: 480px) {
-  .logo-img {
-    height: 36px;
-  }
-
-  .logo-text {
-    font-size: 1rem;
-  }
-
-  .logo-container {
-    gap: 0.5rem;
-  }
-
-  .hero {
-    padding: 3rem 0 2.5rem;
-  }
-  .hero h1 {
-    font-size: 1.65rem;
-  }
-  .category-grid {
-    grid-template-columns: 1fr;
-  }
-  .product-detail-img,
-  .product-detail-img img {
-    max-height: 250px;
-  }
-
+  /* Mobile: Multi-column grid adjustments */
   .product-grid {
-    gap: 0.5rem;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 0.75rem;
   }
 
-  .product-card-img {
-    height: 130px;
+  .product-card-img-wrap {
+    height: 150px;
   }
 
   .product-card-body {
@@ -2098,6 +2075,11 @@ ol {
 
   .product-card-body h3 {
     font-size: 0.75rem;
+    height: 2.1rem; /* Shorter title box for mobile */
+  }
+
+  .product-card-meta {
+    height: 2.4rem; /* Shorter meta box for mobile */
   }
 
   .info-tag {
@@ -2106,16 +2088,17 @@ ol {
   }
 
   .product-card-body .sizes-section {
-    max-height: 2.8rem;
+    min-height: 2.4rem; /* Shorter sizes box */
+    margin-bottom: 0.4rem;
   }
 
   .price {
-    font-size: 0.9rem;
+    font-size: 0.95rem;
   }
 
   .btn-order-item {
-    font-size: 0.6rem;
-    padding: 0.4rem 0.25rem;
+    font-size: 0.65rem;
+    padding: 0.45rem 0.3rem;
   }
 }
 
