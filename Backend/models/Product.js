@@ -59,6 +59,7 @@ const productSchema = new mongoose.Schema(
     /* ── Metadata ── */
     sheetName: { type: String, default: "" },
     isActive: { type: Boolean, default: true, index: true },
+    isManuallyEdited: { type: Boolean, default: false, index: true },
   },
   {
     timestamps: true,

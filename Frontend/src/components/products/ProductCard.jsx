@@ -44,6 +44,7 @@ export default function ProductCard({ product }) {
   const productSizes = getSizes(product);
   const displaySizes = productSizes.filter(s => (s.size || "").toUpperCase() !== "ONE SIZE");
   const displayTotalQty = displaySizes.reduce((sum, s) => sum + (s.quantity || 0), 0);
+  const isSoldOut = product.isActive === false || (product.totalQuantity || product.quantity || 0) <= 0;
   const hasDisplaySizes = displaySizes.length > 0 && displayTotalQty > 0;
   const isOneSizeOnly = productSizes.length === 1 && (productSizes[0].size || "").toUpperCase() === "ONE SIZE";
   
@@ -220,7 +221,7 @@ export default function ProductCard({ product }) {
         </div>
 
         {/* ── Stock info — dark blue (R4) ── */}
-        {effectiveStock > 0 && !isOneSizeOnly && (
+        {effectiveStock > 1 && (
           <p className="stock-info">{effectiveStock} in stock</p>
         )}
 

@@ -100,6 +100,7 @@ exports.addProduct = async (req, res) => {
       rrp: rrp ? parseFloat(rrp) : 0,
       sizes: sizesArray,
       totalQuantity,
+      isManuallyEdited: true,
     };
 
     const product = await Product.findOneAndUpdate(
@@ -153,6 +154,7 @@ exports.updateProduct = async (req, res) => {
     simpleFields.forEach((f) => {
       if (req.body[f] !== undefined) product[f] = req.body[f];
     });
+    product.isManuallyEdited = true;
 
     // Price fields (accept both legacy "price" and new "salePrice")
     if (req.body.salePrice !== undefined) {

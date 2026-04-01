@@ -1395,7 +1395,10 @@ exports.importProducts = async (req, res) => {
       debug(`[IMPORT] Synchronizing catalog: marking all products NOT in this upload as sold out...`);
 
       const syncResult = await Product.updateMany(
-        { sku: { $nin: uploadedSkus } },
+        { 
+          sku: { $nin: uploadedSkus },
+          isManuallyEdited: { $ne: true }
+        },
         {
           $set: {
             sizes: [],
