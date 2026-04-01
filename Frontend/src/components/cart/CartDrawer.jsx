@@ -138,18 +138,27 @@ export default function CartDrawer() {
                     </div>
                     <div className="cart-item-controls">
                       {item.lotItem ? (
-                        <div
-                          style={{
-                            fontSize: "0.85rem",
-                            color: "#0f2d5c",
-                            fontWeight: 600,
-                            whiteSpace: "nowrap",
-                            backgroundColor: "#f0f4f8",
-                            padding: "0.25rem 0.5rem",
-                            borderRadius: "0.25rem",
-                          }}
-                        >
-                          ✓ Complete Lot
+                        <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                          <div
+                            style={{
+                              fontSize: "0.85rem",
+                              color: "#0f2d5c",
+                              fontWeight: 600,
+                              whiteSpace: "nowrap",
+                              backgroundColor: "#f0f4f8",
+                              padding: "0.25rem 0.5rem",
+                              borderRadius: "0.25rem",
+                            }}
+                          >
+                            ✓ Complete Lot
+                          </div>
+                          <button
+                            className="cart-remove-btn"
+                            onClick={() => removeFromCart(item.sku, item.size)}
+                            title="Remove lot from cart"
+                          >
+                            🗑
+                          </button>
                         </div>
                       ) : (
                         <>
@@ -164,7 +173,7 @@ export default function CartDrawer() {
                                 updateQuantity(item.sku, item.size, newQty);
                               }
                             }}
-                            disabled={item.quantityLocked || item.lotItem}
+                            disabled={item.quantityLocked}
                             title={item.quantityLocked ? "Quantity locked - must purchase all available units" : ""}
                           >
                             −
@@ -176,7 +185,7 @@ export default function CartDrawer() {
                               const step = item.moqStep || 1;
                               updateQuantity(item.sku, item.size, item.quantity + step);
                             }}
-                            disabled={item.quantityLocked || item.lotItem || (item.maxStock > 0 && item.quantity >= item.maxStock)}
+                            disabled={item.quantityLocked || (item.maxStock > 0 && item.quantity >= item.maxStock)}
                             title={item.quantityLocked ? "Quantity locked - must purchase all available units" : ""}
                           >
                             +
@@ -184,8 +193,7 @@ export default function CartDrawer() {
                           <button
                             className="cart-remove-btn"
                             onClick={() => removeFromCart(item.sku, item.size)}
-                            disabled={item.quantityLocked || item.lotItem}
-                            title={item.quantityLocked ? "Cannot remove - quantity locked for this item" : "Remove"}
+                            title="Remove from cart"
                           >
                             🗑
                           </button>

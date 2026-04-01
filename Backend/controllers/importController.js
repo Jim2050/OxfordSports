@@ -526,7 +526,7 @@ function consolidateBySku(rows) {
     if (!sku) continue;
 
     const parsedQty = parseInt(row.quantity);
-    const rowQty = isNaN(parsedQty) ? 1 : Math.max(0, parsedQty);
+    const rowQty = isNaN(parsedQty) ? 0 : Math.max(0, parsedQty);
     const rawSize = row.sizes ? String(row.sizes).trim() : "";
     const rawSizeProvided = rawSize.length > 0;
     const parsedSizes = parseSizeEntries(rawSize, rowQty);

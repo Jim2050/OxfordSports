@@ -164,13 +164,15 @@ export default function ProductCard({ product }) {
           <h3>{product.name}</h3>
         </Link>
 
-        {product.brand && <p className="product-brand">{product.brand}</p>}
+        <div className="product-card-meta">
+          {product.brand && <p className="product-brand">{product.brand}</p>}
 
-        {/* ── Info tags — ALL same colour (R2 / R5 / #11) ── */}
-        <div className="product-info-tags">
-          {product.sku && <span className="info-tag">{product.sku}</span>}
-          {genderLabel && <span className="info-tag">{genderLabel}</span>}
-          {product.color && <span className="info-tag">{product.color}</span>}
+          {/* ── Info tags ── */}
+          <div className="product-info-tags">
+            {product.sku && <span className="info-tag">{product.sku}</span>}
+            {genderLabel && <span className="info-tag">{genderLabel}</span>}
+            {product.color && <span className="info-tag">{product.color}</span>}
+          </div>
         </div>
 
 
@@ -183,7 +185,7 @@ export default function ProductCard({ product }) {
               {totalQty === 1 ? "unit" : "units"})
             </span>
             <div className="sizes-preview">
-              {displaySizes.slice(0, 10).map((s) => (
+              {displaySizes.slice(0, 8).map((s) => (
                 <span
                   key={s.size}
                   className={`size-tag${s.quantity === 0 ? " out-of-stock" : ""}`}
@@ -192,9 +194,9 @@ export default function ProductCard({ product }) {
                   {s.quantity > 0 ? `(${s.quantity})` : ""}
                 </span>
               ))}
-              {displaySizes.length > 10 && (
+              {displaySizes.length > 8 && (
                 <span className="size-tag more">
-                  +{displaySizes.length - 10}
+                  +{displaySizes.length - 8}
                 </span>
               )}
             </div>
