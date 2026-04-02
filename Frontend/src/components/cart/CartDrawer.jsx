@@ -1,8 +1,8 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import toast from "react-hot-toast";
 import { useCart } from "../../context/CartContext";
 import { useAuth } from "../../context/AuthContext";
-import { resolveImageUrl, MIN_CART_TOTAL, getMOQInfo } from "../../api/api";
+import { resolveImageUrl, MIN_CART_TOTAL, getMOQInfo, getSizes } from "../../api/api";
 import API from "../../api/axiosInstance";
 
 const PLACEHOLDER = "https://placehold.co/64x64/e2e8f0/64748b?text=—";
@@ -24,6 +24,40 @@ export default function CartDrawer() {
   const [reviewConfirmed, setReviewConfirmed] = useState(false);
   const [reviewingLocal, setReviewingLocal] = useState(false);
   const belowMinimum = totalAmount < MIN_CART_TOTAL;
+
+  /**
+   * Validate cart items against current product stock.
+   * Called when drawer opens to catch stale quantities.
+   */
+  const validateCartStock = async () => {
+    for (const item of items) {
+      try {
+        const product = await API.get(`/products/${item.sku}`);
+        const sizes = getSizes(product.data);
+        const sizeData = sizes.find(s => s.size === item.size);
+        const available = sizeData?.quantity ?? product.data.totalQuantity ?? 0;
+        
+        if (item.quantity > available) {
+          if (available === 0) {
+            removeFromCart(item.sku, item.size);
+            toast.error(`${item.name} is now out of stock and was removed from your cart`);
+          } else {
+            updateQuantity(item.sku, item.size, Math.min(item.quantity, available));
+            toast(`${item.name} stock reduced to ${available}`, { icon: "⚠️" });
+          }
+        }
+      } catch (e) {
+        // Product removed or API error — silently ignore
+      }
+    }
+  };
+
+  // Validate cart stock when drawer opens
+  useEffect(() => {
+    if (drawerOpen && items.length > 0) {
+      validateCartStock();
+    }
+  }, [drawerOpen]);
 
   /** Open local review modal (does NOT hit API yet). */
   const handleCheckout = () => {

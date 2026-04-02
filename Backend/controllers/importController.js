@@ -23,6 +23,68 @@ const {
 } = require("../utils/taxonomyUtils");
 const { normalizeSizeEntries } = require("../utils/sizeStockUtils");
 
+// ══════════════════════════════════════════════════════════════════
+// CANONICAL SUBCATEGORY MAP — Permanent solution to case inconsistency
+// All subcategories normalized to title-case for UI consistency
+// ══════════════════════════════════════════════════════════════════
+const CANONICAL_SUBCATEGORIES = new Map([
+  // FOOTWEAR
+  ["TRAINERS", "Trainers"],
+  ["FOOTBALL BOOTS", "Football Boots"],
+  ["RUGBY BOOTS", "Rugby Boots"],
+  ["GOLF SHOES", "Golf Shoes"],
+  ["TENNIS / PADEL SHOES", "Tennis / Padel Shoes"],
+  ["TENNIS / PADEL & RACKET SPORT SHOES", "Tennis / Padel & Racket Sport Shoes"],
+  ["BEACH FOOTWEAR", "Beach Footwear"],
+  ["SLIDES, FLIP FLOPS & SANDALS", "Slides, Flip Flops & Sandals"],
+  ["SPECIALIST FOOTWEAR", "Specialist Footwear"],
+
+  // CLOTHING
+  ["T-SHIRTS", "T-Shirts"],
+  ["POLO SHIRTS", "Polo Shirts"],
+  ["VESTS & BRAS", "Vests & Bras"],
+  ["SKIRTS & SKORTS", "Skirts & Skorts"],
+  ["DRESSES & BODYSUITS", "Dresses & Bodysuits"],
+  ["HOODED SWEATERS", "Hooded Sweaters"],
+  ["JUMPERS & SWEATERS", "Jumpers & Sweaters"],
+  ["TRACKSUIT SETS", "Tracksuit Sets"],
+  ["TRACKSUITS JACKETS", "Tracksuits Jackets"],
+  ["TRACKSUIT BOTTOMS", "Tracksuit Bottoms"],
+  ["SHORTS", "Shorts"],
+  ["JACKETS & COATS", "Jackets & Coats"],
+  ["HEADWEAR", "Headwear"],
+  ["SWIMWEAR", "Swimwear"],
+  ["LEGGINGS", "Leggings"],
+  ["SOCKS", "Socks"],
+  ["GLOVES", "Gloves"],
+  ["SPECIALIST CLOTHING", "Specialist Clothing"],
+  ["TEAM JERSEYS", "Team Jerseys"],
+
+  // LICENSED TEAM CLOTHING
+  ["BAGS & HOLDALLS", "Bags & Holdalls"],
+  ["SOCKS & GLOVES", "Socks & Gloves"],
+  ["ACCESSORIES & MEMORABILIA", "Accessories & Memorabilia"],
+
+  // ACCESSORIES
+  ["BALLS", "Balls"],
+  ["PROTECTIVE GEAR", "Protective Gear"],
+  ["SUNGLASSES", "Sunglasses"],
+  ["WATCHES MONITORS", "Watches Monitors"],
+  ["SPORTS TOWELS", "Sports Towels"],
+  ["RACKETS & BATS", "Rackets & Bats"],
+]);
+
+/**
+ * Apply canonical title-case format to any subcategory.
+ * This is the SINGLE POINT OF NORMALIZATION — ensures consistency across all imports.
+ */
+function toCanonicalSubcategory(value) {
+  const upper = String(value || "").trim().toUpperCase();
+  if (!upper) return "";
+  const canonical = CANONICAL_SUBCATEGORIES.get(upper);
+  return canonical || value; // fallback to original if not in map
+}
+
 function normalizeImportedSubcategory(category, subcategory, name, description = "") {
   const cat = String(category || "").trim().toUpperCase();
   const raw = String(subcategory || "").trim();
@@ -32,52 +94,53 @@ function normalizeImportedSubcategory(category, subcategory, name, description =
 
   // Common OCR variants in the provided CSV (e.g. "Shirts & Ierseys").
   if (/\bSHIRTS?\s*&\s*.[A-Z]*ERSEYS?\b/.test(upper)) {
-    return cat === "LICENSED TEAM CLOTHING" ? "TEAM JERSEYS" : "T-SHIRTS";
+    return toCanonicalSubcategory(cat === "LICENSED TEAM CLOTHING" ? "TEAM JERSEYS" : "T-SHIRTS");
   }
 
   if (upper === "HOODS & SWEATERS") {
-    return "HOODED SWEATERS";
+    return toCanonicalSubcategory("HOODED SWEATERS");
   }
 
   if (upper === "HATS & CAPS") {
-    return "HEADWEAR";
+    return toCanonicalSubcategory("HEADWEAR");
   }
 
   if (cat === "CLOTHING") {
-    if (/\bPOLO\b/.test(combined)) return "POLO SHIRTS";
-    if (/\bCROP TOP\b|\bTUBE TOP\b|\bVEST\b|\bBRA\b/.test(combined)) return "VESTS & BRAS";
-    if (/\bSKIRT\b|\bSKORT\b/.test(combined)) return "SKIRTS & SKORTS";
-    if (/\bDRESS\b|\bBODYSUIT\b/.test(combined)) return "DRESSES & BODYSUITS";
-    if (/\bTRACK TOP\b|\bTRACK JACKET\b|\bTT\b|\bFIREBIRD TRACK TOP\b/.test(combined)) return "TRACKSUITS JACKETS";
-    if (/\bJOGGER\b|\bJOGGERS\b|\bPANT\b|\bPANTS\b|\bTRACK PANT\b|\bTRACKSUIT BOTTOM\b/.test(combined)) return "TRACKSUIT BOTTOMS";
-    if (/\bTRACKSUIT\b/.test(combined) || upper === "TRACKSUITS & JOGGERS") return "TRACKSUIT SETS";
-    if (/\bHOOD\b|\bHOODIE\b|\bHOODY\b/.test(combined)) return "HOODED SWEATERS";
-    if (/\bSWEATER\b|\bSWEATSHIRT\b|\bCREW SWEAT\b|\bJUMPER\b|\bKNIT\b/.test(combined)) return "JUMPERS & SWEATERS";
-    if (/\bSOCK\b/.test(combined)) return "SOCKS";
-    if (/\bGLOVE\b/.test(combined)) return "GLOVES";
-    if (/\bHEADWEAR\b|\bHAT\b|\bCAP\b|\bBEANIE\b/.test(combined)) return "HEADWEAR";
-    if (/\bSWIM\b|\bBIKINI\b/.test(combined)) return "SWIMWEAR";
-    if (/\bT-SHIRT\b|\bT SHIRT\b|\bTEE\b|\bTOP\b|\bTANK\b|\bSHIRT\b/.test(combined)) return "T-SHIRTS";
+    if (/\bPOLO\b/.test(combined)) return toCanonicalSubcategory("POLO SHIRTS");
+    if (/\bCROP TOP\b|\bTUBE TOP\b|\bVEST\b|\bBRA\b/.test(combined)) return toCanonicalSubcategory("VESTS & BRAS");
+    if (/\bSKIRT\b|\bSKORT\b/.test(combined)) return toCanonicalSubcategory("SKIRTS & SKORTS");
+    if (/\bDRESS\b|\bBODYSUIT\b/.test(combined)) return toCanonicalSubcategory("DRESSES & BODYSUITS");
+    if (/\bTRACK TOP\b|\bTRACK JACKET\b|\bTT\b|\bFIREBIRD TRACK TOP\b/.test(combined)) return toCanonicalSubcategory("TRACKSUITS JACKETS");
+    if (/\bJOGGER\b|\bJOGGERS\b|\bPANT\b|\bPANTS\b|\bTRACK PANT\b|\bTRACKSUIT BOTTOM\b/.test(combined)) return toCanonicalSubcategory("TRACKSUIT BOTTOMS");
+    if (/\bTRACKSUIT\b/.test(combined) || upper === "TRACKSUITS & JOGGERS") return toCanonicalSubcategory("TRACKSUIT SETS");
+    if (/\bHOOD\b|\bHOODIE\b|\bHOODY\b/.test(combined)) return toCanonicalSubcategory("HOODED SWEATERS");
+    if (/\bSWEATER\b|\bSWEATSHIRT\b|\bCREW SWEAT\b|\bJUMPER\b|\bKNIT\b/.test(combined)) return toCanonicalSubcategory("JUMPERS & SWEATERS");
+    if (/\bSOCK\b/.test(combined)) return toCanonicalSubcategory("SOCKS");
+    if (/\bGLOVE\b/.test(combined)) return toCanonicalSubcategory("GLOVES");
+    if (/\bHEADWEAR\b|\bHAT\b|\bCAP\b|\bBEANIE\b/.test(combined)) return toCanonicalSubcategory("HEADWEAR");
+    if (/\bSWIM\b|\bBIKINI\b/.test(combined)) return toCanonicalSubcategory("SWIMWEAR");
+    if (/\bJSY\b|\bJERSEY\b|\bREPLICA\b/.test(combined)) return toCanonicalSubcategory("TEAM JERSEYS");
+    if (/\bT-SHIRT\b|\bT SHIRT\b|\bTEE\b|\bTOP\b|\bTANK\b|\bSHIRT\b/.test(combined)) return toCanonicalSubcategory("T-SHIRTS");
   }
 
   if (cat === "LICENSED TEAM CLOTHING") {
-    if (/\bBAG\b|\bHOLDALL\b|\bBACKPACK\b/.test(combined)) return "BAGS & HOLDALLS";
-    if (/\bHAT\b|\bCAP\b|\bBEANIE\b|\bHEADWEAR\b/.test(combined)) return "HEADWEAR";
-    if (/\bGLOVE\b/.test(combined)) return "GLOVES";
-    if (/\bSOCK\b/.test(combined)) return "SOCKS";
-    if (/\bTRACK TOP\b|\bTRACK JACKET\b|\bTT\b/.test(combined)) return "TRACKSUIT JACKETS";
-    if (/\bJOGGER\b|\bPANT\b|\bPANTS\b|\bTRACK PANT\b/.test(combined)) return "TRACKSUIT BOTTOMS";
-    if (/\bTRACKSUIT\b/.test(combined)) return "TRACKSUIT SETS";
-    if (/\bHOOD\b|\bHOODIE\b/.test(combined)) return "HOODED SWEATERS";
-    if (/\bJUMPER\b|\bSWEATER\b|\bSWEATSHIRT\b/.test(combined)) return "JUMPERS & SWEATERS";
-    if (/\bSHORT\b/.test(combined)) return "SHORTS";
-    if (/\bJACKET\b|\bCOAT\b/.test(combined)) return "JACKETS & COATS";
-    if (/\bJSY\b|\bJERSEY\b|\bREPLICA\b/.test(combined)) return "TEAM JERSEYS";
-    if (/\bTEE\b|\bT-SHIRT\b|\bT SHIRT\b|\bSHIRT\b/.test(combined)) return "T-SHIRTS";
-    if (/\bACCESSOR/.test(combined)) return "ACCESSORIES & MEMORABILIA";
+    if (/\bBAG\b|\bHOLDALL\b|\bBACKPACK\b/.test(combined)) return toCanonicalSubcategory("BAGS & HOLDALLS");
+    if (/\bHAT\b|\bCAP\b|\bBEANIE\b|\bHEADWEAR\b/.test(combined)) return toCanonicalSubcategory("HEADWEAR");
+    if (/\bGLOVE\b/.test(combined)) return toCanonicalSubcategory("GLOVES");
+    if (/\bSOCK\b/.test(combined)) return toCanonicalSubcategory("SOCKS");
+    if (/\bTRACK TOP\b|\bTRACK JACKET\b|\bTT\b/.test(combined)) return toCanonicalSubcategory("TRACKSUIT JACKETS");
+    if (/\bJOGGER\b|\bPANT\b|\bPANTS\b|\bTRACK PANT\b/.test(combined)) return toCanonicalSubcategory("TRACKSUIT BOTTOMS");
+    if (/\bTRACKSUIT\b/.test(combined)) return toCanonicalSubcategory("TRACKSUIT SETS");
+    if (/\bHOOD\b|\bHOODIE\b/.test(combined)) return toCanonicalSubcategory("HOODED SWEATERS");
+    if (/\bJUMPER\b|\bSWEATER\b|\bSWEATSHIRT\b/.test(combined)) return toCanonicalSubcategory("JUMPERS & SWEATERS");
+    if (/\bSHORT\b/.test(combined)) return toCanonicalSubcategory("SHORTS");
+    if (/\bJACKET\b|\bCOAT\b/.test(combined)) return toCanonicalSubcategory("JACKETS & COATS");
+    if (/\bJSY\b|\bJERSEY\b|\bREPLICA\b/.test(combined)) return toCanonicalSubcategory("TEAM JERSEYS");
+    if (/\bTEE\b|\bT-SHIRT\b|\bT SHIRT\b|\bSHIRT\b/.test(combined)) return toCanonicalSubcategory("T-SHIRTS");
+    if (/\bACCESSOR/.test(combined)) return toCanonicalSubcategory("ACCESSORIES & MEMORABILIA");
   }
 
-  return raw;
+  return toCanonicalSubcategory(raw);
 }
 
 function normalizeImportedName(name, category, subcategory) {

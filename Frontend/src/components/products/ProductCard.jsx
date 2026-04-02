@@ -50,6 +50,7 @@ export default function ProductCard({ product }) {
   
   // Use the actual totalQty for Sold Out check, but displayTotalQty for stock info
   const effectiveStock = (isOneSizeOnly && totalQty > 0) ? totalQty : displayTotalQty;
+  const hasSizes = productSizes.length > 0;
   const { mustBuyAll } = getMOQInfo(product);
 
   const [added, setAdded] = useState(false);
@@ -230,6 +231,8 @@ export default function ProductCard({ product }) {
             to={detailUrl}
             className={`btn btn-order-item${totalQty === 0 ? " disabled" : ""}`}
             style={{ flex: 1 }}
+            aria-disabled={totalQty === 0 ? "true" : undefined}
+            tabIndex={totalQty === 0 ? -1 : undefined}
           >
             {totalQty === 0 ? "SOLD OUT" : "ORDER THIS ITEM"}
           </Link>

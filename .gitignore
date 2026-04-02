@@ -15,12 +15,16 @@ Backend/test-*.js
 Backend/diagnose-*.js
 Backend/fix-*.js
 Backend/verify-*.js
+Backend/normalize-*.js
+Backend/migrate-*.js
+Backend/scripts/*.js
 Backend/*SMTP*.md
 Backend/*EMAIL*.md
 Backend/*VERIFY*.md
 Backend/FINAL_ACTION_SUMMARY.md
 Backend/COMPLETE_SMTP_SOLUTION.md
 Backend/QUICK_SMTP_FIX.md
+Backend/SUBCATEGORY_NORMALIZATION.md
 test-*.js
 migrate-mongodb.js
 
