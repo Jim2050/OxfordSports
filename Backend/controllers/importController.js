@@ -1389,6 +1389,82 @@ exports.importProducts = async (req, res) => {
       );
     }
 
+    // ── Set displayOrder for categories ──
+    try {
+      const { CATEGORY_DISPLAY_ORDER } = require("../utils/taxonomyUtils");
+      
+      for (const [categoryName, displayOrder] of Object.entries(CATEGORY_DISPLAY_ORDER)) {
+        await Category.updateOne(
+          { name: categoryName },
+          { $set: { displayOrder } }
+        );
+      }
+      debug(`[IMPORT] Updated category display orders`);
+    } catch (err) {
+      console.error("[IMPORT] Error setting category display orders:", err);
+    }
+
+    // ── Create Subcategory records for all imported categories ──
+    try {
+      const Subcategory = require("../models/Subcategory");
+      const categoryMap = new Map();
+      
+      // Get all Category records with their IDs
+      const allCategories = await Category.find({}).lean();
+      allCategories.forEach(cat => {
+        categoryMap.set(cat.name, cat._id);
+      });
+      
+      // Extract unique subcategories from imported products
+      const subcategoryMap = new Map();
+      consolidated.forEach(p => {
+        if (p.subcategoryCanonical && p.categoryCanonical) {
+          const key = `${p.categoryCanonical}::${p.subcategoryCanonical}`;
+          if (!subcategoryMap.has(key)) {
+            subcategoryMap.set(key, {
+              categoryName: p.categoryCanonical,
+              subcategoryName: p.subcategoryCanonical,
+            });
+          }
+        }
+      });
+      
+      // Build bulk operations for Subcategory creation
+      const subcategoryOps = [];
+      subcategoryMap.forEach(({ categoryName, subcategoryName }) => {
+        const categoryId = categoryMap.get(categoryName);
+        if (categoryId) {
+          const slug = subcategoryName.toLowerCase().replace(/\s+/g, '-');
+          subcategoryOps.push({
+            updateOne: {
+              filter: { 
+                category: categoryId, 
+                slug: slug 
+              },
+              update: {
+                $set: {
+                  name: subcategoryName,
+                  slug: slug,
+                  category: categoryId,
+                  isActive: true,
+                  displayOrder: 0,
+                },
+              },
+              upsert: true,
+            },
+          });
+        }
+      });
+      
+      // Execute bulk Subcategory creation
+      if (subcategoryOps.length > 0) {
+        await Subcategory.bulkWrite(subcategoryOps, { ordered: false });
+        debug(`[IMPORT] Created/updated ${subcategoryOps.length} subcategory records`);
+      }
+    } catch (err) {
+      console.error("[IMPORT] Error creating subcategory records:", err);
+    }
+
     // ── Mark products NOT in this upload as sold out (quantity = 0) ──
     try {
       const uploadedSkus = Array.from(new Set(consolidated.map(p => p.sku)));

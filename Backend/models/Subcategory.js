@@ -17,6 +17,7 @@ const subcategorySchema = new mongoose.Schema(
     description: { type: String, default: "" },
     imageUrl: { type: String, default: "" },
     isActive: { type: Boolean, default: true },
+    displayOrder: { type: Number, default: 0 },
   },
   { timestamps: true },
 );

@@ -192,6 +192,19 @@ function deriveSportCanonical({ name, description, category, subcategory }) {
   return "";
 }
 
+const CATEGORY_DISPLAY_ORDER = {
+  'HOME': 10,
+  'FOOTWEAR': 1,
+  'CLOTHING': 2,
+  'LICENSED TEAM CLOTHING': 3,
+  'ACCESSORIES': 4,
+  'B GRADE': 5,
+  'JOB LOTS': 6,
+  'UNDER £5': 7,
+  'BRANDS': 8,
+  'SPORTS': 9,
+};
+
 function sanitizeSizeLabel(value) {
   const cleaned = normalizeText(
     String(value || "")
@@ -286,6 +299,7 @@ function parseSizeEntries(rawSize, fallbackQty) {
 
 module.exports = {
   TOP_LEVEL_CATEGORIES,
+  CATEGORY_DISPLAY_ORDER,
   deriveBrandCanonical,
   deriveCategoryCanonical,
   deriveGenderCanonical,
