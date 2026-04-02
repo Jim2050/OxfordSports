@@ -18,6 +18,8 @@ const {
   deriveSportCanonical,
   deriveSubcategoryCanonical,
   parseSizeEntries,
+  safeExtractCategory,
+  safeExtractSubcategory,
 } = require("../utils/taxonomyUtils");
 const { normalizeSizeEntries } = require("../utils/sizeStockUtils");
 
@@ -1042,7 +1044,7 @@ exports.importProducts = async (req, res) => {
       const price = priceResult.value;
 
       const originalCategoryValue = row.category ? String(row.category).trim() : "";
-      const canonicalFromInput = deriveCategoryCanonical(originalCategoryValue);
+      const canonicalFromInput = safeExtractCategory(originalCategoryValue) || deriveCategoryCanonical(originalCategoryValue);
 
       const productData = {
         sku,
@@ -1297,8 +1299,8 @@ exports.importProducts = async (req, res) => {
         }
       }
 
-      productData.categoryCanonical = deriveCategoryCanonical(productData.category);
-      productData.subcategoryCanonical = deriveSubcategoryCanonical(
+      productData.categoryCanonical = safeExtractCategory(productData.category) || deriveCategoryCanonical(productData.category);
+      productData.subcategoryCanonical = safeExtractSubcategory(productData.subcategory) || deriveSubcategoryCanonical(
         productData.categoryCanonical || productData.category,
         productData.subcategory,
       );

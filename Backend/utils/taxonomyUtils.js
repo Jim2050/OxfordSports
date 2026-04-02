@@ -297,6 +297,217 @@ function parseSizeEntries(rawSize, fallbackQty) {
   };
 }
 
+// ═══════════════════════════════════════════════════════════════
+//  CATEGORY ERROR HANDLING WITH REGEX
+// ═══════════════════════════════════════════════════════════════
+
+const CATEGORY_SPELLING_CORRECTIONS = {
+  'FOOTWARE': 'FOOTWEAR',
+  'FOOT WEAR': 'FOOTWEAR',
+  'FOOTWERE': 'FOOTWEAR',
+  'CLOTHE': 'CLOTHING',
+  'CLOTHIN': 'CLOTHING',
+  'CLOSING': 'CLOTHING',
+  'CLOTHS': 'CLOTHING',
+  'CLOTHNG': 'CLOTHING',
+  'LICENCED TEAM CLOTHING': 'LICENSED TEAM CLOTHING',
+  'LICENSED TEAM': 'LICENSED TEAM CLOTHING',
+  'TEAM CLOTHING': 'LICENSED TEAM CLOTHING',
+  'ACCESORIES': 'ACCESSORIES',
+  'ACCESORRIES': 'ACCESSORIES',
+  'ACCESSORY': 'ACCESSORIES',
+  'ACESSORIES': 'ACCESSORIES',
+  'BRANS': 'BRANDS',
+  'BRAND': 'BRANDS',
+  'SPORT': 'SPORTS',
+  'SPORTZ': 'SPORTS',
+};
+
+function levenshteinDistance(str1, str2) {
+  const m = str1.length;
+  const n = str2.length;
+  const dp = Array(m + 1).fill(0).map(() => Array(n + 1).fill(0));
+  for (let i = 0; i <= m; i++) dp[i][0] = i;
+  for (let j = 0; j <= n; j++) dp[0][j] = j;
+  for (let i = 1; i <= m; i++) {
+    for (let j = 1; j <= n; j++) {
+      if (str1[i - 1] === str2[j - 1]) {
+        dp[i][j] = dp[i - 1][j - 1];
+      } else {
+        dp[i][j] = 1 + Math.min(dp[i - 1][j], dp[i][j - 1], dp[i - 1][j - 1]);
+      }
+    }
+  }
+  return dp[m][n];
+}
+
+function fuzzyMatchCategory(input) {
+  const knownCategories = ['FOOTWEAR', 'CLOTHING', 'LICENSED TEAM CLOTHING', 'ACCESSORIES', 'BRANDS', 'SPORTS'];
+  let bestMatch = null;
+  let bestDistance = 3;
+  for (const known of knownCategories) {
+    const distance = levenshteinDistance(input, known);
+    if (distance < bestDistance) {
+      bestDistance = distance;
+      bestMatch = known;
+    }
+  }
+  return bestDistance <= 2 ? bestMatch : null;
+}
+
+function normalizeCategoryWithErrorHandling(rawCategory) {
+  if (!rawCategory) return null;
+  try {
+    let normalized = String(rawCategory)
+      .trim()
+      .replace(/\x00/g, '')
+      .replace(/[\x01-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '')
+      .replace(/\s+/g, ' ')
+      .replace(/[–−—]/g, '-')
+      .trim()
+      .toUpperCase();
+    if (!normalized) return null;
+    if (CATEGORY_SPELLING_CORRECTIONS[normalized]) {
+      return CATEGORY_SPELLING_CORRECTIONS[normalized];
+    }
+    const fuzzyMatch = fuzzyMatchCategory(normalized);
+    if (fuzzyMatch) return fuzzyMatch;
+    const knownCategories = ['FOOTWEAR', 'CLOTHING', 'LICENSED TEAM CLOTHING', 'ACCESSORIES', 'BRANDS', 'SPORTS'];
+    if (knownCategories.includes(normalized)) return normalized;
+    return null;
+  } catch (e) {
+    console.error(`[CATEGORY] Error:`, e.message);
+    return null;
+  }
+}
+
+function safeExtractCategory(rawCategory) {
+  try {
+    return normalizeCategoryWithErrorHandling(rawCategory);
+  } catch (e) {
+    return null;
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  SUBCATEGORY ERROR HANDLING WITH REGEX
+// ═══════════════════════════════════════════════════════════════
+
+const SUBCATEGORY_SPELLING_CORRECTIONS = {
+  'TRACKSUIT JACKET': 'TRACKSUIT JACKETS',
+  'TRACKSUITS JACKET': 'TRACKSUIT JACKETS',
+  'TRACKSUITE JACKETS': 'TRACKSUIT JACKETS',
+  'TRACK SUIT JACKETS': 'TRACKSUIT JACKETS',
+  'TRACKSUIT SET': 'TRACKSUIT SETS',
+  'TRACK SUIT SETS': 'TRACKSUIT SETS',
+  'TRACKSUITE SETS': 'TRACKSUIT SETS',
+  'SLIDE FLIP FLOPS SANDALS': 'SLIDES / FLIP FLOPS / SANDALS',
+  'SLIDES FLIP FLOPS SANDALS': 'SLIDES / FLIP FLOPS / SANDALS',
+  'BEACH FOOTWEAR': 'SLIDES / FLIP FLOPS / SANDALS',
+  'FOOTBALL BOOT': 'FOOTBALL BOOTS',
+  'SOCCER BOOTS': 'FOOTBALL BOOTS',
+  'FOOTBALL TRAINER': 'FOOTBALL TRAINERS',
+  'SOCCER TRAINERS': 'FOOTBALL TRAINERS',
+  'TENNIS PADEL SHOES': 'TENNIS / PADEL SHOES',
+  'TENNNIS PADEL SHOES': 'TENNIS / PADEL SHOES',
+  'TENNIS/PADEL SHOES': 'TENNIS / PADEL SHOES',
+  'TRAINER': 'TRAINERS',
+  'SHORT': 'SHORTS',
+  'TSHIRT': 'T-SHIRTS',
+  'T SHIRT': 'T-SHIRTS',
+  'TEE SHIRT': 'T-SHIRTS',
+  'VEST BRA': 'VESTS & BRAS',
+  'BRA': 'VESTS & BRAS',
+  'DRESS BODYSUIT': 'DRESSES & BODYSUITS',
+  'DRESS': 'DRESSES & BODYSUITS',
+  'BODYSUIT': 'DRESSES & BODYSUITS',
+  'JACKET COAT': 'JACKETS & COATS',
+  'JACKET': 'JACKETS & COATS',
+  'COAT': 'JACKETS & COATS',
+  'WINDBREAKER': 'JACKETS & COATS',
+  'HOODY': 'JACKETS & COATS',
+  'HOODIE': 'JACKETS & COATS',
+  'SPECIALIST CLOTHE': 'SPECIALIST CLOTHING',
+  'SPECIAL CLOTHING': 'SPECIALIST CLOTHING',
+  'SWIM WEAR': 'SWIMWEAR',
+  'LEGGING': 'LEGGINGS',
+  'SOCK': 'SOCKS',
+  'FOOTBALL SHIRT': 'SHIRTS',
+  'TRACKSUIT BOTTOM': 'TRACKSUIT BOTTOMS',
+  'TRACK SUIT BOTTOMS': 'TRACKSUIT BOTTOMS',
+  'JOGGER': 'TRACKSUIT BOTTOMS',
+  'JOGGERS': 'TRACKSUIT BOTTOMS',
+  'PANTS': 'TRACKSUIT BOTTOMS',
+  'GLOVE': 'GLOVES',
+  'GOALKEEPER GLOVES': 'GLOVES',
+  'PROTECTIVE EQUIPMENT': 'PROTECTIVE GEAR',
+  'SHIN GUARD': 'PROTECTIVE GEAR',
+  'HEAD WEAR': 'HEADWEAR',
+  'HAT': 'HEADWEAR',
+  'CAP': 'HEADWEAR',
+  'BEANIE': 'HEADWEAR',
+  'TEAM JERSEY': 'TEAM JERSEYS',
+  'JERSEY': 'TEAM JERSEYS',
+  'TEAM TRACKSUIT BOTTOM': 'TEAM TRACKSUIT BOTTOMS',
+  'TEAM SHORT': 'TEAM SHORTS',
+};
+
+function normalizeSubcategoryText(text) {
+  if (!text) return '';
+  return String(text)
+    .trim()
+    .replace(/\x00/g, '')
+    .replace(/[\x01-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '')
+    .replace(/\s+/g, ' ')
+    .replace(/[–−—]/g, '-')
+    .replace(/\s*\/\s*/g, ' / ')
+    .replace(/\s*&\s*/g, ' & ')
+    .trim()
+    .toUpperCase();
+}
+
+function fuzzyMatchSubcategory(input) {
+  const normalized = normalizeSubcategoryText(input);
+  if (SUBCATEGORY_SPELLING_CORRECTIONS[normalized]) {
+    return SUBCATEGORY_SPELLING_CORRECTIONS[normalized];
+  }
+  let bestMatch = null;
+  let bestDistance = 3;
+  for (const [key, value] of Object.entries(SUBCATEGORY_SPELLING_CORRECTIONS)) {
+    const distance = levenshteinDistance(normalized, key);
+    if (distance < bestDistance) {
+      bestDistance = distance;
+      bestMatch = value;
+    }
+  }
+  return bestDistance <= 2 ? bestMatch : null;
+}
+
+function normalizeSubcategoryWithErrorHandling(rawSubcategory) {
+  if (!rawSubcategory) return null;
+  try {
+    const normalized = normalizeSubcategoryText(rawSubcategory);
+    if (!normalized) return null;
+    if (SUBCATEGORY_SPELLING_CORRECTIONS[normalized]) {
+      return SUBCATEGORY_SPELLING_CORRECTIONS[normalized];
+    }
+    const fuzzyMatch = fuzzyMatchSubcategory(rawSubcategory);
+    if (fuzzyMatch) return fuzzyMatch;
+    return normalized;
+  } catch (err) {
+    console.error(`[SUBCATEGORY] Error:`, err.message);
+    return String(rawSubcategory).toUpperCase().trim();
+  }
+}
+
+function safeExtractSubcategory(rawSubcategory) {
+  try {
+    return normalizeSubcategoryWithErrorHandling(rawSubcategory);
+  } catch (e) {
+    return null;
+  }
+}
+
 module.exports = {
   TOP_LEVEL_CATEGORIES,
   CATEGORY_DISPLAY_ORDER,
@@ -307,4 +518,11 @@ module.exports = {
   deriveSubcategoryCanonical,
   parseSizeEntries,
   sanitizeSizeLabel,
+  normalizeCategoryWithErrorHandling,
+  safeExtractCategory,
+  normalizeSubcategoryWithErrorHandling,
+  safeExtractSubcategory,
+  CATEGORY_SPELLING_CORRECTIONS,
+  SUBCATEGORY_SPELLING_CORRECTIONS,
+  levenshteinDistance,
 };
