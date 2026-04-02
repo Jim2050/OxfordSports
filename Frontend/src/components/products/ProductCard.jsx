@@ -156,7 +156,6 @@ export default function ProductCard({ product }) {
         >
           {alreadyInCart ? "✓" : <HeartIcon filled={added} />}
         </button>
-        {totalQty === 0 && <span className="sold-out-badge">Sold Out</span>}
       </div>
 
       <div className="product-card-body">
