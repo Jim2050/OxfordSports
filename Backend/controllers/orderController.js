@@ -70,6 +70,14 @@ exports.placeOrder = async (req, res) => {
       const sizeEntries = Array.isArray(product.sizes) ? product.sizes : [];
       const hasSizeStock =
         sizeEntries.length > 0 && sizeEntries.some((s) => s.quantity > 0);
+      const validLotSizes = sizeEntries.filter(
+        (s) => s.quantity > 0 && isValidSizeCode(s.size, product.category),
+      );
+      const lotDisplaySizes = (validLotSizes.length > 0
+        ? validLotSizes
+        : sizeEntries.filter((s) => s.quantity > 0)
+      ).map((s) => `${String(s.size || "").trim()}(${s.quantity})`);
+      const lotSizeBreakdown = isLotItem ? lotDisplaySizes.join(", ") : "";
 
       stockDebug.push({
         sku: product.sku,
@@ -97,11 +105,12 @@ exports.placeOrder = async (req, res) => {
           }
 
           let remaining = effectiveQty;
-          const availableSizes = sizeEntries
-            .filter((s) => s.quantity > 0 && isValidSizeCode(s.size, product.category))
-            .sort((a, b) => String(a.size).localeCompare(String(b.size)));
+          const allocatableSizes = (validLotSizes.length > 0
+            ? validLotSizes
+            : sizeEntries.filter((s) => s.quantity > 0)
+          ).sort((a, b) => String(a.size).localeCompare(String(b.size)));
 
-          for (const sizeEntry of availableSizes) {
+          for (const sizeEntry of allocatableSizes) {
             if (remaining <= 0) break;
             const takeQty = Math.min(sizeEntry.quantity, remaining);
             if (takeQty <= 0) continue;
@@ -142,17 +151,50 @@ exports.placeOrder = async (req, res) => {
         const available = sizeEntry ? sizeEntry.quantity : 0;
 
         if (!sizeEntry && product.totalQuantity > 0) {
+          if (normalizedIncomingSize) {
+            return res.status(400).json({
+              error: `Out of stock for ${product.name} in size ${normalizedIncomingSize}.`,
+            });
+          }
+
           if (effectiveQty > product.totalQuantity) {
             return res.status(400).json({
               error: `Only ${product.totalQuantity} units available for ${product.name}.`,
             });
           }
-          stockUpdates.push({
-            updateOne: {
-              filter: { _id: product._id },
-              update: { $inc: { totalQuantity: -effectiveQty } },
-            },
-          });
+
+          let remaining = effectiveQty;
+          const allocatableSizes = (validLotSizes.length > 0
+            ? validLotSizes
+            : sizeEntries.filter((s) => s.quantity > 0)
+          ).sort((a, b) => String(a.size).localeCompare(String(b.size)));
+
+          for (const allocSizeEntry of allocatableSizes) {
+            if (remaining <= 0) break;
+            const takeQty = Math.min(allocSizeEntry.quantity, remaining);
+            if (takeQty <= 0) continue;
+
+            stockUpdates.push({
+              updateOne: {
+                filter: {
+                  _id: product._id,
+                  "sizes.size": allocSizeEntry.size,
+                  "sizes.quantity": { $gte: takeQty },
+                  totalQuantity: { $gte: takeQty },
+                },
+                update: {
+                  $inc: { "sizes.$.quantity": -takeQty, totalQuantity: -takeQty },
+                },
+              },
+            });
+            remaining -= takeQty;
+          }
+
+          if (remaining > 0) {
+            return res.status(400).json({
+              error: `Only ${product.totalQuantity} units available for ${product.name}.`,
+            });
+          }
         } else if (!sizeEntry || available <= 0) {
           return res.status(400).json({
             error: `Out of stock for ${product.name}.`,
@@ -209,8 +251,9 @@ exports.placeOrder = async (req, res) => {
         size,
         allocatedSize: wasAllocated ? size : "",
         quantity: effectiveQty,
-        maxStock: item.maxStock || undefined,
+        maxStock: isLotItem ? effectiveQty : undefined,
         lotItem: isLotItem,
+        lotSizeBreakdown: isLotItem ? lotSizeBreakdown : "",
         unitPrice,
         lineTotal: +(unitPrice * effectiveQty).toFixed(2),
       });
@@ -258,6 +301,9 @@ exports.placeOrder = async (req, res) => {
             name: product.name,
             size: trimmedSize,
             allocatedSize: "",
+            lotItem: false,
+            maxStock: undefined,
+            lotSizeBreakdown: "",
             quantity: missingSizeQty,
             unitPrice,
             lineTotal,
@@ -371,7 +417,12 @@ exports.placeOrder = async (req, res) => {
 function logOrderToConsole(order) {
   const divider = "=".repeat(70);
   const itemLines = order.items
-    .map((i) => `  • ${i.name} (${i.sku}) | Size: ${i.size || "N/A"} | Qty: ${i.quantity} | £${i.lineTotal.toFixed(2)}`)
+    .map((i) => {
+      const lotMeta = i.lotItem
+        ? ` | LOT: ${i.lotSizeBreakdown || `Unspecified(${i.maxStock || i.quantity || 0})`}`
+        : "";
+      return `  • ${i.name} (${i.sku}) | Size: ${i.size || "N/A"} | Qty: ${i.quantity} | £${i.lineTotal.toFixed(2)}${lotMeta}`;
+    })
     .join("\n");
 
   console.log(`
@@ -395,6 +446,130 @@ ${divider}
 `);
 }
 
+function escapeHtml(value) {
+  return String(value || "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/\"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+function buildSizeBreakdown(items, targetQty = 0) {
+  const buckets = new Map();
+  let trackedQty = 0;
+
+  for (const item of items) {
+    const sizeLabel = String(item.allocatedSize || item.size || "").trim();
+    const qty = Number(item.quantity) || 0;
+    if (!sizeLabel || qty <= 0) continue;
+    const key = sizeLabel.toUpperCase();
+    const existing = buckets.get(key) || { label: sizeLabel, qty: 0 };
+    existing.qty += qty;
+    buckets.set(key, existing);
+    trackedQty += qty;
+  }
+
+  const parts = Array.from(buckets.values()).map((entry) => `${entry.label}(${entry.qty})`);
+  const missingQty = Math.max(0, (Number(targetQty) || 0) - trackedQty);
+  if (missingQty > 0) {
+    parts.push(`Unspecified(${missingQty})`);
+  }
+
+  if (parts.length === 0 && targetQty > 0) {
+    return `Unspecified(${targetQty})`;
+  }
+
+  return parts.join(", ");
+}
+
+function buildEmailDisplayItems(orderItems) {
+  const groups = new Map();
+  for (const item of orderItems || []) {
+    const sku = String(item.sku || "").trim();
+    if (!sku) continue;
+    if (!groups.has(sku)) groups.set(sku, []);
+    groups.get(sku).push(item);
+  }
+
+  const displayItems = [];
+
+  for (const [sku, group] of groups.entries()) {
+    if (!Array.isArray(group) || group.length === 0) continue;
+
+    const explicitLot = group.find(
+      (i) => Boolean(i.lotItem) || String(i.lotSizeBreakdown || "").trim().length > 0,
+    );
+    const legacyLotAnchor = group.find((i) => {
+      const qty = Number(i.quantity) || 0;
+      const unitPrice = Number(i.unitPrice) || 0;
+      const lineTotal = Number(i.lineTotal) || 0;
+      return qty === 1 && unitPrice > 0 && lineTotal > unitPrice * qty + 0.01;
+    });
+    const isLotGroup = Boolean(explicitLot || legacyLotAnchor);
+
+    if (isLotGroup) {
+      const anchor = explicitLot || legacyLotAnchor || group[0];
+      const unitPrice = Number(anchor.unitPrice) || 0;
+      const qtyFromMax =
+        explicitLot && Number(explicitLot.maxStock) > 0
+          ? Math.floor(Number(explicitLot.maxStock))
+          : 0;
+      const qtyFromLegacy =
+        !qtyFromMax && legacyLotAnchor && unitPrice > 0
+          ? Math.round((Number(legacyLotAnchor.lineTotal) || 0) / unitPrice)
+          : 0;
+      const qtyFromSum = group.reduce((sum, i) => sum + (Number(i.quantity) || 0), 0);
+      const quantity = qtyFromMax || (qtyFromLegacy > 0 ? qtyFromLegacy : qtyFromSum);
+
+      let sizeBreakdown = group
+        .map((i) => String(i.lotSizeBreakdown || "").trim())
+        .find((s) => s.length > 0) || "";
+      if (!sizeBreakdown) {
+        sizeBreakdown = buildSizeBreakdown(group, quantity);
+      }
+
+      const lineTotalValue = explicitLot
+        ? Number(explicitLot.lineTotal)
+        : legacyLotAnchor
+          ? Number(legacyLotAnchor.lineTotal)
+          : unitPrice * quantity;
+
+      displayItems.push({
+        name: String(anchor.name || "").trim(),
+        sku,
+        sizeDisplay: `LOT: ${sizeBreakdown || `Unspecified(${quantity || 0})`}`,
+        quantity,
+        unitPrice,
+        lineTotal: +(Number(lineTotalValue || 0)).toFixed(2),
+      });
+
+      continue;
+    }
+
+    const quantity = group.reduce((sum, i) => sum + (Number(i.quantity) || 0), 0);
+    const lineTotal = +group
+      .reduce((sum, i) => sum + (Number(i.lineTotal) || 0), 0)
+      .toFixed(2);
+
+    const unitPriceSet = new Set(
+      group.map((i) => (Number(i.unitPrice) || 0).toFixed(4)),
+    );
+    const unitPrice = unitPriceSet.size === 1 ? Number(group[0].unitPrice) || 0 : null;
+
+    displayItems.push({
+      name: String(group[0].name || "").trim(),
+      sku,
+      sizeDisplay: buildSizeBreakdown(group, quantity) || "—",
+      quantity,
+      unitPrice,
+      lineTotal,
+    });
+  }
+
+  return displayItems;
+}
+
 /**
  * Send order confirmation email to admin + customer.
  * Tries Outlook first, then Gmail as fallback if GMAIL_PASS is set.
@@ -403,55 +578,103 @@ async function sendOrderEmail(order) {
   console.log(`[ORDER EMAIL] Starting email send for order ${order.orderNumber}...`);
   const adminEmail = process.env.CONTACT_EMAIL_TO || "uksportswarehouse@googlemail.com";
 
-  const itemRows = order.items
+  const fromEmail = process.env.RESEND_FROM_EMAIL || "sales@oxfordsports.online";
+  const displayItems = buildEmailDisplayItems(order.items || []);
+  const displayedTotal = +displayItems
+    .reduce((sum, i) => sum + (Number(i.lineTotal) || 0), 0)
+    .toFixed(2);
+
+  const itemRows = displayItems
     .map((i) => {
-      const sizeDisplay = i.allocatedSize ? `${i.size} (auto)` : (i.size || "—");
+      const unitPriceDisplay = i.unitPrice === null ? "Varies" : `£${Number(i.unitPrice || 0).toFixed(2)}`;
       return `<tr>
-        <td style="padding:6px 10px;border:1px solid #e5e7eb;">${i.name}</td>
-        <td style="padding:6px 10px;border:1px solid #e5e7eb;">${i.sku}</td>
-        <td style="padding:6px 10px;border:1px solid #e5e7eb;">${sizeDisplay}</td>
-        <td style="padding:6px 10px;border:1px solid #e5e7eb;text-align:center;">${i.quantity}</td>
-        <td style="padding:6px 10px;border:1px solid #e5e7eb;text-align:right;">£${i.unitPrice.toFixed(2)}</td>
-        <td style="padding:6px 10px;border:1px solid #e5e7eb;text-align:right;">£${i.lineTotal.toFixed(2)}</td>
+        <td style="padding:12px;border-bottom:1px solid #edf2f7;font-size:14px;color:#1f2937;font-weight:600;">${escapeHtml(i.name)}</td>
+        <td style="padding:12px;border-bottom:1px solid #edf2f7;font-size:13px;color:#374151;">${escapeHtml(i.sku)}</td>
+        <td style="padding:12px;border-bottom:1px solid #edf2f7;font-size:13px;color:#374151;">${escapeHtml(i.sizeDisplay)}</td>
+        <td style="padding:12px;border-bottom:1px solid #edf2f7;font-size:13px;color:#111827;text-align:center;">${Number(i.quantity || 0)}</td>
+        <td style="padding:12px;border-bottom:1px solid #edf2f7;font-size:13px;color:#111827;text-align:right;">${unitPriceDisplay}</td>
+        <td style="padding:12px;border-bottom:1px solid #edf2f7;font-size:13px;color:#0f2d5c;text-align:right;font-weight:700;">£${Number(i.lineTotal || 0).toFixed(2)}</td>
       </tr>`;
     })
     .join("");
 
+  const customerName = escapeHtml(order.customerName || "Customer");
+  const customerEmail = escapeHtml(order.customerEmail || "—");
+  const customerCompany = escapeHtml(order.customerCompany || "—");
+  const customerPhone = escapeHtml(order.customerPhone || "—");
+  const deliveryAddress = escapeHtml(order.deliveryAddress || "—");
+  const notes = String(order.notes || "").trim();
+
   const html = `
-    <div style="font-family:Arial,sans-serif;max-width:650px;margin:0 auto;">
-      <h2 style="color:#1a1281;">Oxford Sports — Order Confirmation</h2>
-      <p><strong>Order Number:</strong> ${order.orderNumber}</p>
-      <p><strong>Date:</strong> ${new Date(order.createdAt).toLocaleDateString("en-GB")}</p>
-      <hr style="border:1px solid #e5e7eb;">
-      <h3>Customer Details</h3>
-      <p><strong>Name:</strong> ${order.customerName}</p>
-      <p><strong>Email:</strong> ${order.customerEmail}</p>
-      <p><strong>Company:</strong> ${order.customerCompany || "—"}</p>
-      <p><strong>Phone:</strong> ${order.customerPhone || "—"}</p>
-      <p><strong>Delivery Address:</strong> ${order.deliveryAddress || "—"}</p>
-      ${order.notes ? `<p><strong>Notes:</strong> ${order.notes}</p>` : ""}
-      <hr style="border:1px solid #e5e7eb;">
-      <h3>Order Items</h3>
-      <table style="border-collapse:collapse;width:100%;font-size:0.9rem;">
-        <thead>
-          <tr style="background:#f3f4f6;">
-            <th style="padding:8px 10px;border:1px solid #e5e7eb;text-align:left;">Product</th>
-            <th style="padding:8px 10px;border:1px solid #e5e7eb;text-align:left;">SKU</th>
-            <th style="padding:8px 10px;border:1px solid #e5e7eb;text-align:left;">Size</th>
-            <th style="padding:8px 10px;border:1px solid #e5e7eb;text-align:center;">Qty</th>
-            <th style="padding:8px 10px;border:1px solid #e5e7eb;text-align:right;">Unit Price</th>
-            <th style="padding:8px 10px;border:1px solid #e5e7eb;text-align:right;">Line Total</th>
-          </tr>
-        </thead>
-        <tbody>${itemRows}</tbody>
-      </table>
-      <p style="text-align:right;font-size:1.1rem;margin-top:1rem;"><strong>Order Total: £${order.totalAmount.toFixed(2)}</strong></p>
-      <hr style="border:1px solid #e5e7eb;">
-      <p style="color:#6b7280;font-size:0.85rem;">This is an automated confirmation from Oxford Sports. If you have any questions, please reply to this email or contact us at ${adminEmail}.</p>
+    <div style="margin:0;padding:0;background:#f5f7fb;font-family:Arial,sans-serif;color:#1f2937;">
+      <div style="max-width:760px;margin:0 auto;padding:24px 16px;">
+        <div style="background:#0f2d5c;color:#ffffff;padding:18px 22px;border-radius:12px 12px 0 0;">
+          <h1 style="margin:0;font-size:20px;line-height:1.3;">Oxford Sports — Order Confirmation</h1>
+          <p style="margin:6px 0 0 0;font-size:13px;opacity:0.95;">Order ${escapeHtml(order.orderNumber)}</p>
+        </div>
+
+        <div style="background:#ffffff;border:1px solid #e5e7eb;border-top:none;border-radius:0 0 12px 12px;padding:20px;">
+          <div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:12px;background:#f8fafc;border:1px solid #e5e7eb;border-radius:10px;padding:14px 16px;margin-bottom:16px;">
+            <div>
+              <p style="margin:0;font-size:11px;text-transform:uppercase;letter-spacing:0.08em;color:#6b7280;font-weight:700;">Order Number</p>
+              <p style="margin:4px 0 0 0;font-size:15px;color:#0f2d5c;font-weight:700;">${escapeHtml(order.orderNumber)}</p>
+            </div>
+            <div style="text-align:right;">
+              <p style="margin:0;font-size:11px;text-transform:uppercase;letter-spacing:0.08em;color:#6b7280;font-weight:700;">Order Date</p>
+              <p style="margin:4px 0 0 0;font-size:15px;color:#111827;font-weight:700;">${new Date(order.createdAt).toLocaleDateString("en-GB")}</p>
+            </div>
+          </div>
+
+          <div style="border:1px solid #e5e7eb;border-radius:10px;padding:14px 16px;margin-bottom:16px;">
+            <h3 style="margin:0 0 10px 0;font-size:14px;color:#0f2d5c;">Customer Details</h3>
+            <p style="margin:4px 0;font-size:13px;"><strong>Name:</strong> ${customerName}</p>
+            <p style="margin:4px 0;font-size:13px;"><strong>Email:</strong> ${customerEmail}</p>
+            <p style="margin:4px 0;font-size:13px;"><strong>Company:</strong> ${customerCompany}</p>
+            <p style="margin:4px 0;font-size:13px;"><strong>Phone:</strong> ${customerPhone}</p>
+            <p style="margin:4px 0;font-size:13px;"><strong>Delivery Address:</strong> ${deliveryAddress}</p>
+            ${notes ? `<p style="margin:8px 0 0 0;font-size:13px;"><strong>Notes:</strong> ${escapeHtml(notes)}</p>` : ""}
+          </div>
+
+          <div style="border:1px solid #e5e7eb;border-radius:10px;overflow:hidden;margin-bottom:16px;">
+            <div style="background:#f8fafc;padding:12px 16px;border-bottom:1px solid #e5e7eb;">
+              <h3 style="margin:0;font-size:14px;color:#0f2d5c;">Order Items</h3>
+            </div>
+            <table style="width:100%;border-collapse:collapse;">
+              <thead>
+                <tr style="background:#f8fafc;">
+                  <th style="padding:10px 12px;text-align:left;font-size:12px;color:#374151;border-bottom:1px solid #e5e7eb;">Product</th>
+                  <th style="padding:10px 12px;text-align:left;font-size:12px;color:#374151;border-bottom:1px solid #e5e7eb;">SKU</th>
+                  <th style="padding:10px 12px;text-align:left;font-size:12px;color:#374151;border-bottom:1px solid #e5e7eb;">Size Breakdown</th>
+                  <th style="padding:10px 12px;text-align:center;font-size:12px;color:#374151;border-bottom:1px solid #e5e7eb;">Qty</th>
+                  <th style="padding:10px 12px;text-align:right;font-size:12px;color:#374151;border-bottom:1px solid #e5e7eb;">Unit Price</th>
+                  <th style="padding:10px 12px;text-align:right;font-size:12px;color:#374151;border-bottom:1px solid #e5e7eb;">Line Total</th>
+                </tr>
+              </thead>
+              <tbody>${itemRows}</tbody>
+            </table>
+          </div>
+
+          <div style="display:flex;justify-content:flex-end;margin-bottom:16px;">
+            <div style="min-width:240px;background:#f8fafc;border:1px solid #e5e7eb;border-radius:10px;padding:12px 14px;">
+              <p style="margin:0 0 6px 0;font-size:12px;color:#6b7280;text-transform:uppercase;letter-spacing:0.07em;">Order Total</p>
+              <p style="margin:0;font-size:22px;color:#0f2d5c;font-weight:800;">£${displayedTotal.toFixed(2)}</p>
+            </div>
+          </div>
+
+          <div style="background:#eef6ff;border:1px solid #cfe3ff;border-radius:10px;padding:14px 16px;">
+            <h3 style="margin:0 0 8px 0;font-size:14px;color:#0f2d5c;">Need Help? Contact Us</h3>
+            <p style="margin:4px 0;font-size:13px;color:#1f2937;">Email: <a href="mailto:${escapeHtml(adminEmail)}" style="color:#0f2d5c;">${escapeHtml(adminEmail)}</a></p>
+            <p style="margin:4px 0;font-size:13px;color:#1f2937;">Reply-to: <a href="mailto:${escapeHtml(fromEmail)}" style="color:#0f2d5c;">${escapeHtml(fromEmail)}</a></p>
+            <p style="margin:8px 0 0 0;font-size:12px;color:#374151;">For any issue with quantities or invoice, contact us and mention Order Number ${escapeHtml(order.orderNumber)}.</p>
+          </div>
+
+          <p style="margin:14px 0 0 0;font-size:11px;color:#6b7280;text-align:center;">This is an automated confirmation from Oxford Sports.</p>
+        </div>
+      </div>
     </div>
   `;
 
-  const subject = `Order ${order.orderNumber} — £${order.totalAmount.toFixed(2)} — ${order.customerName}`;
+  const subject = `Order ${order.orderNumber} — £${displayedTotal.toFixed(2)} — ${order.customerName}`;
 
   // ── Use Resend API via HTTP (Bypasses all SMTP Firewalls) ──
   const resendApiKey = process.env.RESEND_API_KEY;
@@ -459,9 +682,6 @@ async function sendOrderEmail(order) {
   if (!resendApiKey) {
     throw new Error("RESEND_API_KEY environment variable is missing.");
   }
-
-  // Resend requires a verified sender domain. If unverified, it defaults to their testing email.
-  const fromEmail = process.env.RESEND_FROM_EMAIL || "sales@oxfordsports.online";
 
   console.log(`[ORDER EMAIL] Sending via Resend API from ${fromEmail}`);
 

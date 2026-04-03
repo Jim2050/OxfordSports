@@ -14,6 +14,9 @@ const orderItemSchema = new mongoose.Schema(
     name: { type: String, required: true },
     size: { type: String, default: "" },
     allocatedSize: { type: String, default: "" }, // Track backend auto-selected size
+    lotItem: { type: Boolean, default: false },
+    maxStock: { type: Number, default: null },
+    lotSizeBreakdown: { type: String, default: "" },
     quantity: { type: Number, required: true, min: 1 },
     unitPrice: { type: Number, required: true, min: 0 },
     lineTotal: { type: Number, required: true, min: 0 },
