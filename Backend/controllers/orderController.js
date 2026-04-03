@@ -25,6 +25,7 @@ exports.placeOrder = async (req, res) => {
     const orderItems = [];
     const stockUpdates = [];
     const stockDebug = [];
+    const lotSkus = new Set();
 
     const FOOTWEAR_THRESHOLD = 24;
     const DEFAULT_THRESHOLD = 100;
@@ -55,6 +56,14 @@ exports.placeOrder = async (req, res) => {
       }
 
       const qty = parseInt(item.quantity);
+      const isLotItem = Boolean(item.lotItem);
+      const lotUnits = Number(item.maxStock);
+      if (isLotItem && (!Number.isFinite(lotUnits) || lotUnits < 1)) {
+        return res.status(400).json({
+          error: `Invalid lot quantity for ${item.sku}.`,
+        });
+      }
+      const effectiveQty = isLotItem ? Math.floor(lotUnits) : qty;
       const incomingSize = (item.size || "").trim();
       let size = incomingSize;
 
@@ -66,6 +75,8 @@ exports.placeOrder = async (req, res) => {
         sku: product.sku,
         name: product.name,
         requestedQty: qty,
+        effectiveQty,
+        lotItem: isLotItem,
         requestedSize: size || "N/A",
         hasSizeData: sizeEntries.length > 0,
         sizeEntries: sizeEntries.map((s) => ({ size: s.size, qty: s.quantity })),
@@ -73,7 +84,50 @@ exports.placeOrder = async (req, res) => {
         hasSizeStock,
       });
 
+      if (isLotItem) {
+        lotSkus.add(product.sku);
+      }
+
       if (hasSizeStock) {
+        if (isLotItem) {
+          if (effectiveQty > product.totalQuantity) {
+            return res.status(400).json({
+              error: `Only ${product.totalQuantity} units available for ${product.name}.`,
+            });
+          }
+
+          let remaining = effectiveQty;
+          const availableSizes = sizeEntries
+            .filter((s) => s.quantity > 0 && isValidSizeCode(s.size, product.category))
+            .sort((a, b) => String(a.size).localeCompare(String(b.size)));
+
+          for (const sizeEntry of availableSizes) {
+            if (remaining <= 0) break;
+            const takeQty = Math.min(sizeEntry.quantity, remaining);
+            if (takeQty <= 0) continue;
+
+            stockUpdates.push({
+              updateOne: {
+                filter: {
+                  _id: product._id,
+                  "sizes.size": sizeEntry.size,
+                  "sizes.quantity": { $gte: takeQty },
+                  totalQuantity: { $gte: takeQty },
+                },
+                update: {
+                  $inc: { "sizes.$.quantity": -takeQty, totalQuantity: -takeQty },
+                },
+              },
+            });
+            remaining -= takeQty;
+          }
+
+          if (remaining > 0) {
+            return res.status(400).json({
+              error: `Only ${product.totalQuantity} units available for ${product.name}.`,
+            });
+          }
+        } else {
         const normalizedIncomingSize = size.trim();
 
         let sizeEntry = sizeEntries.find((s) => s.size && s.size.trim() === normalizedIncomingSize);
@@ -88,7 +142,7 @@ exports.placeOrder = async (req, res) => {
         const available = sizeEntry ? sizeEntry.quantity : 0;
 
         if (!sizeEntry && product.totalQuantity > 0) {
-          if (qty > product.totalQuantity) {
+          if (effectiveQty > product.totalQuantity) {
             return res.status(400).json({
               error: `Only ${product.totalQuantity} units available for ${product.name}.`,
             });
@@ -96,7 +150,7 @@ exports.placeOrder = async (req, res) => {
           stockUpdates.push({
             updateOne: {
               filter: { _id: product._id },
-              update: { $inc: { totalQuantity: -qty } },
+              update: { $inc: { totalQuantity: -effectiveQty } },
             },
           });
         } else if (!sizeEntry || available <= 0) {
@@ -107,7 +161,7 @@ exports.placeOrder = async (req, res) => {
               availableSizes: sizeEntries.map((s) => ({ size: s.size, qty: s.quantity }))
             }
           });
-        } else if (qty > available) {
+        } else if (effectiveQty > available) {
           return res.status(400).json({
             error: `Only ${available} units available for ${product.name}.`,
           });
@@ -117,17 +171,18 @@ exports.placeOrder = async (req, res) => {
               filter: {
                 _id: product._id,
                 "sizes.size": sizeEntry.size,
-                "sizes.quantity": { $gte: qty },
-                totalQuantity: { $gte: qty },
+                "sizes.quantity": { $gte: effectiveQty },
+                totalQuantity: { $gte: effectiveQty },
               },
               update: {
-                $inc: { "sizes.$.quantity": -qty, totalQuantity: -qty },
+                $inc: { "sizes.$.quantity": -effectiveQty, totalQuantity: -effectiveQty },
               },
             },
           });
         }
+        }
       } else if (product.totalQuantity > 0) {
-        if (qty > product.totalQuantity) {
+        if (effectiveQty > product.totalQuantity) {
           return res.status(400).json({
             error: `Only ${product.totalQuantity} available for ${product.name}.`,
           });
@@ -135,7 +190,7 @@ exports.placeOrder = async (req, res) => {
         stockUpdates.push({
           updateOne: {
             filter: { _id: product._id },
-            update: { $inc: { totalQuantity: -qty } },
+            update: { $inc: { totalQuantity: -effectiveQty } },
           },
         });
       } else {
@@ -146,7 +201,6 @@ exports.placeOrder = async (req, res) => {
 
       const unitPrice = product.salePrice;
       const wasAllocated = !incomingSize && size && size !== incomingSize;
-      const priceQuantity = item.maxStock && item.lotItem ? item.maxStock : qty;
 
       orderItems.push({
         product: product._id,
@@ -154,11 +208,11 @@ exports.placeOrder = async (req, res) => {
         name: product.name,
         size,
         allocatedSize: wasAllocated ? size : "",
-        quantity: qty,
+        quantity: effectiveQty,
         maxStock: item.maxStock || undefined,
-        lotItem: item.lotItem || false,
+        lotItem: isLotItem,
         unitPrice,
-        lineTotal: +(unitPrice * priceQuantity).toFixed(2),
+        lineTotal: +(unitPrice * effectiveQty).toFixed(2),
       });
     }
 
@@ -180,6 +234,7 @@ exports.placeOrder = async (req, res) => {
     for (const [sku, entry] of Object.entries(skuMap)) {
       const product = entry.product;
       if (!product) continue;
+      if (lotSkus.has(product.sku)) continue;
       const cat = (product.category || "").toUpperCase();
       if (LOT_CATEGORIES.includes(cat)) continue;
       const isFootwear = cat === "FOOTWEAR";

@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import toast from "react-hot-toast";
 import { useCart } from "../../context/CartContext";
 import { useAuth } from "../../context/AuthContext";
@@ -8,6 +9,7 @@ import API from "../../api/axiosInstance";
 const PLACEHOLDER = "https://placehold.co/64x64/e2e8f0/64748b?text=—";
 
 export default function CartDrawer() {
+  const navigate = useNavigate();
   const {
     items,
     itemCount,
@@ -36,14 +38,20 @@ export default function CartDrawer() {
         const sizes = getSizes(product.data);
         const sizeData = sizes.find(s => s.size === item.size);
         const available = sizeData?.quantity ?? product.data.totalQuantity ?? 0;
+        const requiredQty = item.lotItem ? (item.maxStock || 0) : item.quantity;
         
-        if (item.quantity > available) {
+        if (requiredQty > available) {
           if (available === 0) {
             removeFromCart(item.sku, item.size);
             toast.error(`${item.name} is now out of stock and was removed from your cart`);
           } else {
-            updateQuantity(item.sku, item.size, Math.min(item.quantity, available));
-            toast(`${item.name} stock reduced to ${available}`, { icon: "⚠️" });
+            if (item.lotItem) {
+              removeFromCart(item.sku, item.size);
+              toast.error(`${item.name} lot availability changed. Please add it again.`);
+            } else {
+              updateQuantity(item.sku, item.size, Math.min(item.quantity, available));
+              toast(`${item.name} stock reduced to ${available}`, { icon: "⚠️" });
+            }
           }
         }
       } catch (e) {
@@ -108,6 +116,14 @@ export default function CartDrawer() {
     setReviewConfirmed(false);
     setReviewingLocal(false);
     closeDrawer();
+  };
+
+  const handleContinueBrowsing = () => {
+    setConfirmedOrder(null);
+    setReviewConfirmed(false);
+    setReviewingLocal(false);
+    closeDrawer();
+    navigate("/products");
   };
 
   return (
@@ -307,14 +323,10 @@ export default function CartDrawer() {
                 </div>
 
                 {/* Info Block */}
-                <div style={{ backgroundColor: "#f8f9fa", border: "1px solid #e9ecef", padding: "1.25rem", borderRadius: "0.5rem", marginBottom: "1.5rem", display: "flex", justifyContent: "space-between" }}>
+                <div style={{ backgroundColor: "#f8f9fa", border: "1px solid #e9ecef", padding: "1.25rem", borderRadius: "0.5rem", marginBottom: "1.5rem" }}>
                   <div>
                     <p style={{ margin: "0", fontSize: "0.85rem", color: "#666", textTransform: "uppercase", letterSpacing: "0.05em", fontWeight: 600 }}>Order ID</p>
                     <p style={{ margin: "0.25rem 0 0 0", fontSize: "1rem", color: "#0f2d5c", fontWeight: 700 }}>{confirmedOrder.orderNumber}</p>
-                  </div>
-                  <div style={{ textAlign: "right" }}>
-                    <p style={{ margin: "0", fontSize: "0.85rem", color: "#666", textTransform: "uppercase", letterSpacing: "0.05em", fontWeight: 600 }}>Total Paid</p>
-                    <p style={{ margin: "0.25rem 0 0 0", fontSize: "1rem", color: "#0f2d5c", fontWeight: 700 }}>£{confirmedOrder.totalAmount.toFixed(2)}</p>
                   </div>
                 </div>
 
@@ -330,7 +342,7 @@ export default function CartDrawer() {
 
                 {/* Close Button */}
                 <button
-                  onClick={handleCloseConfirmation}
+                  onClick={handleContinueBrowsing}
                   style={{
                     width: "100%",
                     padding: "1rem",
@@ -378,7 +390,7 @@ export default function CartDrawer() {
                     {items.map((item, idx) => (
                       <div key={idx} style={{ marginBottom: "0.5rem", paddingBottom: "0.5rem", borderBottom: "1px solid #eee" }}>
                         <div style={{ fontWeight: 600 }}>{item.name} ({item.sku})</div>
-                        <div>Size: {item.size || "—"} | Qty: {item.quantity} | £{(item.lotItem ? (item.price * item.maxStock) : (item.price * item.quantity)).toFixed(2)}</div>
+                        <div>Size: {item.size || "—"} | Qty: {item.lotItem ? (item.maxStock || item.quantity) : item.quantity} | £{(item.lotItem ? (item.price * item.maxStock) : (item.price * item.quantity)).toFixed(2)}</div>
                       </div>
                     ))}
                   </div>
