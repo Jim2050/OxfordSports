@@ -221,7 +221,7 @@ export default function ProductCard({ product }) {
         </div>
 
         {/* ── Stock info — dark blue (R4) ── */}
-        {effectiveStock > 1 && (
+        {effectiveStock > 0 && (
           <p className="stock-info">{effectiveStock} in stock</p>
         )}
 
