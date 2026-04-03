@@ -638,9 +638,7 @@ ol {
 
 /* ========== Page Banner ========== */
 .page-banner {
-  background: linear-gradient(-45deg, #0b0b1a, #1a1281, #0d0a4a, #fd0808);
-  background-size: 400% 400%;
-  animation: gradientShift 12s ease infinite;
+  background: #1a1281;
   padding: 3.5rem 0;
   text-align: center;
   position: relative;
