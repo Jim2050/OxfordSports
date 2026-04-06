@@ -145,6 +145,15 @@ app.get("/", (_req, res) => {
   });
 });
 
+// ── Standard crawler/browser probe routes ──
+app.get("/robots.txt", (_req, res) => {
+  res.type("text/plain").status(200).send("User-agent: *\nAllow: /\nDisallow: /api/\n");
+});
+
+app.get("/favicon.ico", (_req, res) => {
+  res.status(204).end();
+});
+
 // ── Error middleware ──
 app.use(notFound);
 app.use(errorHandler);

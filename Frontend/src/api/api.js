@@ -12,6 +12,8 @@ function adminHeaders() {
 
 let cachedBrands = null;
 let cachedCategories = null;
+let cachedBrandsPromise = null;
+let cachedCategoriesPromise = null;
 
 export const fetchProducts = (params) =>
   API.get("/products", { params }).then((r) => r.data);
@@ -26,16 +28,34 @@ export const fetchUnderFive = () =>
 
 export const fetchBrands = async () => {
   if (cachedBrands) return { brands: cachedBrands };
-  const r = await API.get("/products/brands");
-  cachedBrands = r.data.brands;
-  return r.data;
+  if (cachedBrandsPromise) return cachedBrandsPromise;
+
+  cachedBrandsPromise = API.get("/products/brands")
+    .then((r) => {
+      cachedBrands = r.data.brands;
+      return r.data;
+    })
+    .finally(() => {
+      cachedBrandsPromise = null;
+    });
+
+  return cachedBrandsPromise;
 };
 
 export const fetchPublicCategories = async () => {
   if (cachedCategories) return { categories: cachedCategories };
-  const r = await API.get("/products/categories");
-  cachedCategories = r.data.categories;
-  return r.data;
+  if (cachedCategoriesPromise) return cachedCategoriesPromise;
+
+  cachedCategoriesPromise = API.get("/products/categories")
+    .then((r) => {
+      cachedCategories = r.data.categories;
+      return r.data;
+    })
+    .finally(() => {
+      cachedCategoriesPromise = null;
+    });
+
+  return cachedCategoriesPromise;
 };
 
 export const fetchColors = () =>

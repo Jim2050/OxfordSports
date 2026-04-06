@@ -2,6 +2,26 @@ const Order = require("../models/Order");
 const Product = require("../models/Product");
 const { isValidSizeCode } = require("../utils/sizeStockUtils");
 const { getEmailQueue } = require("../utils/emailQueue");
+const crypto = require("crypto");
+
+const inFlightOrderFingerprints = new Set();
+
+function buildOrderFingerprint(userId, items, notes) {
+  const normalizedItems = [...(Array.isArray(items) ? items : [])]
+    .map((item) => ({
+      sku: String(item?.sku || "").trim().toUpperCase(),
+      size: String(item?.size || "").trim(),
+      quantity: Number(item?.quantity) || 0,
+      maxStock: Number(item?.maxStock) || 0,
+      lotItem: Boolean(item?.lotItem),
+    }))
+    .sort((a, b) =>
+      `${a.sku}|${a.size}`.localeCompare(`${b.sku}|${b.size}`),
+    );
+
+  const payload = `${String(userId || "")}|${String(notes || "").trim()}|${JSON.stringify(normalizedItems)}`;
+  return crypto.createHash("sha1").update(payload).digest("hex");
+}
 
 // ══════════════════════════════════════════
 //  Member: Place an order (from cart)
@@ -13,14 +33,24 @@ const { getEmailQueue } = require("../utils/emailQueue");
  * Protected — req.user must be authenticated.
  */
 exports.placeOrder = async (req, res) => {
+  let requestFingerprint = "";
   try {
     const { items, notes } = req.body;
+    const STOCK_CONFLICT_CODE = "STOCK_CONFLICT";
 
     if (!Array.isArray(items) || items.length === 0) {
       return res
         .status(400)
         .json({ error: "Order must contain at least one item." });
     }
+
+    requestFingerprint = buildOrderFingerprint(req.user?._id, items, notes);
+    if (inFlightOrderFingerprints.has(requestFingerprint)) {
+      return res.status(429).json({
+        error: "Duplicate order request detected. Please wait for the current submission to finish.",
+      });
+    }
+    inFlightOrderFingerprints.add(requestFingerprint);
 
     const orderItems = [];
     const stockUpdates = [];
@@ -239,6 +269,16 @@ exports.placeOrder = async (req, res) => {
         console.warn(
           `[ORDER] No stock info for ${product.sku}: no sizes array and totalQuantity=0. May need diagnostic.`,
         );
+        return res.status(400).json({
+          error: `Out of stock for ${product.name}.`,
+          debug: process.env.NODE_ENV === "production"
+            ? undefined
+            : {
+                sku: product.sku,
+                totalQuantity: product.totalQuantity,
+                sizes: sizeEntries.map((s) => ({ size: s.size, qty: s.quantity })),
+              },
+        });
       }
 
       const unitPrice = product.salePrice;
@@ -347,7 +387,9 @@ exports.placeOrder = async (req, res) => {
       for (const op of stockUpdates) {
         const result = await Product.bulkWrite([op], { ordered: true });
         if (result.modifiedCount !== 1) {
-          throw new Error("Concurrent stock change detected");
+          const conflictError = new Error("Concurrent stock change detected");
+          conflictError.code = STOCK_CONFLICT_CODE;
+          throw conflictError;
         }
         stockRollbacks.push(op);
       }
@@ -360,6 +402,14 @@ exports.placeOrder = async (req, res) => {
         }
         await Product.bulkWrite([rollback], { ordered: false }).catch(() => { });
       }
+
+      if (stockErr.code === STOCK_CONFLICT_CODE) {
+        return res.status(409).json({
+          error: "Stock changed during checkout. Please review your cart and try again.",
+        });
+      }
+
+      console.error(`[ORDER] Stock deduction failed: ${stockErr.message}`);
       return res.status(500).json({ error: "Stock deduction failed. Please try again." });
     }
 
@@ -407,6 +457,10 @@ exports.placeOrder = async (req, res) => {
     res.status(201).json({ success: true, order, emailStatus });
   } catch (err) {
     res.status(500).json({ error: err.message });
+  } finally {
+    if (requestFingerprint) {
+      inFlightOrderFingerprints.delete(requestFingerprint);
+    }
   }
 };
 

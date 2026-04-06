@@ -10,13 +10,24 @@ const notFound = (req, res, next) => {
   next(error);
 };
 
+const SAFE_404_PATHS = new Set([
+  "/robots.txt",
+  "/favicon.ico",
+  "/sitemap.xml",
+  "/.well-known/security.txt",
+]);
+
 // Catch-all error handler
-const errorHandler = (err, _req, res, _next) => {
+const errorHandler = (err, req, res, _next) => {
   // If status is still 200 despite an error, default to 500
   const statusCode = res.statusCode === 200 ? 500 : res.statusCode;
+  const requestPath = req?.originalUrl || req?.path || "";
+  const isSafe404 = statusCode === 404 && SAFE_404_PATHS.has(requestPath);
 
-  console.error(`❌ [${statusCode}] ${err.message}`);
-  if (process.env.NODE_ENV !== "production") {
+  if (!isSafe404) {
+    console.error(`❌ [${statusCode}] ${err.message}`);
+  }
+  if (!isSafe404 && process.env.NODE_ENV !== "production") {
     console.error(err.stack);
   }
 

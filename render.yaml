@@ -11,7 +11,7 @@ services:
       - key: NODE_ENV
         value: production
       - key: ADMIN_PASSWORD
-        value: Godaddy1971turbs*
+        sync: false
       - key: ORDER_EMAIL
         value: sales@oxfordsports.online
     disk:

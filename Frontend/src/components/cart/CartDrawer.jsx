@@ -32,12 +32,28 @@ export default function CartDrawer() {
    * Called when drawer opens to catch stale quantities.
    */
   const validateCartStock = async () => {
+    const uniqueSkus = [...new Set(items.map((item) => item.sku).filter(Boolean))];
+    const productEntries = await Promise.all(
+      uniqueSkus.map(async (sku) => {
+        try {
+          const response = await API.get(`/products/${encodeURIComponent(sku)}`);
+          return [sku, response.data];
+        } catch {
+          return [sku, null];
+        }
+      }),
+    );
+
+    const productBySku = new Map(productEntries);
+
     for (const item of items) {
       try {
-        const product = await API.get(`/products/${item.sku}`);
-        const sizes = getSizes(product.data);
+        const productData = productBySku.get(item.sku);
+        if (!productData) continue;
+
+        const sizes = getSizes(productData);
         const sizeData = sizes.find(s => s.size === item.size);
-        const available = sizeData?.quantity ?? product.data.totalQuantity ?? 0;
+        const available = sizeData?.quantity ?? productData.totalQuantity ?? 0;
         const requiredQty = item.lotItem ? (item.maxStock || 0) : item.quantity;
         
         if (requiredQty > available) {
@@ -81,6 +97,7 @@ export default function CartDrawer() {
 
   /** Actually submit the order to the backend after review confirmation. */
   const handleConfirmOrder = async () => {
+    if (submitting) return;
     setSubmitting(true);
     try {
       const payload = {
