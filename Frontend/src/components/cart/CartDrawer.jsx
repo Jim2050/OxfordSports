@@ -32,6 +32,7 @@ export default function CartDrawer() {
    * Called when drawer opens to catch stale quantities.
    */
   const validateCartStock = async () => {
+    let adjusted = false;
     const uniqueSkus = [...new Set(items.map((item) => item.sku).filter(Boolean))];
     const productEntries = await Promise.all(
       uniqueSkus.map(async (sku) => {
@@ -58,13 +59,16 @@ export default function CartDrawer() {
         
         if (requiredQty > available) {
           if (available === 0) {
+            adjusted = true;
             removeFromCart(item.sku, item.size);
             toast.error(`${item.name} is now out of stock and was removed from your cart`);
           } else {
             if (item.lotItem) {
+              adjusted = true;
               removeFromCart(item.sku, item.size);
               toast.error(`${item.name} lot availability changed. Please add it again.`);
             } else {
+              adjusted = true;
               updateQuantity(item.sku, item.size, Math.min(item.quantity, available));
               toast(`${item.name} stock reduced to ${available}`, { icon: "⚠️" });
             }
@@ -74,6 +78,8 @@ export default function CartDrawer() {
         // Product removed or API error — silently ignore
       }
     }
+
+    return adjusted;
   };
 
   // Validate cart stock when drawer opens
@@ -100,6 +106,12 @@ export default function CartDrawer() {
     if (submitting) return;
     setSubmitting(true);
     try {
+      const cartAdjusted = await validateCartStock();
+      if (cartAdjusted) {
+        toast.error("Cart updated due to stock changes. Please review and confirm again.");
+        return;
+      }
+
       const payload = {
         items: items.map((i) => ({
           sku: i.sku,

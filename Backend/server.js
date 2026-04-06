@@ -26,7 +26,7 @@ if (cloudName === "your_cloud_name") {
 }
 if (!process.env.CLIENT_ORIGIN) {
   console.warn(
-    "⚠️   CLIENT_ORIGIN not set — CORS will allow all origins (dev only)",
+    "⚠️   CLIENT_ORIGIN not set — using default production origins. Set CLIENT_ORIGIN explicitly.",
   );
 }
 
@@ -63,9 +63,15 @@ if (!fs.existsSync(TEMP_DIR)) fs.mkdirSync(TEMP_DIR, { recursive: true });
 
 // ── Middleware ──
 app.use(helmet({ crossOriginResourcePolicy: { policy: "cross-origin" } }));
+const defaultProdOrigins = [
+  "https://www.oxfordsports.online",
+  "https://oxfordsports.online",
+];
 const allowedOrigins = process.env.CLIENT_ORIGIN
-  ? process.env.CLIENT_ORIGIN.split(",").map((s) => s.trim())
-  : [];
+  ? process.env.CLIENT_ORIGIN.split(",").map((s) => s.trim()).filter(Boolean)
+  : process.env.NODE_ENV === "production"
+    ? defaultProdOrigins
+    : [];
 app.use(
   cors({
     origin: allowedOrigins.length > 0
@@ -74,7 +80,7 @@ app.use(
           else cb(new Error("Not allowed by CORS"));
         }
       : "*",
-    credentials: true,
+    credentials: allowedOrigins.length > 0,
   }),
 );
 app.use(compression());
