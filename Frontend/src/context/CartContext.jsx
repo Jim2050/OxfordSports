@@ -196,6 +196,12 @@ export function CartProvider({ children }) {
     [items],
   );
 
+  /** Check if any cart line exists for this SKU (any size). */
+  const isSkuInCart = useCallback(
+    (sku) => items.some((i) => i.sku === sku),
+    [items],
+  );
+
   return (
     <CartContext.Provider
       value={{
@@ -210,6 +216,7 @@ export function CartProvider({ children }) {
         openDrawer,
         closeDrawer,
         isInCart,
+        isSkuInCart,
       }}
     >
       {children}

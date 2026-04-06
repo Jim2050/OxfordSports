@@ -22,7 +22,7 @@ export default function ProductPage() {
   const [orderQty, setOrderQty] = useState(1);
   // Size selection for multi-size products
   const [selectedSize, setSelectedSize] = useState("");
-  const { addToCart, isInCart, openDrawer } = useCart();
+  const { addToCart, isSkuInCart, openDrawer } = useCart();
 
   useEffect(() => {
     setLoading(true);
@@ -100,8 +100,8 @@ export default function ProductPage() {
   const effectiveQtyStep = selectedSize && selectedSizeQty < qtyStep ? 1 : qtyStep;
   const effectiveMinQty = selectedSize && selectedSizeQty < qtyStep ? 1 : qtyStep;
 
-  // Check if any variant is in cart
-  const anySizeInCart = productSizes.some((s) => isInCart(product.sku, s.size));
+  // Check if this product is in cart (any size variant)
+  const alreadyInCart = isSkuInCart(product.sku);
 
   /**
    * Add to cart handler:
@@ -109,14 +109,13 @@ export default function ProductPage() {
    * - otherwise → user picks qty, single item added
    */
   const handleAddToCart = () => {
+    if (alreadyInCart) {
+      toast("Item already in cart", { icon: "ℹ️" });
+      return;
+    }
+
     if (isLot || mustBuyAll) {
       // Lot items: add complete lot as qty=1, no customization
-      // Check if already in cart
-      if (isInCart(product.sku, "")) {
-        toast(`Complete lot already in your cart`, { icon: "ℹ️" });
-        openDrawer();
-        return;
-      }
       addToCart(product, "", 1, true);
       toast.success(`Complete lot (${totalQty} units) added to cart!`);
       openDrawer();
@@ -419,7 +418,7 @@ export default function ProductPage() {
                   ? `Add To Order (${totalQty} units) — £${(totalQty * finalPrice).toFixed(2)}`
                   : "Add To Order"}
               </button>
-              {anySizeInCart && (
+              {alreadyInCart && (
                 <button className="btn btn-primary btn-lg" onClick={openDrawer}>
                   View Cart ✓
                 </button>

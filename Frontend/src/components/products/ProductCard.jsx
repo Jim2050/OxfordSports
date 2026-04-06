@@ -40,7 +40,7 @@ export default function ProductCard({ product }) {
     ? `/product/${encodeURIComponent(product.sku)}`
     : "#";
 
-  const { addToCart, isInCart, openDrawer } = useCart();
+  const { addToCart, isSkuInCart } = useCart();
   const productSizes = getSizes(product);
   const displaySizes = productSizes.filter(s => (s.size || "").toUpperCase() !== "ONE SIZE");
   const displayTotalQty = displaySizes.reduce((sum, s) => sum + (s.quantity || 0), 0);
@@ -51,47 +51,32 @@ export default function ProductCard({ product }) {
   // Use the actual totalQty for Sold Out check, but displayTotalQty for stock info
   const effectiveStock = (isOneSizeOnly && totalQty > 0) ? totalQty : displayTotalQty;
   const hasSizes = productSizes.length > 0;
-  const { mustBuyAll } = getMOQInfo(product);
+  const { mustBuyAll, isLot, moqStep } = getMOQInfo(product);
 
   const [added, setAdded] = useState(false);
 
-  /* Heart click → quick-add to cart.
-     mustBuyAll → adds ALL available sizes at full qty.
-     Otherwise → adds 1 of first available size. */
+  /* Heart click → add one consolidated cart line for this SKU. */
   const handleHeartClick = (e) => {
     e.preventDefault();
     e.stopPropagation();
     if (!hasSizes || totalQty === 0) return;
 
-    if (mustBuyAll) {
-      productSizes.forEach((s) => {
-        if (s.quantity > 0) addToCart(product, s.size, s.quantity);
-      });
-      setAdded(true);
-      toast.success(`Entire lot of ${product.name} added to cart`);
-    } else {
-      const firstAvail = productSizes.find((s) => s.quantity > 0);
-      if (!firstAvail) return;
-      const cat = (product.category || "").toUpperCase();
-      const step = cat === "FOOTWEAR" ? 12 : 25;
-      addToCart(product, firstAvail.size, step);
-      setAdded(true);
-      toast.success(`${step} × ${product.name} added to cart`);
+    if (alreadyInCart) {
+      toast("Item already in cart", { icon: "ℹ️" });
+      return;
     }
+
+    if (isLot || mustBuyAll) {
+      addToCart(product, "", 1, true);
+    } else {
+      addToCart(product, "", moqStep || 1);
+    }
+    toast.success(`${product.name} added to cart`);
+    setAdded(true);
     setTimeout(() => setAdded(false), 1200);
   };
 
-  const handleCartClick = (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    openDrawer();
-  };
-
-  const firstSize =
-    productSizes.find((s) => s.quantity > 0)?.size ||
-    productSizes[0]?.size ||
-    "";
-  const alreadyInCart = isInCart(product.sku, firstSize);
+  const alreadyInCart = isSkuInCart(product.sku);
 
   /* Derive gender from product fields */
   const genderLabel = (() => {
@@ -151,8 +136,8 @@ export default function ProductCard({ product }) {
         />
         <button
           className={`card-heart-btn${added ? " added" : ""}${alreadyInCart ? " in-cart" : ""}`}
-          onClick={alreadyInCart ? handleCartClick : handleHeartClick}
-          title={alreadyInCart ? "View cart" : "Add to cart"}
+          onClick={handleHeartClick}
+          title={alreadyInCart ? "Already in cart" : "Add to cart"}
           disabled={totalQty === 0}
         >
           {alreadyInCart ? "✓" : <HeartIcon filled={added} />}
@@ -239,8 +224,8 @@ export default function ProductCard({ product }) {
           {totalQty > 0 && (
             <button
               className={`btn-wishlist${added ? " added" : ""}${alreadyInCart ? " in-cart" : ""}`}
-              onClick={alreadyInCart ? handleCartClick : handleHeartClick}
-              title={alreadyInCart ? "View cart" : "Add to cart"}
+              onClick={handleHeartClick}
+              title={alreadyInCart ? "Already in cart" : "Add to cart"}
             >
               {alreadyInCart ? "✓" : "♡"}
             </button>
