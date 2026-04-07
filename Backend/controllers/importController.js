@@ -626,6 +626,7 @@ function consolidateBySku(rows) {
         );
       }
       existing._hadNegativeSizes = existing._hadNegativeSizes || parsedSizes.hadNegativeSizes;
+      existing._hadZeroQtyTokens = existing._hadZeroQtyTokens || parsedSizes.hadZeroQtyTokens;
       existing._rawSizeProvided = existing._rawSizeProvided || rawSizeProvided;
       existing._sizeParseFailed = existing._sizeParseFailed || strictSizeFailure;
 
@@ -712,6 +713,7 @@ function consolidateBySku(rows) {
         sku,
         _sizeWarnings: sizeErrors,
         _hadNegativeSizes: parsedSizes.hadNegativeSizes,
+        _hadZeroQtyTokens: parsedSizes.hadZeroQtyTokens,
         _rawSizeProvided: rawSizeProvided,
         _sizeParseFailed:
           strictSizeFailure || (rawSizeProvided && sizeEntries.length === 0),
@@ -1065,6 +1067,33 @@ exports.importProducts = async (req, res) => {
         continue;
       }
 
+      const existingProduct = existingProductMap.get(sku);
+      if (existingProduct?.isManuallyEdited) {
+        protectedManualRows += 1;
+        if (protectedManualSamples.length < 10) {
+          protectedManualSamples.push(sku);
+        }
+        continue;
+      }
+
+      const existingHasSizes = Array.isArray(existingProduct?.sizes) && existingProduct.sizes.length > 0;
+      const hasUsableIncomingSizes = Array.isArray(row.sizeEntries) && row.sizeEntries.length > 0;
+      const incomingQty = Math.max(0, Number.parseInt(row.quantity, 10) || 0);
+      const shouldPreserveExistingStock =
+        !!existingProduct &&
+        existingHasSizes &&
+        (!row._rawSizeProvided || (!hasUsableIncomingSizes && incomingQty > 0 && !row._hadZeroQtyTokens));
+
+      if (shouldPreserveExistingStock) {
+        warnings++;
+        pushWarningDetail({
+          row: i + 1,
+          sku,
+          reason: "Incoming row had no usable size data; preserved existing catalog stock",
+        });
+        continue;
+      }
+
       if (row._sizeParseFailed || (row._rawSizeProvided && (!Array.isArray(row.sizeEntries) || row.sizeEntries.length === 0))) {
         // Best-effort: don't skip SKU if sizes are bad; update metadata and set 0 stock
         warnings++;
@@ -1139,15 +1168,6 @@ exports.importProducts = async (req, res) => {
         sheetName: row._sheetName || "",
         isActive: true,
       };
-
-      const existingProduct = existingProductMap.get(sku);
-      if (existingProduct?.isManuallyEdited) {
-        protectedManualRows += 1;
-        if (protectedManualSamples.length < 10) {
-          protectedManualSamples.push(sku);
-        }
-        continue;
-      }
 
       // ══════════════════════════════════════════════════════════════════
       //  AUTO-CATEGORIZE — comprehensive keyword rules (#20)

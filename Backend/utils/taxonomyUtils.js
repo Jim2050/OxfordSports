@@ -240,6 +240,7 @@ function parseSizeEntries(rawSize, fallbackQty) {
       embeddedQuantities: false,
       parsedTotal: 0,
       hadNegativeSizes: false,
+      hadZeroQtyTokens: false,
     };
   }
 
@@ -253,6 +254,7 @@ function parseSizeEntries(rawSize, fallbackQty) {
   let parsedTotal = 0;
   let embeddedQuantities = false;
   let hadNegativeSizes = false;
+  let hadZeroQtyTokens = false;
 
   for (const token of tokens) {
     const embeddedMatch = token.match(/^(.*)\((\d+)\)$/);
@@ -271,6 +273,7 @@ function parseSizeEntries(rawSize, fallbackQty) {
 
     // Silently ignore zero-quantity tokens instead of treating them as warnings.
     if (quantity <= 0) {
+      hadZeroQtyTokens = true;
       continue;
     }
 
@@ -294,6 +297,7 @@ function parseSizeEntries(rawSize, fallbackQty) {
     embeddedQuantities,
     parsedTotal,
     hadNegativeSizes,
+    hadZeroQtyTokens,
   };
 }
 
