@@ -171,6 +171,10 @@ exports.updateProduct = async (req, res) => {
 
     // Sizes: parse via shared utility to prevent malformed labels and qty drift.
     if (req.body.sizes !== undefined) {
+      const existingOneSizeOnly =
+        Array.isArray(product.sizes) &&
+        product.sizes.length === 1 &&
+        String(product.sizes[0]?.size || "").trim().toUpperCase() === "ONE SIZE";
       const parsedQty = parseInt(req.body.quantity);
       const totalQtyInput = isNaN(parsedQty)
         ? Math.max(0, Number(product.totalQuantity) || 0)
@@ -182,7 +186,9 @@ exports.updateProduct = async (req, res) => {
         categoryForSizeParsing,
       );
 
-      product.sizes = parsedSizes;
+      if (!(parsedSizes.length === 0 && existingOneSizeOnly && !String(req.body.sizes || "").trim())) {
+        product.sizes = parsedSizes;
+      }
       
       if (process.env.DEBUG_UPDATES === "true") {
         console.debug(`[UPDATE] ${sku}: sizes input="${req.body.sizes}" qty=${totalQtyInput} → result=${JSON.stringify(product.sizes)}`);

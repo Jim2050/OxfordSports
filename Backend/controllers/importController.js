@@ -930,6 +930,19 @@ exports.importProducts = async (req, res) => {
       `[IMPORT] Consolidated ${normalizedRows.length} rows → ${consolidated.length} unique products`,
     );
 
+    const uploadedSkus = Array.from(
+      new Set(consolidated.map((p) => String(p.sku || "").trim().toUpperCase()).filter(Boolean)),
+    );
+    const existingProducts = uploadedSkus.length > 0
+      ? await Product.find({ sku: { $in: uploadedSkus } })
+          .lean()
+      : [];
+    const existingProductMap = new Map(
+      existingProducts.map((product) => [product.sku, product]),
+    );
+    let protectedManualRows = 0;
+    const protectedManualSamples = [];
+
     // ── Log size consolidation details for debugging Issue #1 ──
     const sizeConsolidationStats = {
       productsWithSizes: 0,
@@ -1109,7 +1122,7 @@ exports.importProducts = async (req, res) => {
       const originalCategoryValue = row.category ? String(row.category).trim() : "";
       const canonicalFromInput = safeExtractCategory(originalCategoryValue) || deriveCategoryCanonical(originalCategoryValue);
 
-      const productData = {
+      let productData = {
         sku,
         name: normalizeImportedName(name, canonicalFromInput || originalCategoryValue, row.subcategory),
         description: row.description ? String(row.description).trim() : "",
@@ -1128,6 +1141,19 @@ exports.importProducts = async (req, res) => {
         sheetName: row._sheetName || "",
         isActive: true,
       };
+
+      const existingProduct = existingProductMap.get(sku);
+      if (existingProduct?.isManuallyEdited) {
+        const { _id, createdAt, updatedAt, __v, ...manualProtectedData } = existingProduct;
+        productData = {
+          ...productData,
+          ...manualProtectedData,
+        };
+        protectedManualRows += 1;
+        if (protectedManualSamples.length < 10) {
+          protectedManualSamples.push(sku);
+        }
+      }
 
       // ══════════════════════════════════════════════════════════════════
       //  AUTO-CATEGORIZE — comprehensive keyword rules (#20)
@@ -1532,13 +1558,11 @@ exports.importProducts = async (req, res) => {
 
     // ── Mark products NOT in this upload as sold out (quantity = 0) ──
     try {
-      const uploadedSkus = Array.from(new Set(consolidated.map(p => p.sku)));
       debug(`[IMPORT] Synchronizing catalog: marking all products NOT in this upload as sold out...`);
 
       const syncResult = await Product.updateMany(
         { 
-          sku: { $nin: uploadedSkus },
-          isManuallyEdited: { $ne: true }
+          sku: { $nin: uploadedSkus }
         },
         {
           $set: {
@@ -1643,6 +1667,8 @@ exports.importProducts = async (req, res) => {
       imageResolved,
       imageFailed,
       imagePending: Math.max(0, pendingImageProducts.length - 50),
+      protectedManualRows,
+      protectedManualSamples,
       errors,
       headers,
       mapping,

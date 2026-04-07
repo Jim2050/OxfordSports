@@ -78,12 +78,14 @@ export default function ProductPage() {
 
   const productSizes = getSizes(product);
   const hasSizes = productSizes.length > 0;
-  const displaySizes = productSizes.filter(
-    (s) => String(s?.size || "").trim().toUpperCase() !== "ONE SIZE",
-  );
   const isOneSize =
     productSizes.length === 1 &&
     String(productSizes[0]?.size || "").trim().toUpperCase() === "ONE SIZE";
+  const displaySizes = isOneSize
+    ? productSizes
+    : productSizes.filter(
+      (s) => String(s?.size || "").trim().toUpperCase() !== "ONE SIZE",
+    );
   const { mustBuyAll, isLot, canSelectSizes, canCustomizeQty } = getMOQInfo(product);
 
   // Quantity step: footwear orders in multiples of 12
@@ -224,7 +226,7 @@ export default function ProductPage() {
             )}
 
             {/* ── Sizes at a glance (read-only) ── */}
-            {hasSizes && !isOneSize && displaySizes.length > 0 && (
+            {hasSizes && displaySizes.length > 0 && (
               <div className="sizes-section" style={{ marginBottom: "1rem" }}>
                 <span className="sizes-header">
                   Available Sizes ({totalQty} units)

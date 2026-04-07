@@ -446,6 +446,9 @@ export default function AdminPage() {
     }
 
     const sizesArr = Array.isArray(product.sizes) ? product.sizes : [];
+    const isOneSizeOnly =
+      sizesArr.length === 1 &&
+      String(sizesArr[0]?.size || "").trim().toUpperCase() === "ONE SIZE";
     
     // Filter out "ONE SIZE" but keep ALL other sizes with their quantities
     const visibleSizesArr = sizesArr.filter((s) => {
@@ -478,6 +481,9 @@ export default function AdminPage() {
         sizesStr = visibleSizesArr.join(", ");
         qtyStr = (product.totalQuantity || product.quantity || "").toString();
       }
+    } else if (isOneSizeOnly) {
+      sizesStr = "ONE SIZE";
+      qtyStr = (sizesArr[0].quantity || product.totalQuantity || 0).toString();
     } else if (sizesArr.length > 0) {
       // All sizes are "ONE SIZE"
       const oneSize = sizesArr.find((s) => String(s?.size || "").trim().toUpperCase() === "ONE SIZE");
@@ -1438,7 +1444,6 @@ export default function AdminPage() {
                           0,
                         );
                       const sizesDisplay = sizesArr
-                        .filter((s) => String(s?.size || "").trim().toUpperCase() !== "ONE SIZE")
                         .map((s) =>
                           `${s.size}(${s.quantity || 0})`,
                         )

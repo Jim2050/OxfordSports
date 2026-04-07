@@ -42,11 +42,13 @@ export default function ProductCard({ product }) {
 
   const { addToCart, isSkuInCart } = useCart();
   const productSizes = getSizes(product);
-  const displaySizes = productSizes.filter(s => (s.size || "").toUpperCase() !== "ONE SIZE");
+  const isOneSizeOnly = productSizes.length === 1 && (productSizes[0].size || "").toUpperCase() === "ONE SIZE";
+  const displaySizes = isOneSizeOnly
+    ? productSizes
+    : productSizes.filter(s => (s.size || "").toUpperCase() !== "ONE SIZE");
   const displayTotalQty = displaySizes.reduce((sum, s) => sum + (s.quantity || 0), 0);
   const isSoldOut = product.isActive === false || (product.totalQuantity || product.quantity || 0) <= 0;
   const hasDisplaySizes = displaySizes.length > 0 && displayTotalQty > 0;
-  const isOneSizeOnly = productSizes.length === 1 && (productSizes[0].size || "").toUpperCase() === "ONE SIZE";
   
   // Use the actual totalQty for Sold Out check, but displayTotalQty for stock info
   const effectiveStock = (isOneSizeOnly && totalQty > 0) ? totalQty : displayTotalQty;
@@ -69,7 +71,7 @@ export default function ProductCard({ product }) {
     if (isLot || mustBuyAll) {
       addToCart(product, "", 1, true);
     } else {
-      addToCart(product, "", moqStep || 1);
+      addToCart(product, isOneSizeOnly ? productSizes[0].size : "", moqStep || 1);
     }
     toast.success(`${product.name} added to cart`);
     setAdded(true);
