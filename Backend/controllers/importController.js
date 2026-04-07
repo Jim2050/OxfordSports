@@ -291,9 +291,14 @@ const COLUMN_MAP = {
     "stock",
     "stock qty",
     "stock quantity", // Added to match "Stock Quantity" column
+    "qty available",
+    "available qty",
     "available",
     "units",
     "pcs",
+    "total quantity",
+    "on hand",
+    "stock on hand",
   ],
   imageUrl: [
     "image link",
@@ -393,6 +398,44 @@ function detectMapping(headers) {
   }
 
   return { mapping, unmappedHeaders };
+}
+
+function isLikelySizeCell(value) {
+  const text = String(value || "").trim();
+  if (!text) return false;
+
+  if (/^(NS|ONE SIZE|OSFM|MIXED)$/i.test(text)) {
+    return true;
+  }
+
+  const upper = text.toUpperCase();
+
+  // Embedded quantities are the strongest signal for a size cell.
+  if (/[()]/.test(text)) {
+    return parseSizeEntries(text, 0).entries.length > 0;
+  }
+
+  // Plain size labels are only accepted on explicit size-like tokens.
+  return /^(XXXL|XXL|XL|XS|S|M|L|\d+(?:\.\d+)?(?:-\d+(?:\.\d+)?)?Y?)$/i.test(upper);
+}
+
+function inferSizeCell(rawRow, headers, currentMapping) {
+  const mappedSizeColumn = currentMapping.sizes;
+  if (mappedSizeColumn) {
+    const mappedValue = rawRow[mappedSizeColumn];
+    if (String(mappedValue || "").trim()) {
+      return mappedValue;
+    }
+  }
+
+  for (const header of headers) {
+    const candidate = rawRow[header];
+    if (isLikelySizeCell(candidate)) {
+      return candidate;
+    }
+  }
+
+  return "";
 }
 
 /**
@@ -534,6 +577,15 @@ function parseExcelFile(filePath) {
       const row = { _sheetName: sheetName };
       for (const [field, col] of Object.entries(currentMapping)) {
         row[field] = raw[col] !== undefined ? raw[col] : "";
+      }
+
+      // Fallback: if the mapped size column is blank, scan the row for a size-like cell.
+      if (!String(row.sizes || "").trim()) {
+        const inferredSize = inferSizeCell(raw, headers, currentMapping);
+        if (inferredSize) {
+          row.sizes = inferredSize;
+          row._inferredSize = true;
+        }
       }
 
       // Fallback: if mapped price column was empty, try other price-like columns
