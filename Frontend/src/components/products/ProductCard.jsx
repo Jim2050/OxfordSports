@@ -43,9 +43,7 @@ export default function ProductCard({ product }) {
   const { addToCart, isSkuInCart } = useCart();
   const productSizes = getSizes(product);
   const isOneSizeOnly = productSizes.length === 1 && (productSizes[0].size || "").toUpperCase() === "ONE SIZE";
-  const displaySizes = isOneSizeOnly
-    ? productSizes
-    : productSizes.filter(s => (s.size || "").toUpperCase() !== "ONE SIZE");
+  const displaySizes = productSizes;
   const displayTotalQty = displaySizes.reduce((sum, s) => sum + (s.quantity || 0), 0);
   const isSoldOut = product.isActive === false || (product.totalQuantity || product.quantity || 0) <= 0;
   const hasDisplaySizes = displaySizes.length > 0 && displayTotalQty > 0;

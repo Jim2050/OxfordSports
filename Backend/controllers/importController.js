@@ -400,50 +400,12 @@ function detectMapping(headers) {
   return { mapping, unmappedHeaders };
 }
 
-function isLikelySizeCell(value) {
-  const text = String(value || "").trim();
-  if (!text) return false;
-
-  if (/^(NS|ONE SIZE|OSFM|MIXED)$/i.test(text)) {
-    return true;
-  }
-
-  const upper = text.toUpperCase();
-
-  // Embedded quantities are the strongest signal for a size cell.
-  if (/[()]/.test(text)) {
-    return parseSizeEntries(text, 0).entries.length > 0;
-  }
-
-  // Plain size labels are only accepted on explicit size-like tokens.
-  return /^(XXXL|XXL|XL|XS|S|M|L|\d+(?:\.\d+)?(?:-\d+(?:\.\d+)?)?Y?)$/i.test(upper);
-}
-
-function inferSizeCell(rawRow, headers, currentMapping) {
-  const mappedSizeColumn = currentMapping.sizes;
-  if (mappedSizeColumn) {
-    const mappedValue = rawRow[mappedSizeColumn];
-    if (String(mappedValue || "").trim()) {
-      return mappedValue;
-    }
-  }
-
-  for (const header of headers) {
-    const candidate = rawRow[header];
-    if (isLikelySizeCell(candidate)) {
-      return candidate;
-    }
-  }
-
-  return "";
-}
-
 /**
  * Detect parent-child SKU relationships and normalize rows.
  * Handles Firebird/adidas export where IF6180 is parent summary,
  * IF6180GRY122 etc. are per-size child rows.
  * Skips parent summary rows, maps children to parent SKU,
- * and extracts size from name/description when no size column.
+ * and does not infer size labels from text.
  */
 function normalizeParentChildSkus(rows, hasSizeMapping) {
   if (rows.length === 0 || hasSizeMapping) return rows;
@@ -493,25 +455,6 @@ function normalizeParentChildSkus(rows, hasSizeMapping) {
       if (sku.startsWith(parentSku) && sku.length > parentSku.length) {
         // Replace child SKU with parent SKU for consolidation
         row.sku = parentSku;
-
-        // Extract size from name/description
-        // Handles: "...UK 3.5", "...XL", "...One Size", "...7-8Y"
-        if (!row.sizes || String(row.sizes).trim() === "") {
-          const text = String(row.name || "");
-          // Try UK size first (e.g. "UK 3.5")
-          const ukMatch = text.match(/UK\s+(\d+(?:\.\d+)?)/i);
-          if (ukMatch) {
-            row.sizes = ukMatch[1];
-          } else {
-            // Try standard sizes at end of string: XS, S, M, L, XL, XXL, XXXL, or age sizes like 7-8Y
-            const stdMatch = text.match(
-              /\b(XXXL|XXL|XL|XS|S|M|L|\d+-\d+Y)\s*$/i,
-            );
-            if (stdMatch) {
-              row.sizes = stdMatch[1].toUpperCase();
-            }
-          }
-        }
 
         // Use parent's clean name instead of child's name+color+size string
         if (parentInfo.name) {
@@ -579,15 +522,6 @@ function parseExcelFile(filePath) {
         row[field] = raw[col] !== undefined ? raw[col] : "";
       }
 
-      // Fallback: if the mapped size column is blank, scan the row for a size-like cell.
-      if (!String(row.sizes || "").trim()) {
-        const inferredSize = inferSizeCell(raw, headers, currentMapping);
-        if (inferredSize) {
-          row.sizes = inferredSize;
-          row._inferredSize = true;
-        }
-      }
-
       // Fallback: if mapped price column was empty, try other price-like columns
       if (row.price === "" || row.price === undefined || row.price === null) {
         const _priceRe = /price|trade|cost|sale|£|gbp|net|landing|offer|fob|wholesale|special|total|amount|value/i;
@@ -650,11 +584,7 @@ function consolidateBySku(rows) {
     const rowSizes = parsedSizes.entries;
     const normalizedRowSizes = normalizeSizeEntries(rowSizes, row.category);
 
-    const droppedDuringNormalization =
-      rawSizeProvided && rowSizes.length > 0 && normalizedRowSizes.length < rowSizes.length;
-    const strictSizeFailure =
-      rawSizeProvided &&
-      (parsedSizes.invalidTokens.length > 0 || droppedDuringNormalization);
+    const strictSizeFailure = rawSizeProvided && rowQty > 0 && normalizedRowSizes.length === 0;
 
     if (skuMap.has(sku)) {
       const existing = skuMap.get(sku);
@@ -682,13 +612,9 @@ function consolidateBySku(rows) {
       existing._rawSizeProvided = existing._rawSizeProvided || rawSizeProvided;
       existing._sizeParseFailed = existing._sizeParseFailed || strictSizeFailure;
 
-      if (rawSizeProvided && rowSizes.length > 0 && normalizedRowSizes.length === 0) {
+      if (rawSizeProvided && rowQty > 0 && normalizedRowSizes.length === 0) {
         existing._sizeWarnings = existing._sizeWarnings || [];
-        existing._sizeWarnings.push("All parsed sizes were rejected by validation/normalization rules");
-      }
-      if (droppedDuringNormalization) {
-        existing._sizeWarnings = existing._sizeWarnings || [];
-        existing._sizeWarnings.push("Some parsed sizes were rejected by normalization rules");
+        existing._sizeWarnings.push("Provided size values could not be parsed");
       }
 
       // Merge sizes with quantities
@@ -711,7 +637,7 @@ function consolidateBySku(rows) {
       existing.sizeEntries = normalizeSizeEntries(existing.sizeEntries, existing.category);
       if (beforeNormalizeCount > 0 && existing.sizeEntries.length === 0) {
         existing._sizeWarnings = existing._sizeWarnings || [];
-        existing._sizeWarnings.push("All merged sizes were rejected by normalization rules");
+        existing._sizeWarnings.push("All merged sizes became empty after parsing");
       }
 
       // Merge barcode
@@ -743,9 +669,6 @@ function consolidateBySku(rows) {
           "Negative size sign detected and normalized to a positive value",
         );
       }
-      if (droppedDuringNormalization) {
-        sizeErrors.push("Some parsed sizes were rejected by normalization rules");
-      }
 
       if (normalizedRowSizes.length > 0) {
         for (const entry of normalizedRowSizes) {
@@ -756,8 +679,8 @@ function consolidateBySku(rows) {
             sizeEntries.push({ size: entry.size, quantity: entry.quantity });
           }
         }
-      } else if (rawSizeProvided) {
-        sizeErrors.push("Provided size value could not be normalized");
+      } else if (rawSizeProvided && rowQty > 0) {
+        sizeErrors.push("Provided size values could not be parsed");
       }
 
       skuMap.set(sku, {
@@ -903,6 +826,7 @@ exports.importProducts = async (req, res) => {
   let batch;
   const filePath = req.file?.path;
   const startTime = Date.now();
+  const phaseMarks = { requestStart: startTime };
 
   try {
     if (!req.file) {
@@ -916,9 +840,47 @@ exports.importProducts = async (req, res) => {
       status: "processing",
     });
 
+    const importTag = `[IMPORT][${batch._id}]`;
+    const logInfo = (message, data) => {
+      if (data !== undefined) {
+        console.log(`${importTag} ${message}`, data);
+      } else {
+        console.log(`${importTag} ${message}`);
+      }
+    };
+    const logWarn = (message, data) => {
+      if (data !== undefined) {
+        console.warn(`${importTag} ${message}`, data);
+      } else {
+        console.warn(`${importTag} ${message}`);
+      }
+    };
+    const logError = (message, data) => {
+      if (data !== undefined) {
+        console.error(`${importTag} ${message}`, data);
+      } else {
+        console.error(`${importTag} ${message}`);
+      }
+    };
+
+    logInfo(`Import started for file "${req.file.originalname}" (${req.file.size || 0} bytes)`);
+
     // Parse ALL sheets in the workbook
     const { rows, headers, mapping, unmappedHeaders, sheetSummary } =
       parseExcelFile(filePath);
+    phaseMarks.parsed = Date.now();
+
+    const requiredColumns = ["sku", "price", "sizes", "quantity"];
+    const missingRequiredColumns = requiredColumns.filter((key) => !mapping[key]);
+    const mappingCoverage = {
+      mappedFields: Object.keys(mapping).length,
+      missingRequiredColumns,
+      unmappedHeaders: unmappedHeaders.length,
+    };
+    logInfo(`Parse complete: ${rows.length} rows across ${sheetSummary.length} sheet(s)`, mappingCoverage);
+    if (missingRequiredColumns.length > 0) {
+      logWarn(`Missing required column mappings: ${missingRequiredColumns.join(", ")}`);
+    }
 
     debug(
       `[IMPORT] Parsed ${rows.length} raw rows from ${sheetSummary.length} sheets`,
@@ -946,6 +908,21 @@ exports.importProducts = async (req, res) => {
         sku: "",
         reason: "File is empty or could not be parsed.",
       });
+      batch.diagnostics = {
+        status: "failed",
+        reason: "empty_or_unparsed_file",
+        performance: {
+          totalMs: Date.now() - startTime,
+        },
+        checks: [
+          {
+            name: "raw_rows_present",
+            status: "fail",
+            value: 0,
+            message: "File is empty or could not be parsed",
+          },
+        ],
+      };
       await batch.save();
       cleanup(filePath);
       return res
@@ -956,6 +933,7 @@ exports.importProducts = async (req, res) => {
     // ── Normalize parent-child SKU patterns (Feb adidas format) ──
     const hasSizeMapping = !!mapping.sizes;
     const normalizedRows = normalizeParentChildSkus(rows, hasSizeMapping);
+    phaseMarks.parentChildNormalized = Date.now();
     if (normalizedRows.length !== rows.length) {
       debug(
         `[IMPORT] Parent-child normalization reduced ${rows.length} -> ${normalizedRows.length} rows`,
@@ -976,10 +954,12 @@ exports.importProducts = async (req, res) => {
       debug(
         `[IMPORT] Upload contains ${duplicateSkuGroupsInUpload} duplicate SKU groups (${duplicateRowsMerged} extra rows)`,
       );
+      logInfo(`Detected ${duplicateSkuGroupsInUpload} duplicate SKU group(s), ${duplicateRowsMerged} row merge candidate(s)`);
     }
 
     // ── Consolidate same-SKU rows (size merging) ──
     const consolidated = consolidateBySku(normalizedRows);
+    phaseMarks.consolidated = Date.now();
     debug(
       `[IMPORT] Consolidated ${normalizedRows.length} rows → ${consolidated.length} unique products`,
     );
@@ -1028,10 +1008,11 @@ exports.importProducts = async (req, res) => {
       `${sizeConsolidationStats.productsWithNoSizes} no sizes, ` +
       `${sizeConsolidationStats.sizeWarnings} with warnings`,
     );
+    logInfo("Size profile", sizeConsolidationStats);
 
     if (sizeConsolidationStats.productsWithNoSizes > consolidated.length * 0.7) {
-      console.warn(
-        `[IMPORT WARNING] Most products (${sizeConsolidationStats.productsWithNoSizes}/${consolidated.length}) have NO sizes! ` +
+      logWarn(
+        `Most products (${sizeConsolidationStats.productsWithNoSizes}/${consolidated.length}) have NO sizes! ` +
         `Check: 1) Are sizes in Excel? 2) Is size column being detected? 3) Run diagnostic import.`,
       );
     }
@@ -1069,6 +1050,7 @@ exports.importProducts = async (req, res) => {
       (name) => name !== "HOME",
     );
     const createdCategories = await ensureCategories(distinctCategories);
+    phaseMarks.categoriesEnsured = Date.now();
 
     let imported = 0;
     let updated = 0;
@@ -1152,7 +1134,7 @@ exports.importProducts = async (req, res) => {
         pushWarningDetail({
           row: i + 1,
           sku,
-          reason: "Provided size values could not be normalized; product updated with 0 stock",
+          reason: "Provided size values could not be parsed; product updated with 0 stock",
         });
         row.sizeEntries = [];
       }
@@ -1536,6 +1518,7 @@ exports.importProducts = async (req, res) => {
     debug(
       `[IMPORT] Executing ${operations.length} operations in batches of ${BATCH_SIZE}`,
     );
+    const dbWriteStart = Date.now();
     for (let i = 0; i < operations.length; i += BATCH_SIZE) {
       const chunk = operations.slice(i, i + BATCH_SIZE);
       const result = await Product.bulkWrite(chunk, { ordered: false });
@@ -1545,6 +1528,12 @@ exports.importProducts = async (req, res) => {
         `[IMPORT] Batch ${Math.floor(i / BATCH_SIZE) + 1}: upserted=${result.upsertedCount || 0}, modified=${result.modifiedCount || 0}`,
       );
     }
+    phaseMarks.dbWriteComplete = Date.now();
+    logInfo(`DB write complete in ${phaseMarks.dbWriteComplete - dbWriteStart}ms`, {
+      operationCount: operations.length,
+      imported,
+      updated,
+    });
 
     // ── Set displayOrder for categories ──
     try {
@@ -1625,6 +1614,7 @@ exports.importProducts = async (req, res) => {
     // ── Mark products NOT in this upload as sold out (quantity = 0) ──
     try {
       debug(`[IMPORT] Synchronizing catalog: marking all products NOT in this upload as sold out...`);
+      const syncStart = Date.now();
 
       const syncResult = await Product.updateMany(
         { 
@@ -1640,17 +1630,24 @@ exports.importProducts = async (req, res) => {
       );
 
       debug(`[IMPORT] Sync complete: ${syncResult.modifiedCount} products not in sheet marked as sold out`);
+      phaseMarks.syncComplete = Date.now();
+      logInfo(`Catalog sync complete in ${phaseMarks.syncComplete - syncStart}ms`, {
+        modifiedCount: syncResult.modifiedCount,
+      });
     } catch (err) {
       console.error("[IMPORT] Error during sold-out synchronization:", err.message);
       debug(`[IMPORT WARNING] Failed to synchronize missing SKUs: ${err.message}`);
+      logWarn(`Catalog sync warning: ${err.message}`);
     }
 
-    const elapsed = ((Date.now() - startTime) / 1000).toFixed(2);
+    const totalMs = Date.now() - startTime;
+    const elapsed = (totalMs / 1000).toFixed(2);
 
     // ── Post-import: auto-resolve images from Google search URLs (async, non-blocking) ──
     let imageResolved = 0;
     let imageFailed = 0;
     if (pendingImageProducts.length > 0) {
+      const imageResolveStart = Date.now();
       debug(
         `[IMPORT] Starting auto image resolution for ${pendingImageProducts.length} products...`,
       );
@@ -1692,8 +1689,15 @@ exports.importProducts = async (req, res) => {
             `[IMPORT] ${pendingImageProducts.length - 50} products still need image resolution — use POST /api/admin/resolve-images`,
           );
         }
+        phaseMarks.imageResolveComplete = Date.now();
+        logInfo(`Image resolution complete in ${phaseMarks.imageResolveComplete - imageResolveStart}ms`, {
+          imageResolved,
+          imageFailed,
+          remaining: Math.max(0, pendingImageProducts.length - 50),
+        });
       } catch (imgErr) {
         console.error("[IMPORT] Image auto-resolution error:", imgErr.message);
+        logWarn(`Image auto-resolution warning: ${imgErr.message}`);
       }
     }
 
@@ -1708,12 +1712,121 @@ exports.importProducts = async (req, res) => {
       );
     }
 
+    const rowsPerSecond = totalMs > 0 ? +((rows.length / totalMs) * 1000).toFixed(2) : 0;
+    const checks = [
+      {
+        name: "required_columns_mapped",
+        status: missingRequiredColumns.length === 0 ? "pass" : "warn",
+        value: missingRequiredColumns.length,
+        message: missingRequiredColumns.length === 0
+          ? "All required columns mapped"
+          : `Missing required mappings: ${missingRequiredColumns.join(", ")}`,
+      },
+      {
+        name: "size_data_presence",
+        status:
+          sizeConsolidationStats.productsWithNoSizes > consolidated.length * 0.7
+            ? "warn"
+            : "pass",
+        value: sizeConsolidationStats.productsWithNoSizes,
+        message: `${sizeConsolidationStats.productsWithNoSizes} of ${consolidated.length} products have no sizes`,
+      },
+      {
+        name: "failed_rows",
+        status: failed > 0 ? "warn" : "pass",
+        value: failed,
+        message: failed > 0 ? `${failed} row(s) failed` : "No failed rows",
+      },
+      {
+        name: "warnings_generated",
+        status: warnings > 0 ? "warn" : "pass",
+        value: warnings,
+        message: warnings > 0 ? `${warnings} warning(s) generated` : "No warnings",
+      },
+      {
+        name: "execution_time_seconds",
+        status: totalMs > 120000 ? "warn" : "pass",
+        value: +elapsed,
+        message: `${elapsed}s total execution time`,
+      },
+    ];
+
+    const diagnostics = {
+      generatedAt: new Date().toISOString(),
+      status: "complete",
+      performance: {
+        totalMs,
+        rowsPerSecond,
+        phaseMs: {
+          parse: phaseMarks.parsed ? phaseMarks.parsed - phaseMarks.requestStart : null,
+          parentChildNormalization:
+            phaseMarks.parentChildNormalized && phaseMarks.parsed
+              ? phaseMarks.parentChildNormalized - phaseMarks.parsed
+              : null,
+          consolidate:
+            phaseMarks.consolidated && phaseMarks.parentChildNormalized
+              ? phaseMarks.consolidated - phaseMarks.parentChildNormalized
+              : null,
+          ensureCategories:
+            phaseMarks.categoriesEnsured && phaseMarks.consolidated
+              ? phaseMarks.categoriesEnsured - phaseMarks.consolidated
+              : null,
+          dbWrite:
+            phaseMarks.dbWriteComplete && phaseMarks.categoriesEnsured
+              ? phaseMarks.dbWriteComplete - phaseMarks.categoriesEnsured
+              : null,
+          catalogSync:
+            phaseMarks.syncComplete && phaseMarks.dbWriteComplete
+              ? phaseMarks.syncComplete - phaseMarks.dbWriteComplete
+              : null,
+          imageResolve:
+            phaseMarks.imageResolveComplete && phaseMarks.syncComplete
+              ? phaseMarks.imageResolveComplete - phaseMarks.syncComplete
+              : 0,
+        },
+      },
+      mapping: {
+        mappedFields: Object.keys(mapping).length,
+        missingRequiredColumns,
+        unmappedHeaderCount: unmappedHeaders.length,
+      },
+      counters: {
+        rawRows: rows.length,
+        consolidatedProducts: consolidated.length,
+        imported,
+        updated,
+        failed,
+        warnings,
+        duplicateSkuGroupsInUpload,
+        duplicateRowsMerged,
+        protectedManualRows,
+        imageResolved,
+        imageFailed,
+        imagePending: Math.max(0, pendingImageProducts.length - 50),
+      },
+      sizeProfile: sizeConsolidationStats,
+      checks,
+      samples: {
+        warnings: warningDetails.slice(0, 10),
+        errors: errors.slice(0, 10),
+      },
+    };
+
+    logInfo(`Import completed in ${elapsed}s (${rowsPerSecond} rows/s)`, diagnostics.counters);
+    if (warningDetails.length > 0) {
+      logWarn(`Top warnings (${Math.min(5, warningDetails.length)})`, warningDetails.slice(0, 5));
+    }
+    if (errors.length > 0) {
+      logError(`Top errors (${Math.min(5, errors.length)})`, errors.slice(0, 5));
+    }
+
     // Update batch record
     batch.totalRows = rows.length;
     batch.importedRows = imported;
     batch.updatedRows = updated;
     batch.failedRows = failed;
     batch.errorLog = errors.slice(0, MAX_IMPORT_DETAIL_SAMPLES);
+    batch.diagnostics = diagnostics;
     batch.status = "complete";
     await batch.save();
 
@@ -1743,12 +1856,28 @@ exports.importProducts = async (req, res) => {
       sheetSummary,
       categoriesCreated: createdCategories,
       executionTime: `${elapsed}s`,
+      diagnostics,
     });
   } catch (err) {
     console.error("Import error:", err);
     if (batch) {
       batch.status = "failed";
       batch.errorLog.push({ row: 0, sku: "", reason: err.message });
+      batch.diagnostics = {
+        generatedAt: new Date().toISOString(),
+        status: "failed",
+        performance: {
+          totalMs: Date.now() - startTime,
+        },
+        checks: [
+          {
+            name: "import_runtime_exception",
+            status: "fail",
+            value: err.message,
+            message: "Import failed with runtime exception",
+          },
+        ],
+      };
       await batch.save().catch(() => { });
     }
     cleanup(filePath);

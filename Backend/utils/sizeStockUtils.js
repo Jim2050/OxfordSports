@@ -1,96 +1,33 @@
 function normalizeFootwearSizeLabel(size) {
-  const raw = String(size || "")
-    .replace(/[\u2212\u2012\u2013\u2014\u2015]/g, "-")
-    .trim()
-    .toUpperCase();
-  if (!raw) return "";
-
-  const embeddedQtyMatch = raw.match(/^(.*)\((\d+)\)$/);
-  const candidate = embeddedQtyMatch ? embeddedQtyMatch[1].trim() : raw;
-
-  const normalizedLeadingSign = candidate.replace(/^[-+](?=\d)/, "");
-  const numeric = normalizedLeadingSign.match(/^\d+(?:\.\d+)?$/);
-  if (numeric) {
-    const absolute = Math.abs(Number(normalizedLeadingSign));
-    if (!Number.isFinite(absolute)) return "";
-
-    // Accept practical footwear ranges while rejecting obvious corruption.
-    // - UK/adult style values: 1..15.5
-    // - Junior/EU-style values seen in client feed: 16..55
-    // - Reject >55 and tiny/invalid numbers.
-    if (absolute < 1 || absolute > 55) return "";
-
-    // Prevent noisy decimal precision in source feeds.
-    const rounded = Math.round(absolute * 2) / 2;
-    if (rounded < 1 || rounded > 55) return "";
-    return Number.isInteger(rounded) ? String(rounded) : String(rounded);
-  }
-
-  if (/^\d{4,}$/.test(candidate)) return "";
-  return candidate;
+  return String(size || "").trim();
 }
 
 function normalizeSizeLabel(rawSize, category = "") {
-  const categoryUpper = String(category || "").trim().toUpperCase();
-  const raw = String(rawSize || "")
-    .replace(/[\u2212\u2012\u2013\u2014\u2015]/g, "-")
-    .trim();
+  const raw = String(rawSize || "").trim();
   if (!raw) return "";
 
-  if (categoryUpper === "FOOTWEAR") {
+  if (String(category || "").trim().toUpperCase() === "FOOTWEAR") {
     return normalizeFootwearSizeLabel(raw);
   }
 
-  const cleaned = raw
-    .replace(/^[-+](?=\d)/, "")
-    .replace(/\s+/g, " ")
-    .trim()
-    .toUpperCase();
-
-  // Labels containing brackets are usually corrupted parse artifacts.
-  if (/[()]/.test(cleaned)) return "";
-
-  const numeric = cleaned.match(/^\d+(?:\.\d+)?$/);
-  if (numeric) {
-    const value = Number(cleaned);
-    if (!Number.isFinite(value)) return "";
-    // Generic non-footwear numeric sizes outside practical apparel ranges are invalid.
-    if (value < 1 || value > 60) return "";
-  }
-
-  // Reject obvious concatenation artifacts such as 1161 or 34341.
-  if (/^\d{4,}$/.test(cleaned)) return "";
-  return cleaned;
+  return raw;
 }
 
 function normalizeSizeEntries(entries = [], category = "", options = {}) {
-  const { dropOneSizeWhenSpecific = true } = options;
   const merged = new Map();
 
   for (const entry of entries) {
     const size = normalizeSizeLabel(entry?.size, category);
-    const qty = Math.max(0, Number(entry?.quantity) || 0);
-    if (!size || qty <= 0) continue;
+    const qtyRaw = Number(entry?.quantity);
+    const qty = Number.isFinite(qtyRaw) ? Math.max(0, qtyRaw) : 0;
+    if (!size) continue;
     merged.set(size, (merged.get(size) || 0) + qty);
   }
 
-  let normalized = Array.from(merged.entries()).map(([size, quantity]) => ({
+  return Array.from(merged.entries()).map(([size, quantity]) => ({
     size,
     quantity,
   }));
-
-  if (dropOneSizeWhenSpecific) {
-    const hasSpecificSizes = normalized.some(
-      (entry) => entry.size.toUpperCase() !== "ONE SIZE",
-    );
-    if (hasSpecificSizes) {
-      normalized = normalized.filter(
-        (entry) => entry.size.toUpperCase() !== "ONE SIZE",
-      );
-    }
-  }
-
-  return normalized;
 }
 
 function distributeQuantityAcrossSizes(sizeCount, totalQty) {
@@ -185,46 +122,7 @@ function parseSizesInput(sizesInput, totalQuantity, category = "") {
  * Returns: true if size is valid, false if invalid
  */
 function isValidSizeCode(sizeStr, category = "") {
-  const size = String(sizeStr || "").trim();
-
-  // Known invalid placeholder patterns
-  const INVALID_PATTERNS = [
-    /^NS$/i,
-    /^N\/A$/i,
-    /^NA$/i,
-    /^N\.A\.$/i,
-    /^UNKNOWN$/i,
-    /^UNK$/i,
-    /^UNSET$/i,
-    /^NULL$/i,
-    /^NONE$/i,
-    /^EMPTY$/i,
-    /^TBD$/i,
-    /^N$/,
-    /^A$/,
-    /^X$/, 
-    /^—+$/,
-    /^\?+$/,
-    /^\.+$/,
-    /^\s*$/, // whitespace only
-  ];
-
-  // Check each invalid pattern
-  if (INVALID_PATTERNS.some((pattern) => pattern.test(size))) {
-    return false;
-  }
-
-  // Must have at least some alphanumeric content
-  if (!/[a-z0-9]/i.test(size)) {
-    return false;
-  }
-
-  // Must not be ONLY special characters
-  if (!/[a-z0-9\s]/i.test(size)) {
-    return false;
-  }
-
-  return true;
+  return String(sizeStr || "").trim().length > 0;
 }
 
 module.exports = {

@@ -53,8 +53,14 @@ export default function CartDrawer() {
         if (!productData) continue;
 
         const sizes = getSizes(productData);
-        const sizeData = sizes.find(s => s.size === item.size);
-        const available = sizeData?.quantity ?? productData.totalQuantity ?? 0;
+        const sizeAvailable = item.size
+          ? sizes
+              .filter((s) => s.size === item.size)
+              .reduce((sum, s) => sum + (Number(s.quantity) || 0), 0)
+          : 0;
+        const available = item.size
+          ? sizeAvailable
+          : (Number(productData.totalQuantity) || 0);
         const requiredQty = item.lotItem ? (item.maxStock || 0) : item.quantity;
         
         if (requiredQty > available) {

@@ -18,6 +18,10 @@ const importBatchSchema = new mongoose.Schema(
         reason: String,
       },
     ],
+    diagnostics: {
+      type: mongoose.Schema.Types.Mixed,
+      default: {},
+    },
     status: {
       type: String,
       enum: ["pending", "processing", "complete", "failed"],

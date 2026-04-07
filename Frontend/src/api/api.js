@@ -332,60 +332,16 @@ export function getTotalQuantity(product) {
  * Get sizes array in normalized format: [{size, quantity}]
  */
 export function getSizes(product) {
-  const normalizeDisplaySizeLabel = (rawSize) => {
-    const text = String(rawSize || "")
-      .replace(/[\u2212\u2012\u2013\u2014\u2015]/g, "-")
-      .trim();
-    if (!text) return "";
-
-    const embedded = text.match(/^(.*)\((\d+)\)$/);
-    const labelOnly = embedded ? embedded[1].trim() : text;
-    return labelOnly.replace(/^-(?=\d)/, "").trim();
-  };
-
-  const splitPackedSizes = (rawSize, fallbackQty = 0) => {
-    const text = String(rawSize || "")
-      .replace(/[\u2212\u2012\u2013\u2014\u2015]/g, "-")
-      .trim();
-    if (!text) return [];
-    const parts = text.split(/[;,]/).map((s) => s.trim()).filter(Boolean);
-
-    const parsed = parts.map((part) => {
-      const match = part.match(/^(.*)\((\d+)\)$/);
-      if (!match) {
-        return {
-          size: normalizeDisplaySizeLabel(part),
-          quantity: Number(fallbackQty) || 0,
-        };
-      }
-      return {
-        size: normalizeDisplaySizeLabel(match[1]),
-        quantity: Number(match[2]) || 0,
-      };
-    });
-
-    return parsed.filter((entry) => entry.size);
-  };
-
   if (!product) return [];
   const sizes = product.sizes;
   if (!Array.isArray(sizes) || sizes.length === 0) return [];
   if (typeof sizes[0] === "object" && sizes[0].size !== undefined) {
-    const expanded = sizes.flatMap((entry) =>
-      splitPackedSizes(entry?.size, entry?.quantity),
-    );
-    const merged = new Map();
-    for (const entry of expanded) {
-      const size = normalizeDisplaySizeLabel(entry?.size);
-      if (!size) continue;
-      const quantity = Number(entry?.quantity) || 0;
-      if (quantity <= 0) continue;
-      merged.set(size, (merged.get(size) || 0) + quantity);
-    }
-    return Array.from(merged.entries()).map(([size, quantity]) => ({
-      size,
-      quantity,
-    }));
+    return sizes
+      .map((entry) => ({
+        size: String(entry?.size || "").trim(),
+        quantity: Math.max(0, Number(entry?.quantity) || 0),
+      }))
+      .filter((entry) => entry.size !== "");
   }
   // Legacy: array of strings — derive quantities from sizeStock
   const sizeStock = product.sizeStock || {};

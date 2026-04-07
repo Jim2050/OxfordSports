@@ -1,6 +1,5 @@
 const Order = require("../models/Order");
 const Product = require("../models/Product");
-const { isValidSizeCode } = require("../utils/sizeStockUtils");
 const { getEmailQueue } = require("../utils/emailQueue");
 const crypto = require("crypto");
 
@@ -101,7 +100,7 @@ exports.placeOrder = async (req, res) => {
       const hasSizeStock =
         sizeEntries.length > 0 && sizeEntries.some((s) => s.quantity > 0);
       const validLotSizes = sizeEntries.filter(
-        (s) => s.quantity > 0 && isValidSizeCode(s.size, product.category),
+        (s) => s.quantity > 0 && String(s.size || "").trim() !== "",
       );
       const lotDisplaySizes = (validLotSizes.length > 0
         ? validLotSizes
@@ -172,7 +171,7 @@ exports.placeOrder = async (req, res) => {
         let sizeEntry = sizeEntries.find((s) => s.size && s.size.trim() === normalizedIncomingSize);
 
         if (!sizeEntry && (!normalizedIncomingSize || normalizedIncomingSize === "")) {
-          sizeEntry = sizeEntries.find((s) => isValidSizeCode(s.size, product.category));
+          sizeEntry = sizeEntries.find((s) => String(s?.size || "").trim() !== "");
           if (sizeEntry) {
             size = sizeEntry.size;
           }
@@ -325,7 +324,7 @@ exports.placeOrder = async (req, res) => {
       const totalQty = product.totalQuantity || 0;
       if (totalQty > 0 && totalQty < threshold) {
         const availableSizes = (product.sizes || [])
-          .filter((s) => s.quantity > 0 && isValidSizeCode(s.size, product.category));
+          .filter((s) => s.quantity > 0 && String(s.size || "").trim() !== "");
         const orderedSizes = new Set(entry.items.map((i) => (i.size || "").trim()));
         const missingSizeEntries = availableSizes.filter((s) => !orderedSizes.has(s.size.trim()));
 

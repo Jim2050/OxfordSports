@@ -206,28 +206,11 @@ const CATEGORY_DISPLAY_ORDER = {
 };
 
 function sanitizeSizeLabel(value) {
-  const cleaned = normalizeText(
-    String(value || "")
-      .replace(/[\u2212\u2012\u2013\u2014\u2015]/g, "-")
-      .replace(/""/g, '"')
-      .replace(/^"|"$/g, "")
-      .replace(/^[-+](?=\d)/, ""),
-  );
-
-  // Normalize inseam-style labels from exports like XS3" or 2XL4 into "XS 3\"" / "2XL 4\"".
-  const inseamMatch = cleaned.match(/^(2XS|XS|S|M|L|XL|2XL|3XL)\s*(\d+(?:\.\d+)?)"?$/i);
-  if (inseamMatch) {
-    return `${inseamMatch[1].toUpperCase()} ${inseamMatch[2]}"`;
-  }
-
-  return cleaned;
+  return String(value || "").trim();
 }
 
 function isMalformedSize(size) {
-  const normalized = sanitizeSizeLabel(size);
-  if (!normalized) return true;
-  if (normalized.startsWith("-")) return true;
-  return false;
+  return !sanitizeSizeLabel(size);
 }
 
 function parseSizeEntries(rawSize, fallbackQty) {
@@ -258,23 +241,21 @@ function parseSizeEntries(rawSize, fallbackQty) {
 
   for (const token of tokens) {
     const embeddedMatch = token.match(/^(.*)\((\d+)\)$/);
-    const rawLabel = embeddedMatch ? embeddedMatch[1] : token;
-    if (/^[-\u2212\u2012\u2013\u2014\u2015]\d/.test(String(rawLabel || "").trim())) {
-      hadNegativeSizes = true;
-    }
+    const colonMatch = token.match(/^(.*):\s*(\d+)$/);
+    const matched = embeddedMatch || colonMatch;
+    const rawLabel = matched ? matched[1] : token;
     const size = sanitizeSizeLabel(rawLabel);
-    const quantity = embeddedMatch
-      ? parseInt(embeddedMatch[2], 10)
-      : Math.max(0, Number.parseInt(fallbackQty, 10) || 0);
+    const quantityRaw = matched
+      ? Number.parseInt(matched[2], 10)
+      : Number.parseInt(fallbackQty, 10);
+    const quantity = Number.isFinite(quantityRaw) ? Math.max(0, quantityRaw) : 0;
 
-    if (embeddedMatch) {
+    if (matched) {
       embeddedQuantities = true;
     }
 
-    // Silently ignore zero-quantity tokens instead of treating them as warnings.
     if (quantity <= 0) {
       hadZeroQtyTokens = true;
-      continue;
     }
 
     if (isMalformedSize(size)) {

@@ -81,11 +81,7 @@ export default function ProductPage() {
   const isOneSize =
     productSizes.length === 1 &&
     String(productSizes[0]?.size || "").trim().toUpperCase() === "ONE SIZE";
-  const displaySizes = isOneSize
-    ? productSizes
-    : productSizes.filter(
-      (s) => String(s?.size || "").trim().toUpperCase() !== "ONE SIZE",
-    );
+  const displaySizes = productSizes;
   const { mustBuyAll, isLot, canSelectSizes, canCustomizeQty } = getMOQInfo(product);
 
   // Quantity step: footwear orders in multiples of 12

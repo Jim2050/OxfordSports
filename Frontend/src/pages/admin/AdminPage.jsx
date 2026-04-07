@@ -193,6 +193,43 @@ export default function AdminPage() {
         }
       });
       setExcelResult(res);
+      if (typeof window !== "undefined") {
+        const diagnostics = res?.diagnostics || {};
+        const checks = Array.isArray(diagnostics?.checks) ? diagnostics.checks : [];
+        const phaseMs = diagnostics?.performance?.phaseMs || {};
+        console.groupCollapsed(
+          `[Excel Import] ${file.name} | imported=${res?.imported ?? 0} updated=${res?.updated ?? 0} failed=${res?.failed ?? 0} warnings=${res?.warnings ?? 0}`,
+        );
+        console.log("Import summary", {
+          imported: res?.imported ?? 0,
+          updated: res?.updated ?? 0,
+          failed: res?.failed ?? 0,
+          warnings: res?.warnings ?? 0,
+          totalRawRows: res?.totalRawRows ?? res?.total ?? 0,
+          consolidatedProducts: res?.consolidatedProducts ?? null,
+          executionTime: res?.executionTime ?? null,
+        });
+        if (Object.keys(phaseMs).length > 0) {
+          console.log("Phase timings (ms)", phaseMs);
+        }
+        if (checks.length > 0) {
+          console.table(
+            checks.map((check) => ({
+              name: check?.name,
+              status: check?.status,
+              value: check?.value,
+              message: check?.message,
+            })),
+          );
+        }
+        if (Array.isArray(res?.warningDetails) && res.warningDetails.length > 0) {
+          console.warn("Upload warnings", res.warningDetails);
+        }
+        if (Array.isArray(res?.errors) && res.errors.length > 0) {
+          console.error("Upload errors", res.errors);
+        }
+        console.groupEnd();
+      }
       const parts = [`${res.imported ?? 0} added`, `${res.updated ?? 0} updated`];
       if (res.failed > 0) parts.push(`${res.failed} failed`);
       if (res.warnings > 0) parts.push(`${res.warnings} warnings`);
@@ -452,29 +489,20 @@ export default function AdminPage() {
     }
 
     const sizesArr = Array.isArray(product.sizes) ? product.sizes : [];
-    const isOneSizeOnly =
-      sizesArr.length === 1 &&
-      String(sizesArr[0]?.size || "").trim().toUpperCase() === "ONE SIZE";
-    
-    // Filter out "ONE SIZE" but keep ALL other sizes with their quantities
-    const visibleSizesArr = sizesArr.filter((s) => {
-      const label = typeof s === "object" ? s.size : s;
-      return String(label || "").trim().toUpperCase() !== "ONE SIZE";
-    });
 
     // Format sizes for editing: if we have {size, quantity} objects, show "S(qty), M(qty)" format
     // This makes it clear to admin what qty each size has
     let sizesStr = "";
     let qtyStr = "";
-    
-    if (visibleSizesArr.length > 0) {
-      if (typeof visibleSizesArr[0] === "object" && visibleSizesArr[0].quantity !== undefined) {
+
+    if (sizesArr.length > 0) {
+      if (typeof sizesArr[0] === "object" && sizesArr[0].quantity !== undefined) {
         // Format: "M(5), L(3), XL(1)" - shows qty per size
-        sizesStr = visibleSizesArr
+        sizesStr = sizesArr
           .map((s) => `${s.size}(${s.quantity || 0})`)
           .join(", ");
         // Total qty for reference
-        qtyStr = visibleSizesArr
+        qtyStr = sizesArr
           .reduce((sum, s) => sum + (s.quantity || 0), 0)
           .toString();
         
@@ -484,17 +512,8 @@ export default function AdminPage() {
         );
       } else {
         // Fallback for old format (just strings)
-        sizesStr = visibleSizesArr.join(", ");
+        sizesStr = sizesArr.join(", ");
         qtyStr = (product.totalQuantity || product.quantity || "").toString();
-      }
-    } else if (isOneSizeOnly) {
-      sizesStr = "ONE SIZE";
-      qtyStr = (sizesArr[0].quantity || product.totalQuantity || 0).toString();
-    } else if (sizesArr.length > 0) {
-      // All sizes are "ONE SIZE"
-      const oneSize = sizesArr.find((s) => String(s?.size || "").trim().toUpperCase() === "ONE SIZE");
-      if (oneSize) {
-        qtyStr = (oneSize.quantity || product.totalQuantity || 0).toString();
       }
     } else {
       qtyStr = (product.totalQuantity || product.quantity || "").toString();
@@ -651,6 +670,16 @@ export default function AdminPage() {
       toast.error("Export failed.");
     }
   };
+
+  const uploadDiagnostics = excelResult?.diagnostics || null;
+  const uploadChecks = Array.isArray(uploadDiagnostics?.checks)
+    ? uploadDiagnostics.checks
+    : [];
+  const uploadWarnings = Array.isArray(excelResult?.warningDetails)
+    ? excelResult.warningDetails
+    : [];
+  const uploadErrors = Array.isArray(excelResult?.errors) ? excelResult.errors : [];
+  const uploadPhaseMs = uploadDiagnostics?.performance?.phaseMs || {};
 
   /* ── Auth gate ── */
   if (!authed) return <AdminLogin onAuth={setAuthed} />;
@@ -864,13 +893,168 @@ export default function AdminPage() {
             )}
 
             {excelResult && (
-              <div
-                className={`import-result ${excelResult.failed > 0 ? "warning" : "success"}`}
-              >
-                <strong>
-                  Import Summary: {excelResult.imported ?? 0} imported, {excelResult.updated ?? 0} updated, {excelResult.failed ?? 0} failed, {excelResult.warnings ?? 0} warnings, {excelResult.totalRawRows ?? excelResult.total ?? 0} raw rows to {excelResult.consolidatedProducts ?? "?"} SKUs
-                  {excelResult.executionTime ? ` in ${excelResult.executionTime}` : ""}.
-                </strong>
+              <div>
+                <div
+                  className={`import-result ${excelResult.failed > 0 ? "warning" : "success"}`}
+                >
+                  <strong>
+                    Import Summary: {excelResult.imported ?? 0} imported, {excelResult.updated ?? 0} updated, {excelResult.failed ?? 0} failed, {excelResult.warnings ?? 0} warnings, {excelResult.totalRawRows ?? excelResult.total ?? 0} raw rows to {excelResult.consolidatedProducts ?? "?"} SKUs
+                    {excelResult.executionTime ? ` in ${excelResult.executionTime}` : ""}.
+                  </strong>
+                </div>
+
+                <div style={{ marginTop: "0.9rem", display: "grid", gap: "0.75rem" }}>
+                  {uploadDiagnostics && (
+                    <div
+                      style={{
+                        border: "1px solid #e5e7eb",
+                        background: "#f9fafb",
+                        borderRadius: "12px",
+                        padding: "0.85rem",
+                      }}
+                    >
+                      <div style={{ fontWeight: 700, color: "#111827", marginBottom: "0.5rem" }}>
+                        Diagnostics
+                      </div>
+                      <div
+                        style={{
+                          display: "grid",
+                          gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))",
+                          gap: "0.65rem",
+                          fontSize: "0.86rem",
+                        }}
+                      >
+                        <div>
+                          <strong>{uploadDiagnostics?.performance?.totalMs ?? "-"}</strong>
+                          <div style={{ color: "#6b7280" }}>Total ms</div>
+                        </div>
+                        <div>
+                          <strong>{uploadDiagnostics?.performance?.rowsPerSecond ?? "-"}</strong>
+                          <div style={{ color: "#6b7280" }}>Rows / sec</div>
+                        </div>
+                        <div>
+                          <strong>{uploadDiagnostics?.mapping?.mappedFields ?? "-"}</strong>
+                          <div style={{ color: "#6b7280" }}>Mapped fields</div>
+                        </div>
+                        <div>
+                          <strong>{uploadDiagnostics?.mapping?.unmappedHeaderCount ?? "-"}</strong>
+                          <div style={{ color: "#6b7280" }}>Unmapped headers</div>
+                        </div>
+                      </div>
+
+                      {Object.keys(uploadPhaseMs).length > 0 && (
+                        <details style={{ marginTop: "0.75rem" }}>
+                          <summary style={{ cursor: "pointer", fontWeight: 600, color: "#1f2937" }}>
+                            Phase timings
+                          </summary>
+                          <div style={{ marginTop: "0.5rem", display: "grid", gap: "0.35rem", fontSize: "0.84rem" }}>
+                            {Object.entries(uploadPhaseMs).map(([name, value]) => (
+                              <div key={name} style={{ display: "flex", justifyContent: "space-between", gap: "0.5rem" }}>
+                                <span style={{ color: "#374151" }}>{name}</span>
+                                <strong>{value ?? "-"} ms</strong>
+                              </div>
+                            ))}
+                          </div>
+                        </details>
+                      )}
+
+                      {uploadChecks.length > 0 && (
+                        <details style={{ marginTop: "0.75rem" }}>
+                          <summary style={{ cursor: "pointer", fontWeight: 600, color: "#1f2937" }}>
+                            Checks ({uploadChecks.length})
+                          </summary>
+                          <div style={{ marginTop: "0.5rem", display: "grid", gap: "0.45rem" }}>
+                            {uploadChecks.map((check, idx) => {
+                              const tone =
+                                check?.status === "fail"
+                                  ? { bg: "#fef2f2", border: "#fecaca", color: "#991b1b" }
+                                  : check?.status === "warn"
+                                    ? { bg: "#fffbeb", border: "#fcd34d", color: "#92400e" }
+                                    : { bg: "#f0fdf4", border: "#bbf7d0", color: "#166534" };
+                              return (
+                                <div
+                                  key={`${check?.name || "check"}-${idx}`}
+                                  style={{
+                                    border: `1px solid ${tone.border}`,
+                                    background: tone.bg,
+                                    borderRadius: "10px",
+                                    padding: "0.55rem 0.65rem",
+                                    fontSize: "0.84rem",
+                                  }}
+                                >
+                                  <div style={{ color: tone.color, fontWeight: 700 }}>
+                                    {(check?.status || "info").toUpperCase()} · {check?.name || "check"}
+                                  </div>
+                                  <div style={{ marginTop: "0.2rem", color: "#374151" }}>
+                                    {check?.message || "No message"}
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </details>
+                      )}
+                    </div>
+                  )}
+
+                  {uploadWarnings.length > 0 && (
+                    <details style={{ border: "1px solid #fde68a", borderRadius: "12px", padding: "0.75rem", background: "#fffbeb" }}>
+                      <summary style={{ cursor: "pointer", fontWeight: 700, color: "#92400e" }}>
+                        Warnings ({uploadWarnings.length})
+                      </summary>
+                      <div style={{ marginTop: "0.6rem", display: "grid", gap: "0.45rem" }}>
+                        {uploadWarnings.slice(0, 50).map((warning, idx) => (
+                          <div
+                            key={`warn-${idx}`}
+                            style={{
+                              fontSize: "0.84rem",
+                              borderRadius: "8px",
+                              background: "#fff",
+                              border: "1px solid #fde68a",
+                              padding: "0.5rem 0.6rem",
+                            }}
+                          >
+                            <div style={{ fontWeight: 600, color: "#78350f" }}>
+                              Row {warning?.row || "-"} {warning?.sku ? `· ${warning.sku}` : ""}
+                            </div>
+                            <div style={{ color: "#4b5563", marginTop: "0.15rem" }}>
+                              {warning?.message || warning?.reason || "Warning"}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </details>
+                  )}
+
+                  {uploadErrors.length > 0 && (
+                    <details style={{ border: "1px solid #fecaca", borderRadius: "12px", padding: "0.75rem", background: "#fef2f2" }}>
+                      <summary style={{ cursor: "pointer", fontWeight: 700, color: "#991b1b" }}>
+                        Errors ({uploadErrors.length})
+                      </summary>
+                      <div style={{ marginTop: "0.6rem", display: "grid", gap: "0.45rem" }}>
+                        {uploadErrors.slice(0, 50).map((error, idx) => (
+                          <div
+                            key={`err-${idx}`}
+                            style={{
+                              fontSize: "0.84rem",
+                              borderRadius: "8px",
+                              background: "#fff",
+                              border: "1px solid #fecaca",
+                              padding: "0.5rem 0.6rem",
+                            }}
+                          >
+                            <div style={{ fontWeight: 600, color: "#7f1d1d" }}>
+                              Row {error?.row || "-"} {error?.sku ? `· ${error.sku}` : ""}
+                            </div>
+                            <div style={{ color: "#4b5563", marginTop: "0.15rem" }}>
+                              {error?.reason || error?.message || "Error"}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </details>
+                  )}
+                </div>
               </div>
             )}
           </div>
