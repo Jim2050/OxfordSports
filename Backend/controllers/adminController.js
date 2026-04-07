@@ -11,6 +11,13 @@ const {
   deriveSubcategoryCanonical,
 } = require("../utils/taxonomyUtils");
 
+function markManualProduct(product) {
+  if (product) {
+    product.isManuallyEdited = true;
+  }
+  return product;
+}
+
 /**
  * POST /api/admin/login
  * Authenticate an admin user and return JWT.
@@ -100,12 +107,11 @@ exports.addProduct = async (req, res) => {
       rrp: rrp ? parseFloat(rrp) : 0,
       sizes: sizesArray,
       totalQuantity,
-      isManuallyEdited: true,
     };
 
     const product = await Product.findOneAndUpdate(
       { sku: productData.sku },
-      productData,
+      { ...productData, isManuallyEdited: true },
       { upsert: true, returnDocument: "after", runValidators: true },
     );
 
@@ -154,7 +160,7 @@ exports.updateProduct = async (req, res) => {
     simpleFields.forEach((f) => {
       if (req.body[f] !== undefined) product[f] = req.body[f];
     });
-    product.isManuallyEdited = true;
+    markManualProduct(product);
 
     // Price fields (accept both legacy "price" and new "salePrice")
     if (req.body.salePrice !== undefined) {
@@ -634,6 +640,9 @@ exports.getProducts = async (req, res) => {
       limit = 500,
       search = "",
       includeInactive = "true",
+      stockFilter = "all",
+      sizeFilter = "all",
+      manualFilter = "all",
     } = req.query;
 
     const pageNum = Math.max(1, parseInt(page, 10) || 1);
@@ -641,6 +650,7 @@ exports.getProducts = async (req, res) => {
     const q = String(search || "").trim();
 
     const filter = {};
+    const andConditions = [];
 
     if (String(includeInactive).toLowerCase() !== "true") {
       filter.isActive = true;
@@ -648,14 +658,43 @@ exports.getProducts = async (req, res) => {
 
     if (q) {
       const escaped = q.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-      filter.$or = [
+      andConditions.push({
+        $or: [
         { sku: { $regex: escaped, $options: "i" } },
         { name: { $regex: escaped, $options: "i" } },
         { brand: { $regex: escaped, $options: "i" } },
         { category: { $regex: escaped, $options: "i" } },
         { subcategory: { $regex: escaped, $options: "i" } },
         { color: { $regex: escaped, $options: "i" } },
-      ];
+        ],
+      });
+    }
+
+    if (String(stockFilter).toLowerCase() === "zero") {
+      andConditions.push({ totalQuantity: 0 });
+    } else if (String(stockFilter).toLowerCase() === "positive") {
+      andConditions.push({ totalQuantity: { $gt: 0 } });
+    }
+
+    if (String(sizeFilter).toLowerCase() === "empty") {
+      andConditions.push({
+        $or: [
+          { sizes: { $size: 0 } },
+          { sizes: { $exists: false } },
+        ],
+      });
+    } else if (String(sizeFilter).toLowerCase() === "has") {
+      andConditions.push({ "sizes.0": { $exists: true } });
+    }
+
+    if (String(manualFilter).toLowerCase() === "manual") {
+      andConditions.push({ isManuallyEdited: true });
+    } else if (String(manualFilter).toLowerCase() === "auto") {
+      andConditions.push({ isManuallyEdited: { $ne: true } });
+    }
+
+    if (andConditions.length > 0) {
+      filter.$and = andConditions;
     }
 
     const [products, total] = await Promise.all([

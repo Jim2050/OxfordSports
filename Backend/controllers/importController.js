@@ -937,9 +937,7 @@ exports.importProducts = async (req, res) => {
       ? await Product.find({ sku: { $in: uploadedSkus } })
           .lean()
       : [];
-    const existingProductMap = new Map(
-      existingProducts.map((product) => [product.sku, product]),
-    );
+    const existingProductMap = new Map(existingProducts.map((product) => [product.sku, product]));
     let protectedManualRows = 0;
     const protectedManualSamples = [];
 
@@ -1144,15 +1142,11 @@ exports.importProducts = async (req, res) => {
 
       const existingProduct = existingProductMap.get(sku);
       if (existingProduct?.isManuallyEdited) {
-        const { _id, createdAt, updatedAt, __v, ...manualProtectedData } = existingProduct;
-        productData = {
-          ...productData,
-          ...manualProtectedData,
-        };
         protectedManualRows += 1;
         if (protectedManualSamples.length < 10) {
           protectedManualSamples.push(sku);
         }
+        continue;
       }
 
       // ══════════════════════════════════════════════════════════════════
@@ -1562,7 +1556,8 @@ exports.importProducts = async (req, res) => {
 
       const syncResult = await Product.updateMany(
         { 
-          sku: { $nin: uploadedSkus }
+          sku: { $nin: uploadedSkus },
+          isManuallyEdited: { $ne: true }
         },
         {
           $set: {

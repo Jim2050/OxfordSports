@@ -45,6 +45,9 @@ export default function AdminPage() {
   const [serverProcessing, setServerProcessing] = useState(false);
   const [tab, setTab] = useState("excel");
   const [searchQuery, setSearchQuery] = useState("");
+  const [stockFilter, setStockFilter] = useState("all");
+  const [sizeFilter, setSizeFilter] = useState("all");
+  const [manualFilter, setManualFilter] = useState("all");
   const [productPage, setProductPage] = useState(1);
   const [productPages, setProductPages] = useState(1);
   const [productTotal, setProductTotal] = useState(0);
@@ -116,7 +119,7 @@ export default function AdminPage() {
       loadProducts({ page: productPage, search: searchQuery });
     }, 220);
     return () => clearTimeout(timer);
-  }, [authed, tab, productPage, searchQuery]);
+  }, [authed, tab, productPage, searchQuery, stockFilter, sizeFilter, manualFilter]);
 
   const loadStats = () => {
     fetchAdminStats()
@@ -139,6 +142,9 @@ export default function AdminPage() {
         page,
         limit: PRODUCT_PAGE_SIZE,
         includeInactive: true,
+        stockFilter,
+        sizeFilter,
+        manualFilter,
         ...(search ? { search } : {}),
       });
       const pageProducts = Array.isArray(data) ? data : data.products || [];
@@ -1399,6 +1405,83 @@ export default function AdminPage() {
                   : `Total products in database: ${productTotal.toLocaleString()}`}
               </p>
             </div>
+
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
+                gap: "0.75rem",
+                marginBottom: "1rem",
+              }}
+            >
+              <label style={{ fontSize: "0.85rem", color: "#374151", fontWeight: 600 }}>
+                Stock
+                <select
+                  value={stockFilter}
+                  onChange={(e) => {
+                    setStockFilter(e.target.value);
+                    setProductPage(1);
+                  }}
+                  style={{ width: "100%", marginTop: "0.35rem", padding: "0.55rem 0.75rem", border: "1.5px solid #e5e7eb", borderRadius: "6px" }}
+                >
+                  <option value="all">All stock levels</option>
+                  <option value="positive">In stock</option>
+                  <option value="zero">Quantity = 0</option>
+                </select>
+              </label>
+
+              <label style={{ fontSize: "0.85rem", color: "#374151", fontWeight: 600 }}>
+                Sizes
+                <select
+                  value={sizeFilter}
+                  onChange={(e) => {
+                    setSizeFilter(e.target.value);
+                    setProductPage(1);
+                  }}
+                  style={{ width: "100%", marginTop: "0.35rem", padding: "0.55rem 0.75rem", border: "1.5px solid #e5e7eb", borderRadius: "6px" }}
+                >
+                  <option value="all">All sizes</option>
+                  <option value="has">Has sizes</option>
+                  <option value="empty">Empty sizes</option>
+                </select>
+              </label>
+
+              <label style={{ fontSize: "0.85rem", color: "#374151", fontWeight: 600 }}>
+                Source
+                <select
+                  value={manualFilter}
+                  onChange={(e) => {
+                    setManualFilter(e.target.value);
+                    setProductPage(1);
+                  }}
+                  style={{ width: "100%", marginTop: "0.35rem", padding: "0.55rem 0.75rem", border: "1.5px solid #e5e7eb", borderRadius: "6px" }}
+                >
+                  <option value="all">All products</option>
+                  <option value="manual">Manual edits</option>
+                  <option value="auto">Imported / auto</option>
+                </select>
+              </label>
+
+              <div style={{ display: "flex", alignItems: "end" }}>
+                <button
+                  className="btn btn-outline"
+                  style={{ width: "100%" }}
+                  onClick={() => {
+                    setSearchQuery("");
+                    setStockFilter("all");
+                    setSizeFilter("all");
+                    setManualFilter("all");
+                    setProductPage(1);
+                  }}
+                >
+                  Clear Filters
+                </button>
+              </div>
+            </div>
+
+            <p className="admin-hint" style={{ marginTop: "-0.25rem", marginBottom: "1rem" }}>
+              Use these filters to find zero-stock items, empty-size products, or only manual/imported records.
+            </p>
 
             {products.length === 0 ? (
               <p className="admin-hint">
