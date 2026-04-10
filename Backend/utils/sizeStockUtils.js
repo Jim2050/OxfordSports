@@ -48,19 +48,22 @@ function distributeQuantityAcrossSizes(sizeCount, totalQty) {
 function parseSizesInput(sizesInput, totalQuantity, category = "") {
   // Object array format: [{ size, quantity }]
   if (Array.isArray(sizesInput) && sizesInput.length > 0 && typeof sizesInput[0] === "object") {
-    return normalizeSizeEntries(sizesInput, category);
+    return normalizeSizeEntries(
+      sizesInput.map((entry) => ({
+        size: entry?.size,
+        quantity: Number.isFinite(Number(entry?.quantity)) ? Number(entry.quantity) : 0,
+      })),
+      category,
+    );
   }
 
   // Array of labels: ["S", "M", "L"]
+  // No synthetic distribution: labels without explicit per-size qty get 0.
   if (Array.isArray(sizesInput) && sizesInput.length > 0) {
     const labels = sizesInput.map((s) => String(s || "").trim()).filter(Boolean);
-    const qtyDistribution = distributeQuantityAcrossSizes(
-      labels.length,
-      Number(totalQuantity) || 0,
-    );
-    const entries = labels.map((size, idx) => ({
+    const entries = labels.map((size) => ({
       size,
-      quantity: qtyDistribution[idx] || 0,
+      quantity: 0,
     }));
     return normalizeSizeEntries(entries, category);
   }
@@ -103,14 +106,11 @@ function parseSizesInput(sizesInput, totalQuantity, category = "") {
     return normalizeSizeEntries(parsedEntries, category);
   }
 
+  // Labels-only string (e.g. "S, M, L") is preserved without invented quantities.
   const labels = parts;
-  const qtyDistribution = distributeQuantityAcrossSizes(
-    labels.length,
-    Number(totalQuantity) || 0,
-  );
-  const entries = labels.map((size, idx) => ({
+  const entries = labels.map((size) => ({
     size,
-    quantity: qtyDistribution[idx] || 0,
+    quantity: 0,
   }));
 
   return normalizeSizeEntries(entries, category);

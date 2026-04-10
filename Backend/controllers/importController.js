@@ -241,7 +241,6 @@ const COLUMN_MAP = {
   ],
   rrp: ["rrp", "retail price", "recommended retail price", "srp", "msrp"],
   category: [
-    "gender",
     "category",
     "cat",
     "department",
@@ -432,6 +431,8 @@ function normalizeParentChildSkus(rows, hasSizeMapping) {
       );
       parentSkus.set(sku, {
         name: parentRow ? String(parentRow.name || "").trim() : "",
+        category: parentRow ? String(parentRow.category || "").trim() : "",
+        subcategory: parentRow ? String(parentRow.subcategory || "").trim() : "",
       });
     }
   }
@@ -459,6 +460,12 @@ function normalizeParentChildSkus(rows, hasSizeMapping) {
         // Use parent's clean name instead of child's name+color+size string
         if (parentInfo.name) {
           row.name = parentInfo.name;
+        }
+        if (parentInfo.category) {
+          row.category = parentInfo.category;
+        }
+        if (parentInfo.subcategory) {
+          row.subcategory = parentInfo.subcategory;
         }
 
         matched = true;
@@ -1123,9 +1130,8 @@ exports.importProducts = async (req, res) => {
         pushWarningDetail({
           row: i + 1,
           sku,
-          reason: "Incoming row had no usable size data; preserved existing catalog stock",
+          reason: "Incoming row had no usable size data; source row applied without old-stock preservation",
         });
-        continue;
       }
 
       if (row._sizeParseFailed || (row._rawSizeProvided && (!Array.isArray(row.sizeEntries) || row.sizeEntries.length === 0))) {
@@ -1435,6 +1441,10 @@ exports.importProducts = async (req, res) => {
           productData.subcategory = SPORT_MAP[catWord];
         }
       }
+
+      // Source-of-truth lock: keep mapped source category/subcategory, no inferred overrides.
+      productData.category = canonicalFromInput || originalCategoryValue;
+      productData.subcategory = row.subcategory ? String(row.subcategory).trim() : "";
 
       productData.categoryCanonical = safeExtractCategory(productData.category) || deriveCategoryCanonical(productData.category);
       productData.subcategoryCanonical = safeExtractSubcategory(productData.subcategory) || deriveSubcategoryCanonical(

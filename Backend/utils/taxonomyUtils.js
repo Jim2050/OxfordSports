@@ -206,11 +206,16 @@ const CATEGORY_DISPLAY_ORDER = {
 };
 
 function sanitizeSizeLabel(value) {
-  return String(value || "").trim();
+  const cleaned = String(value || "").trim();
+  if (!cleaned) return "";
+  if (/^[-\u2212\u2012\u2013\u2014\u2015]/.test(cleaned)) return "";
+  if (/^\d{4,}$/.test(cleaned)) return "";
+  return cleaned;
 }
 
 function isMalformedSize(size) {
-  return !sanitizeSizeLabel(size);
+  const normalized = sanitizeSizeLabel(size);
+  return !normalized;
 }
 
 function parseSizeEntries(rawSize, fallbackQty) {
@@ -244,6 +249,9 @@ function parseSizeEntries(rawSize, fallbackQty) {
     const colonMatch = token.match(/^(.*):\s*(\d+)$/);
     const matched = embeddedMatch || colonMatch;
     const rawLabel = matched ? matched[1] : token;
+    if (/^[-\u2212\u2012\u2013\u2014\u2015]\d/.test(String(rawLabel || "").trim())) {
+      hadNegativeSizes = true;
+    }
     const size = sanitizeSizeLabel(rawLabel);
     const quantityRaw = matched
       ? Number.parseInt(matched[2], 10)

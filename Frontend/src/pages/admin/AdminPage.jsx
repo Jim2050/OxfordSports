@@ -542,6 +542,34 @@ export default function AdminPage() {
   const handleFormChange = (e) =>
     setProductForm({ ...productForm, [e.target.name]: e.target.value });
 
+  const validateSizesInput = (sizesText) => {
+    const raw = String(sizesText || "").trim();
+    if (!raw) return null;
+
+    const tokens = raw
+      .split(raw.includes(";") ? ";" : ",")
+      .map((token) => token.trim())
+      .filter(Boolean);
+
+    const invalid = [];
+    for (const token of tokens) {
+      const embedded = token.match(/^(.*)\((\d+)\)$/);
+      const colon = token.match(/^(.*):\s*(\d+)$/);
+      const sizeLabel = String(embedded ? embedded[1] : colon ? colon[1] : token).trim();
+
+      if (!sizeLabel) {
+        invalid.push(token);
+        continue;
+      }
+
+      if (/^[-\u2212\u2012\u2013\u2014\u2015]/.test(sizeLabel) || /^\d{4,}$/.test(sizeLabel)) {
+        invalid.push(token);
+      }
+    }
+
+    return invalid.length > 0 ? invalid : null;
+  };
+
   const handleFormSubmit = async (e) => {
     e.preventDefault();
     if (!productForm.name) {
@@ -550,6 +578,12 @@ export default function AdminPage() {
     }
     if (!productForm.price) {
       toast.error("Price is required.");
+      return;
+    }
+
+    const invalidSizeTokens = validateSizesInput(productForm.sizes);
+    if (invalidSizeTokens) {
+      toast.error(`Invalid size token(s): ${invalidSizeTokens.join(", ")}`);
       return;
     }
 
