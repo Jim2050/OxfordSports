@@ -541,7 +541,7 @@ ol {
     rgba(26, 18, 129, 0.85) 50%,
     rgba(13, 10, 74, 0.95) 100%
   ),
-  url('https://images.unsplash.com/photo-1556906781-9a412961c28c?w=1600&q=80') center/cover no-repeat;
+  url('/hero-image.jpeg') center/cover no-repeat;
   background-size: 200% 200%, cover;
   animation: gradientShift 15s ease infinite;
   padding: 5rem 0 4rem;
