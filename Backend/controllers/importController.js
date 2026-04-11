@@ -326,6 +326,54 @@ function normalizeHeader(h) {
     .replace(/\s+/g, " ");
 }
 
+function normalizeSizeToken(value) {
+  return String(value || "").replace(/\s+/g, " ").trim();
+}
+
+function extractSizeFromChildDescription(childDescription, parentDescription = "") {
+  const child = normalizeSizeToken(childDescription);
+  if (!child) return "";
+
+  const parent = normalizeSizeToken(parentDescription);
+  let remainder = child;
+
+  if (parent) {
+    const escapedParent = parent.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    remainder = remainder.replace(new RegExp(`^${escapedParent}\\s*`, "i"), "").trim();
+  }
+
+  if (!remainder || remainder.length === child.length) {
+    const parts = child.split(/\s+/);
+    if (parts.length > 1) {
+      remainder = parts.slice(1).join(" ");
+    }
+  }
+
+  const patterns = [
+    /(UK\s*\d+(?:\.\d+)?)$/i,
+    /(\d+-\d+\s*Y(?:RS?)?)$/i,
+    /((?:2X|3X|4X)?[SMLX]{1,3}L?)$/i,
+    /(\d+(?:\.\d+)?)$/,
+  ];
+
+  for (const pattern of patterns) {
+    const match = remainder.match(pattern);
+    if (!match) continue;
+    const token = normalizeSizeToken(match[1]);
+    if (!token) continue;
+    if (/^UK\s*\d/i.test(token)) {
+      const ukNormalized = token
+        .toUpperCase()
+        .replace(/^UK\s*/i, "")
+        .trim();
+      return `UK ${ukNormalized}`;
+    }
+    return token.toUpperCase();
+  }
+
+  return "";
+}
+
 /**
  * Detect column mapping from header row.
  * Prefers explicitly-named columns over unnamed __EMPTY* columns.
@@ -420,7 +468,7 @@ function normalizeParentChildSkus(rows, hasSizeMapping) {
   ];
 
   // Find parent SKUs: a SKU that is a prefix of at least 2 other longer SKUs
-  const parentSkus = new Map(); // parentSku -> parent row data (for name)
+  const parentSkus = new Map(); // parentSku -> parent row data (for name/description)
   for (const sku of allSkus) {
     const children = allSkus.filter(
       (s) => s !== sku && s.startsWith(sku) && s.length > sku.length,
@@ -432,6 +480,7 @@ function normalizeParentChildSkus(rows, hasSizeMapping) {
       );
       parentSkus.set(sku, {
         name: parentRow ? String(parentRow.name || "").trim() : "",
+        description: parentRow ? String(parentRow.description || "").trim() : "",
       });
     }
   }
@@ -442,6 +491,8 @@ function normalizeParentChildSkus(rows, hasSizeMapping) {
     `[IMPORT] Parent-child SKU pattern detected: ${parentSkus.size} parent(s): ${[...parentSkus.keys()].slice(0, 5).join(", ")}`,
   );
 
+  let extractedSizeCount = 0;
+  let extractedSizeSamples = 0;
   const result = [];
   for (const row of rows) {
     const sku = row.sku ? String(row.sku).trim().toUpperCase() : "";
@@ -453,6 +504,27 @@ function normalizeParentChildSkus(rows, hasSizeMapping) {
     let matched = false;
     for (const [parentSku, parentInfo] of parentSkus) {
       if (sku.startsWith(parentSku) && sku.length > parentSku.length) {
+        const childDescription = String(row.description || row.name || "").trim();
+        const parentDescription = String(parentInfo.description || parentInfo.name || "").trim();
+
+        if (!row.sizes && childDescription) {
+          const extractedSize = extractSizeFromChildDescription(
+            childDescription,
+            parentDescription,
+          );
+          if (extractedSize) {
+            row.sizes = extractedSize;
+            row._sizeExtractedFromDescription = true;
+            extractedSizeCount += 1;
+            if (extractedSizeSamples < 5) {
+              debug(
+                `[IMPORT] Extracted child size from description: ${sku} -> ${extractedSize}`,
+              );
+              extractedSizeSamples += 1;
+            }
+          }
+        }
+
         // Replace child SKU with parent SKU for consolidation
         row.sku = parentSku;
 
@@ -472,6 +544,11 @@ function normalizeParentChildSkus(rows, hasSizeMapping) {
   debug(
     `[IMPORT] Parent-child normalization: ${rows.length} rows -> ${result.length} rows (${rows.length - result.length} parent summaries skipped)`,
   );
+  if (extractedSizeCount > 0) {
+    debug(
+      `[IMPORT] Extracted ${extractedSizeCount} size value(s) from child descriptions`,
+    );
+  }
   return result;
 }
 
@@ -865,6 +942,13 @@ exports.importProducts = async (req, res) => {
 
     logInfo(`Import started for file "${req.file.originalname}" (${req.file.size || 0} bytes)`);
 
+    const syncModeRaw = String(
+      req.query?.syncMode || req.body?.syncMode || "full",
+    )
+      .trim()
+      .toLowerCase();
+    const syncMode = syncModeRaw === "additive" ? "additive" : "full";
+
     // Parse ALL sheets in the workbook
     const { rows, headers, mapping, unmappedHeaders, sheetSummary } =
       parseExcelFile(filePath);
@@ -960,6 +1044,14 @@ exports.importProducts = async (req, res) => {
     // ── Consolidate same-SKU rows (size merging) ──
     const consolidated = consolidateBySku(normalizedRows);
     phaseMarks.consolidated = Date.now();
+    const extractedSizeFromDescriptionCount = normalizedRows.filter(
+      (row) => row._sizeExtractedFromDescription,
+    ).length;
+    if (extractedSizeFromDescriptionCount > 0) {
+      logInfo(
+        `Extracted ${extractedSizeFromDescriptionCount} size value(s) from Description during parent-child normalization`,
+      );
+    }
     debug(
       `[IMPORT] Consolidated ${normalizedRows.length} rows → ${consolidated.length} unique products`,
     );
@@ -1154,7 +1246,10 @@ exports.importProducts = async (req, res) => {
       }
       let priceResult = parsePrice(rawPrice);
       const rrpResult = parsePrice(row.rrp);
-      const rrp = rrpResult.value || 0;
+      const rrpRaw = Number.isFinite(Number(rrpResult.value))
+        ? Number(rrpResult.value)
+        : 0;
+      const rrp = +rrpRaw.toFixed(2);
 
       // Fallback 1: use RRP when trade/sale price is missing
       if (priceResult.error && priceResult.value === null && rrp > 0) {
@@ -1178,7 +1273,7 @@ exports.importProducts = async (req, res) => {
         });
         if (i < 5) debug(`[IMPORT] Row ${i + 1} (${sku}): no price at all, defaulted to £0`);
       }
-      const price = priceResult.value;
+      const price = +((Number(priceResult.value) || 0).toFixed(2));
 
       const originalCategoryValue = row.category ? String(row.category).trim() : "";
       const canonicalFromInput = safeExtractCategory(originalCategoryValue) || deriveCategoryCanonical(originalCategoryValue);
@@ -1192,8 +1287,8 @@ exports.importProducts = async (req, res) => {
         brand: row.brand ? String(row.brand).trim() : brandDefault, // fallback to workbook-wide brand (e.g. "adidas")
         color: row.color ? String(row.color).trim() : "",
         barcode: (row.barcodes || []).join(", "),
-        salePrice: +price.toFixed(2),
-        rrp: +rrp.toFixed(2),
+        salePrice: price,
+        rrp,
         sizes: row.sizeEntries || [],
         totalQuantity: (row.sizeEntries || []).reduce(
           (sum, s) => sum + (s.quantity || 0),
@@ -1611,28 +1706,36 @@ exports.importProducts = async (req, res) => {
       console.error("[IMPORT] Error creating subcategory records:", err);
     }
 
+    let soldOutSyncedCount = 0;
+
     // ── Mark products NOT in this upload as sold out (quantity = 0) ──
     try {
-      debug(`[IMPORT] Synchronizing catalog: marking all products NOT in this upload as sold out...`);
+      debug(`[IMPORT] Synchronizing catalog in ${syncMode} mode...`);
       const syncStart = Date.now();
 
-      const syncResult = await Product.updateMany(
-        { 
-          sku: { $nin: uploadedSkus },
-          isManuallyEdited: { $ne: true }
-        },
-        {
-          $set: {
-            sizes: [],
-            totalQuantity: 0
-          }
-        }
-      );
+      if (syncMode === "additive") {
+        debug("[IMPORT] Additive mode: skipped sold-out synchronization for SKUs not in upload");
+      } else {
+        const syncResult = await Product.updateMany(
+          {
+            sku: { $nin: uploadedSkus },
+            isManuallyEdited: { $ne: true },
+          },
+          {
+            $set: {
+              sizes: [],
+              totalQuantity: 0,
+            },
+          },
+        );
+        soldOutSyncedCount = syncResult.modifiedCount || 0;
+        debug(`[IMPORT] Sync complete: ${soldOutSyncedCount} products not in sheet marked as sold out`);
+      }
 
-      debug(`[IMPORT] Sync complete: ${syncResult.modifiedCount} products not in sheet marked as sold out`);
       phaseMarks.syncComplete = Date.now();
       logInfo(`Catalog sync complete in ${phaseMarks.syncComplete - syncStart}ms`, {
-        modifiedCount: syncResult.modifiedCount,
+        modifiedCount: soldOutSyncedCount,
+        syncMode,
       });
     } catch (err) {
       console.error("[IMPORT] Error during sold-out synchronization:", err.message);
@@ -1800,6 +1903,9 @@ exports.importProducts = async (req, res) => {
         duplicateSkuGroupsInUpload,
         duplicateRowsMerged,
         protectedManualRows,
+        extractedSizeFromDescription: extractedSizeFromDescriptionCount,
+        syncMode,
+        soldOutSyncedCount,
         imageResolved,
         imageFailed,
         imagePending: Math.max(0, pendingImageProducts.length - 50),
@@ -1849,6 +1955,9 @@ exports.importProducts = async (req, res) => {
       imagePending: Math.max(0, pendingImageProducts.length - 50),
       protectedManualRows,
       protectedManualSamples,
+      syncMode,
+      soldOutSyncedCount,
+      extractedSizeFromDescription: extractedSizeFromDescriptionCount,
       errors,
       headers,
       mapping,

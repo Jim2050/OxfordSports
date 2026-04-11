@@ -59,6 +59,10 @@ exports.placeOrder = async (req, res) => {
     const FOOTWEAR_THRESHOLD = 24;
     const DEFAULT_THRESHOLD = 100;
     const MIN_ORDER_TOTAL = 300;
+    const enforceMinOrderTotal =
+      String(process.env.ENFORCE_MIN_ORDER_TOTAL || "false").toLowerCase() ===
+      "true";
+    let minimumOrderWarning = "";
 
     // ── BATCH FETCH ALL PRODUCTS ──
     const uniqueSkus = [...new Set(items.map((i) => i.sku?.toUpperCase()).filter(Boolean))];
@@ -87,13 +91,15 @@ exports.placeOrder = async (req, res) => {
       const qty = parseInt(item.quantity);
       const isLotItem = Boolean(item.lotItem);
       const lotUnits = Number(item.maxStock);
-      if (isLotItem && (!Number.isFinite(lotUnits) || lotUnits < 1)) {
+      if (!isLotItem && (!Number.isFinite(qty) || qty < 1)) {
         return res.status(400).json({
-          error: `Invalid lot quantity for ${item.sku}.`,
+          error: `Invalid quantity for ${item.sku}.`,
         });
       }
-      const effectiveQty = isLotItem ? Math.floor(lotUnits) : qty;
-      const incomingSize = (item.size || "").trim();
+      const effectiveQty = isLotItem
+        ? Math.floor(Math.max(0, Number(product.totalQuantity) || 0))
+        : qty;
+      const incomingSize = isLotItem ? "" : (item.size || "").trim();
       let size = incomingSize;
 
       const sizeEntries = Array.isArray(product.sizes) ? product.sizes : [];
@@ -108,10 +114,16 @@ exports.placeOrder = async (req, res) => {
       ).map((s) => `${String(s.size || "").trim()}(${s.quantity})`);
       const lotSizeBreakdown = isLotItem ? lotDisplaySizes.join(", ") : "";
 
+      if (isLotItem && effectiveQty < 1) {
+        return res.status(400).json({
+          error: `No lot inventory available for ${product.name}.`,
+        });
+      }
+
       stockDebug.push({
         sku: product.sku,
         name: product.name,
-        requestedQty: qty,
+        requestedQty: isLotItem ? lotUnits || qty : qty,
         effectiveQty,
         lotItem: isLotItem,
         requestedSize: size || "N/A",
@@ -376,9 +388,12 @@ exports.placeOrder = async (req, res) => {
       .toFixed(2);
 
     if (totalAmount < MIN_ORDER_TOTAL) {
-      return res.status(400).json({
-        error: `Minimum order total is £${MIN_ORDER_TOTAL}. Your cart is £${totalAmount.toFixed(2)}.`,
-      });
+      if (enforceMinOrderTotal) {
+        return res.status(400).json({
+          error: `Minimum order total is £${MIN_ORDER_TOTAL}. Your cart is £${totalAmount.toFixed(2)}.`,
+        });
+      }
+      minimumOrderWarning = `Order total (£${totalAmount.toFixed(2)}) is below recommended minimum £${MIN_ORDER_TOTAL}.`;
     }
 
     const stockRollbacks = [];
@@ -424,6 +439,15 @@ exports.placeOrder = async (req, res) => {
       notes: notes || "",
     });
 
+    const lotAllocationSummary = orderItems
+      .filter((entry) => Boolean(entry.lotItem))
+      .map((entry) => ({
+        sku: entry.sku,
+        quantity: entry.quantity,
+        lotSizeBreakdown:
+          entry.lotSizeBreakdown || `Unspecified(${entry.quantity || 0})`,
+      }));
+
     // ── Send order confirmation email in background (non-blocking) ──
     let emailStatus = { sent: false };
 
@@ -453,7 +477,21 @@ exports.placeOrder = async (req, res) => {
         logOrderToConsole(order);
       });
 
-    res.status(201).json({ success: true, order, emailStatus });
+    res.status(201).json({
+      success: true,
+      order,
+      emailStatus,
+      minimumOrder: {
+        threshold: MIN_ORDER_TOTAL,
+        enforced: enforceMinOrderTotal,
+        warning: minimumOrderWarning,
+      },
+      lotAllocationSummary,
+      message:
+        lotAllocationSummary.length > 0
+          ? "Lot items were allocated as complete lots across all available sizes."
+          : "Order placed successfully.",
+    });
   } catch (err) {
     res.status(500).json({ error: err.message });
   } finally {
