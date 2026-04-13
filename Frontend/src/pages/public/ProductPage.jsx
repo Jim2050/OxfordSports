@@ -20,17 +20,20 @@ export default function ProductPage() {
   const [loading, setLoading] = useState(true);
   // Total qty the customer wants to order
   const [orderQty, setOrderQty] = useState(1);
+  const [orderQtyInput, setOrderQtyInput] = useState("1");
   const { addToCart, isSkuInCart, openDrawer } = useCart();
 
   useEffect(() => {
     setLoading(true);
     setOrderQty(1);
+    setOrderQtyInput("1");
     API.get(`/products/${encodeURIComponent(sku)}`)
       .then((r) => {
         setProduct(r.data);
         const fetchedTotalQty = getTotalQuantity(r.data);
         const initialQty = fetchedTotalQty > 24 ? 24 : Math.max(fetchedTotalQty, 1);
         setOrderQty(initialQty);
+        setOrderQtyInput(String(initialQty));
       })
       .catch(() => setProduct(null))
       .finally(() => setLoading(false));
@@ -85,6 +88,16 @@ export default function ProductPage() {
   const minOrderQty = 24;
   const maxOrderQty = totalQty > 0 ? totalQty : 9999;
 
+  const applyClampedOrderQty = (rawValue) => {
+    const parsed = parseInt(String(rawValue), 10);
+    const clampedQty = Number.isNaN(parsed)
+      ? minOrderQty
+      : Math.max(minOrderQty, Math.min(parsed, maxOrderQty));
+    setOrderQty(clampedQty);
+    setOrderQtyInput(String(clampedQty));
+    return clampedQty;
+  };
+
   // Check if this product is in cart (any size variant)
   const alreadyInCart = isSkuInCart(product.sku);
 
@@ -114,24 +127,26 @@ export default function ProductPage() {
       return;
     }
 
+    const qtyToAdd = applyClampedOrderQty(orderQtyInput);
+
     // Single total-qty ordering
-    if (orderQty <= 0) {
+    if (qtyToAdd <= 0) {
       toast.error("Enter a quantity.");
       return;
     }
 
-    if (orderQty < minOrderQty) {
+    if (qtyToAdd < minOrderQty) {
       toast.error(`Minimum order is ${minOrderQty} units.`);
       return;
     }
 
-    if (totalQty > 0 && orderQty > totalQty) {
+    if (totalQty > 0 && qtyToAdd > totalQty) {
       toast.error(`Only ${totalQty} units are available.`);
       return;
     }
 
-    addToCart(product, isOneSize ? productSizes[0].size : "", orderQty);
-    toast.success(`${orderQty} × ${product.name} added to cart!`);
+    addToCart(product, isOneSize ? productSizes[0].size : "", qtyToAdd);
+    toast.success(`${qtyToAdd} × ${product.name} added to cart!`);
   };
 
   return (
@@ -277,7 +292,7 @@ export default function ProductPage() {
                 <div className="qty-selector">
                   <button
                     className="cart-qty-btn"
-                    onClick={() => setOrderQty((q) => Math.max(minOrderQty, q - 1))}
+                    onClick={() => applyClampedOrderQty(orderQty - 1)}
                     disabled={orderQty <= minOrderQty}
                   >
                     −
@@ -287,19 +302,22 @@ export default function ProductPage() {
                     min={minOrderQty}
                     max={maxOrderQty}
                     step={1}
-                    value={orderQty}
-                    onChange={(e) => {
-                      const parsed = parseInt(e.target.value, 10);
-                      const v = Number.isNaN(parsed) ? minOrderQty : parsed;
-                      setOrderQty(Math.max(minOrderQty, Math.min(v, maxOrderQty)));
+                    value={orderQtyInput}
+                    onChange={(e) => setOrderQtyInput(e.target.value)}
+                    onBlur={() => applyClampedOrderQty(orderQtyInput)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        applyClampedOrderQty(orderQtyInput);
+                      }
+                      if (e.key === "Escape") {
+                        setOrderQtyInput(String(orderQty));
+                      }
                     }}
                     className="qty-input"
                   />
                   <button
                     className="cart-qty-btn"
-                    onClick={() => {
-                      setOrderQty((q) => Math.min(q + 1, maxOrderQty));
-                    }}
+                    onClick={() => applyClampedOrderQty(orderQty + 1)}
                     disabled={totalQty > 0 && orderQty >= maxOrderQty}
                   >
                     +

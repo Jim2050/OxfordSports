@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import toast from "react-hot-toast";
 import { useCart } from "../../context/CartContext";
 import { useAuth } from "../../context/AuthContext";
-import { resolveImageUrl, MIN_CART_TOTAL, getMOQInfo, getSizes } from "../../api/api";
+import { resolveImageUrl, MIN_CART_TOTAL, getSizes } from "../../api/api";
 import API from "../../api/axiosInstance";
 
 const PLACEHOLDER = "https://placehold.co/64x64/e2e8f0/64748b?text=—";
@@ -25,7 +25,33 @@ export default function CartDrawer() {
   const [confirmedOrder, setConfirmedOrder] = useState(null);
   const [reviewConfirmed, setReviewConfirmed] = useState(false);
   const [reviewingLocal, setReviewingLocal] = useState(false);
+  const [qtyDrafts, setQtyDrafts] = useState({});
   const belowMinimum = totalAmount < MIN_CART_TOTAL;
+
+  const getItemKey = (item) => `${item.sku}::${item.size || ""}`;
+
+  const clearQtyDraft = (key) => {
+    setQtyDrafts((prev) => {
+      if (!Object.prototype.hasOwnProperty.call(prev, key)) return prev;
+      const next = { ...prev };
+      delete next[key];
+      return next;
+    });
+  };
+
+  const commitQtyDraft = (item, key) => {
+    const minQty = item.minOrderQty || 24;
+    const maxQty = item.maxStock > 0 ? item.maxStock : Number.MAX_SAFE_INTEGER;
+    const draftValue = Object.prototype.hasOwnProperty.call(qtyDrafts, key)
+      ? qtyDrafts[key]
+      : String(item.quantity);
+    const parsed = parseInt(String(draftValue), 10);
+    const nextQty = Number.isNaN(parsed)
+      ? minQty
+      : Math.max(minQty, Math.min(parsed, maxQty));
+    updateQuantity(item.sku, item.size, nextQty);
+    clearQtyDraft(key);
+  };
 
   /**
    * Validate cart items against current product stock.
@@ -94,6 +120,19 @@ export default function CartDrawer() {
       validateCartStock();
     }
   }, [drawerOpen]);
+
+  useEffect(() => {
+    setQtyDrafts((prev) => {
+      const next = {};
+      for (const item of items) {
+        const key = getItemKey(item);
+        if (Object.prototype.hasOwnProperty.call(prev, key)) {
+          next[key] = prev[key];
+        }
+      }
+      return next;
+    });
+  }, [items]);
 
   /** Open local review modal (does NOT hit API yet). */
   const handleCheckout = () => {
@@ -189,7 +228,7 @@ export default function CartDrawer() {
             <div className="cart-drawer-items">
               {items.map((item) => {
                 const img = resolveImageUrl(item.imageUrl) || PLACEHOLDER;
-                const key = `${item.sku}::${item.size}`;
+                const key = getItemKey(item);
                 return (
                   <div className="cart-item" key={key}>
                     <img
@@ -275,16 +314,48 @@ export default function CartDrawer() {
                               className="cart-qty-btn"
                               onClick={() => {
                                 const minQty = item.minOrderQty || 24;
+                                clearQtyDraft(key);
                                 updateQuantity(item.sku, item.size, Math.max(minQty, item.quantity - 1));
                               }}
                               disabled={item.quantity <= (item.minOrderQty || 24)}
                             >
                               −
                             </button>
-                            <span className="cart-qty-val">{item.quantity}</span>
+                            <input
+                              type="number"
+                              min={item.minOrderQty || 24}
+                              max={item.maxStock > 0 ? item.maxStock : undefined}
+                              step={1}
+                              value={Object.prototype.hasOwnProperty.call(qtyDrafts, key) ? qtyDrafts[key] : String(item.quantity)}
+                              onFocus={() => {
+                                setQtyDrafts((prev) => ({
+                                  ...prev,
+                                  [key]: Object.prototype.hasOwnProperty.call(prev, key) ? prev[key] : String(item.quantity),
+                                }));
+                              }}
+                              onChange={(e) => {
+                                const nextValue = e.target.value;
+                                setQtyDrafts((prev) => ({ ...prev, [key]: nextValue }));
+                              }}
+                              onBlur={() => commitQtyDraft(item, key)}
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter") {
+                                  e.preventDefault();
+                                  commitQtyDraft(item, key);
+                                }
+                                if (e.key === "Escape") {
+                                  e.preventDefault();
+                                  clearQtyDraft(key);
+                                }
+                              }}
+                              className="qty-input"
+                              style={{ width: "64px", textAlign: "center" }}
+                              aria-label="Edit quantity"
+                            />
                             <button
                               className="cart-qty-btn"
                               onClick={() => {
+                                clearQtyDraft(key);
                                 updateQuantity(item.sku, item.size, item.quantity + 1);
                               }}
                               disabled={item.maxStock > 0 && item.quantity >= item.maxStock}
