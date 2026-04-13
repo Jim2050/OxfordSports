@@ -393,14 +393,14 @@ export function getMOQInfo(product) {
   const isFootwear = cat === "FOOTWEAR";
   const mustBuyAllThreshold = isFootwear ? 24 : 100;
   const moqStep = isFootwear ? 12 : 25;
-  const mustBuyAll = totalQty > 0 && totalQty < mustBuyAllThreshold;
+  const mustBuyAll = true;
   
   return {
     threshold: mustBuyAllThreshold,
     moqStep,
     mustBuyAll,
     isLot: false,
-    canSelectSizes: true,
+    canSelectSizes: false,
     canCustomizeQty: true,
     totalQty,
   };

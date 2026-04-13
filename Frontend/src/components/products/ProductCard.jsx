@@ -51,7 +51,7 @@ export default function ProductCard({ product }) {
   // Use the actual totalQty for Sold Out check, but displayTotalQty for stock info
   const effectiveStock = (isOneSizeOnly && totalQty > 0) ? totalQty : displayTotalQty;
   const hasSizes = productSizes.length > 0;
-  const { mustBuyAll, isLot, moqStep } = getMOQInfo(product);
+  const { mustBuyAll, isLot } = getMOQInfo(product);
 
   const [added, setAdded] = useState(false);
 
@@ -68,8 +68,6 @@ export default function ProductCard({ product }) {
 
     if (isLot || mustBuyAll) {
       addToCart(product, "", 1, true);
-    } else {
-      addToCart(product, isOneSizeOnly ? productSizes[0].size : "", moqStep || 1);
     }
     toast.success(`${product.name} added to cart`);
     setAdded(true);
