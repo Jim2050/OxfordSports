@@ -389,11 +389,10 @@ export function getMOQInfo(product) {
     };
   }
   
-  // Normal products: apply quantity-based thresholds
-  const isFootwear = cat === "FOOTWEAR";
-  const mustBuyAllThreshold = isFootwear ? 24 : 100;
-  const moqStep = isFootwear ? 12 : 25;
-  const mustBuyAll = true;
+  // Normal products: threshold-based controls
+  const mustBuyAllThreshold = 24;
+  const moqStep = 1;
+  const mustBuyAll = totalQty > 0 && totalQty <= mustBuyAllThreshold;
   
   return {
     threshold: mustBuyAllThreshold,

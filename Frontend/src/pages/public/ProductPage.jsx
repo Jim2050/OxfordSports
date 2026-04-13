@@ -28,9 +28,9 @@ export default function ProductPage() {
     API.get(`/products/${encodeURIComponent(sku)}`)
       .then((r) => {
         setProduct(r.data);
-        // Set initial qty to match MOQ step (footwear = 12)
-        const cat = (r.data?.category || "").toUpperCase();
-        setOrderQty(cat === "FOOTWEAR" ? 12 : 25);
+        const fetchedTotalQty = getTotalQuantity(r.data);
+        const initialQty = fetchedTotalQty > 24 ? 24 : Math.max(fetchedTotalQty, 1);
+        setOrderQty(initialQty);
       })
       .catch(() => setProduct(null))
       .finally(() => setLoading(false));
@@ -82,9 +82,8 @@ export default function ProductPage() {
   const displaySizes = productSizes;
   const { mustBuyAll, isLot } = getMOQInfo(product);
 
-  // Quantity step: footwear orders in multiples of 12
-  const isFootwear = (product.category || "").toUpperCase() === "FOOTWEAR";
-  const qtyStep = isFootwear ? 12 : 25;
+  const minOrderQty = 24;
+  const maxOrderQty = totalQty > 0 ? totalQty : 9999;
 
   // Check if this product is in cart (any size variant)
   const alreadyInCart = isSkuInCart(product.sku);
@@ -100,7 +99,7 @@ export default function ProductPage() {
       return;
     }
 
-    if (isLot || mustBuyAll) {
+    if (isLot) {
       // Lot items: add complete lot as qty=1, no customization
       addToCart(product, "", 1, true);
       toast.success(`Complete lot (${totalQty} units) added to cart!`);
@@ -108,9 +107,26 @@ export default function ProductPage() {
       return;
     }
 
+    if (mustBuyAll) {
+      addToCart(product, isOneSize ? productSizes[0].size : "", totalQty);
+      toast.success(`Buy-all item (${totalQty} units) added to cart!`);
+      openDrawer();
+      return;
+    }
+
     // Single total-qty ordering
     if (orderQty <= 0) {
       toast.error("Enter a quantity.");
+      return;
+    }
+
+    if (orderQty < minOrderQty) {
+      toast.error(`Minimum order is ${minOrderQty} units.`);
+      return;
+    }
+
+    if (totalQty > 0 && orderQty > totalQty) {
+      toast.error(`Only ${totalQty} units are available.`);
       return;
     }
 
@@ -234,7 +250,7 @@ export default function ProductPage() {
 
             {/* ── Order section ── */}
             {mustBuyAll ? (
-              /* Lot item — single "Add To Order" button, no qty editing */
+              /* Buy-all mode — single "Add To Order" button, no qty editing */
               <div style={{ marginBottom: "1.5rem" }}>
                 <p style={{
                   color: "#0f2d5c",
@@ -242,7 +258,9 @@ export default function ProductPage() {
                   fontSize: "0.95rem",
                   marginBottom: "0.75rem",
                 }}>
-                  This item is sold as a complete lot ({totalQty} units).
+                  {isLot
+                    ? `This item is sold as a complete lot (${totalQty} units).`
+                    : `Buy all available items (${totalQty} units). Quantity selection is not available.`}
                 </p>
               </div>
             ) : (
@@ -259,41 +277,37 @@ export default function ProductPage() {
                 <div className="qty-selector">
                   <button
                     className="cart-qty-btn"
-                    onClick={() => setOrderQty((q) => Math.max(qtyStep, q - qtyStep))}
-                    disabled={orderQty <= qtyStep}
+                    onClick={() => setOrderQty((q) => Math.max(minOrderQty, q - 1))}
+                    disabled={orderQty <= minOrderQty}
                   >
                     −
                   </button>
                   <input
                     type="number"
-                    min={qtyStep}
-                    max={totalQty > 0 ? totalQty : 9999}
-                    step={qtyStep}
+                    min={minOrderQty}
+                    max={maxOrderQty}
+                    step={1}
                     value={orderQty}
                     onChange={(e) => {
-                      const v = parseInt(e.target.value) || qtyStep;
-                      const rounded = Math.max(qtyStep, Math.round(v / qtyStep) * qtyStep);
-                      const maxAvailable = totalQty;
-                      setOrderQty(maxAvailable > 0 ? Math.min(rounded, maxAvailable) : rounded);
+                      const parsed = parseInt(e.target.value, 10);
+                      const v = Number.isNaN(parsed) ? minOrderQty : parsed;
+                      setOrderQty(Math.max(minOrderQty, Math.min(v, maxOrderQty)));
                     }}
                     className="qty-input"
                   />
                   <button
                     className="cart-qty-btn"
                     onClick={() => {
-                      const maxAvailable = totalQty;
-                      setOrderQty((q) =>
-                        maxAvailable > 0 ? Math.min(q + qtyStep, maxAvailable) : q + qtyStep,
-                      );
+                      setOrderQty((q) => Math.min(q + 1, maxOrderQty));
                     }}
-                    disabled={totalQty > 0 && orderQty >= totalQty}
+                    disabled={totalQty > 0 && orderQty >= maxOrderQty}
                   >
                     +
                   </button>
                 </div>
                 {totalQty > 0 ? (
                   <span style={{ fontSize: "0.85rem", color: "#6b7280" }}>
-                    {totalQty} available{isFootwear ? " (multiples of 12)" : ""}
+                    {totalQty} available (minimum order {minOrderQty})
                   </span>
                 ) : null}
               </div>

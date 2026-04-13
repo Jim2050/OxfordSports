@@ -96,6 +96,8 @@ export function CartProvider({ children }) {
 
       // Get the sale price (prefer salePrice, fall back to price)
       const itemPrice = Number(product.salePrice) || Number(product.price) || 0;
+      const minOrderQty = maxStock > 24 ? 24 : Math.max(maxStock, 1);
+      const quantityLocked = !lotItem && maxStock > 0 && maxStock <= 24;
 
       if (idx >= 0) {
         // Update existing item
@@ -108,21 +110,23 @@ export function CartProvider({ children }) {
         
         // Update existing regular item
         const newQty = updated[idx].quantity + qty;
-        const moqStep = (updated[idx].category || "").toUpperCase() === "FOOTWEAR" ? 12 : 25;
+        const currentMinOrderQty = maxStock > 24 ? 24 : Math.max(maxStock, 1);
+        const clampedQty = maxStock > 0 ? Math.min(newQty, maxStock) : newQty;
         updated[idx] = {
           ...updated[idx],
-          quantity: maxStock > 0 ? Math.min(newQty, maxStock) : newQty,
+          quantity: quantityLocked ? maxStock : Math.max(currentMinOrderQty, clampedQty),
           maxStock,
+          minOrderQty: currentMinOrderQty,
           price: itemPrice,
           lotItem: updated[idx].lotItem || lotItem,
-          quantityLocked: maxStock > 0 && maxStock < moqStep,
+          quantityLocked,
         };
         return updated;
       }
 
       // New item
-      const moqStep = (product.category || "").toUpperCase() === "FOOTWEAR" ? 12 : 25;
-      const finalQty = maxStock > 0 ? Math.min(qty, maxStock) : qty;
+      const rawQty = maxStock > 0 ? Math.min(qty, maxStock) : qty;
+      const finalQty = quantityLocked ? maxStock : Math.max(minOrderQty, rawQty);
       return [
         ...prev,
         {
@@ -136,9 +140,10 @@ export function CartProvider({ children }) {
           maxStock,
           lotItem,
           category: product.category || "",
-          moqStep: moqStep,
+          moqStep: 1,
+          minOrderQty,
           allocatedSize: "", // Will be populated when order returns with allocation info
-          quantityLocked: maxStock > 0 && maxStock < moqStep, // Lock if below MOQ
+          quantityLocked,
         },
       ];
     });
@@ -159,7 +164,7 @@ export function CartProvider({ children }) {
         // Prevent updates if quantity is locked (below MOQ threshold)
         if (i.quantityLocked) return i;
         const clamped = i.maxStock > 0 ? Math.min(newQty, i.maxStock) : newQty;
-        return { ...i, quantity: Math.max(1, clamped) };
+        return { ...i, quantity: Math.max(i.minOrderQty || 24, clamped) };
       }),
     );
   }, []);

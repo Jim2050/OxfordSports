@@ -66,8 +66,12 @@ export default function ProductCard({ product }) {
       return;
     }
 
-    if (isLot || mustBuyAll) {
+    if (isLot) {
       addToCart(product, "", 1, true);
+    } else if (mustBuyAll) {
+      addToCart(product, isOneSizeOnly ? productSizes[0].size : "", totalQty);
+    } else {
+      addToCart(product, isOneSizeOnly ? productSizes[0].size : "", 24);
     }
     toast.success(`${product.name} added to cart`);
     setAdded(true);

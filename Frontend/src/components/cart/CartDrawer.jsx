@@ -246,43 +246,60 @@ export default function CartDrawer() {
                           </button>
                         </div>
                       ) : (
-                        <>
-                          <button
-                            className="cart-qty-btn"
-                            onClick={() => {
-                              const step = item.moqStep || 1;
-                              const newQty = item.quantity - step;
-                              if (newQty < step) {
-                                removeFromCart(item.sku, item.size);
-                              } else {
-                                updateQuantity(item.sku, item.size, newQty);
-                              }
-                            }}
-                            disabled={item.quantityLocked}
-                            title={item.quantityLocked ? "Quantity locked - must purchase all available units" : ""}
-                          >
-                            −
-                          </button>
-                          <span className="cart-qty-val">{item.quantity}</span>
-                          <button
-                            className="cart-qty-btn"
-                            onClick={() => {
-                              const step = item.moqStep || 1;
-                              updateQuantity(item.sku, item.size, item.quantity + step);
-                            }}
-                            disabled={item.quantityLocked || (item.maxStock > 0 && item.quantity >= item.maxStock)}
-                            title={item.quantityLocked ? "Quantity locked - must purchase all available units" : ""}
-                          >
-                            +
-                          </button>
-                          <button
-                            className="cart-remove-btn"
-                            onClick={() => removeFromCart(item.sku, item.size)}
-                            title="Remove from cart"
-                          >
-                            🗑
-                          </button>
-                        </>
+                        item.quantityLocked ? (
+                          <>
+                            <div
+                              style={{
+                                fontSize: "0.85rem",
+                                color: "#0f2d5c",
+                                fontWeight: 600,
+                                whiteSpace: "nowrap",
+                                backgroundColor: "#f0f4f8",
+                                padding: "0.25rem 0.5rem",
+                                borderRadius: "0.25rem",
+                              }}
+                            >
+                              ✓ Buy all items ({item.quantity} units)
+                            </div>
+                            <button
+                              className="cart-remove-btn"
+                              onClick={() => removeFromCart(item.sku, item.size)}
+                              title="Remove from cart"
+                            >
+                              🗑
+                            </button>
+                          </>
+                        ) : (
+                          <>
+                            <button
+                              className="cart-qty-btn"
+                              onClick={() => {
+                                const minQty = item.minOrderQty || 24;
+                                updateQuantity(item.sku, item.size, Math.max(minQty, item.quantity - 1));
+                              }}
+                              disabled={item.quantity <= (item.minOrderQty || 24)}
+                            >
+                              −
+                            </button>
+                            <span className="cart-qty-val">{item.quantity}</span>
+                            <button
+                              className="cart-qty-btn"
+                              onClick={() => {
+                                updateQuantity(item.sku, item.size, item.quantity + 1);
+                              }}
+                              disabled={item.maxStock > 0 && item.quantity >= item.maxStock}
+                            >
+                              +
+                            </button>
+                            <button
+                              className="cart-remove-btn"
+                              onClick={() => removeFromCart(item.sku, item.size)}
+                              title="Remove from cart"
+                            >
+                              🗑
+                            </button>
+                          </>
+                        )
                       )}
                     </div>
                   </div>
