@@ -1,7 +1,16 @@
 node_modules/
+# Environment Variables
 .env
-Backend/.env
-Frontend/.env
+.env.*
+*.env
+Backend/.env*
+Frontend/.env*
+
+# IDEs and Editors
+.vscode/
+.idea/
+*.swp
+
 Backend/uploads/
 Backend/data/products.json
 Backend/data/members.json
