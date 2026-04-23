@@ -183,8 +183,9 @@ exports.placeOrder = async (req, res) => {
         let sizeEntry = sizeEntries.find((s) => s.size && s.size.trim() === normalizedIncomingSize);
 
         if (!sizeEntry && (!normalizedIncomingSize || normalizedIncomingSize === "")) {
-          sizeEntry = sizeEntries.find((s) => String(s?.size || "").trim() !== "");
-          if (sizeEntry) {
+          const validSizes = sizeEntries.filter((s) => String(s?.size || "").trim() !== "");
+          if (validSizes.length === 1) {
+            sizeEntry = validSizes[0];
             size = sizeEntry.size;
           }
         }

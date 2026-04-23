@@ -227,10 +227,12 @@ function parseSizeEntries(rawSize, fallbackQty) {
     };
   }
 
-  const tokens = input
-    .split(input.includes(";") ? ";" : ",")
-    .map((token) => token.trim())
-    .filter(Boolean);
+  // Only split by commas/semicolons if the user is explicitly passing embedded quantities like "S(5), M(7)"
+  const hasEmbeddedQty = /\(\d+\)/.test(input) || /:\s*\d+/.test(input);
+  
+  const tokens = hasEmbeddedQty
+    ? input.split(input.includes(";") ? ";" : ",").map((token) => token.trim()).filter(Boolean)
+    : [input];
 
   const entries = [];
   const invalidTokens = [];
@@ -243,11 +245,14 @@ function parseSizeEntries(rawSize, fallbackQty) {
     const embeddedMatch = token.match(/^(.*)\((\d+)\)$/);
     const colonMatch = token.match(/^(.*):\s*(\d+)$/);
     const matched = embeddedMatch || colonMatch;
+    
     const rawLabel = matched ? matched[1] : token;
     const size = sanitizeSizeLabel(rawLabel);
+    
     const quantityRaw = matched
       ? Number.parseInt(matched[2], 10)
       : Number.parseInt(fallbackQty, 10);
+      
     const quantity = Number.isFinite(quantityRaw) ? Math.max(0, quantityRaw) : 0;
 
     if (matched) {
