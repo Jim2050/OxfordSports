@@ -374,7 +374,7 @@ export function getMOQInfo(product) {
   const totalQty = getTotalQuantity(product);
   
   // LOT categories are indivisible items
-  const LOT_CATEGORIES = ["JOB LOTS", "B GRADE", "UNDER £5"];
+  const LOT_CATEGORIES = ["JOB LOTS", "UNDER £5"];
   const isLotCategory = LOT_CATEGORIES.includes(cat);
   
   if (isLotCategory) {

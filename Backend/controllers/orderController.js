@@ -325,7 +325,7 @@ exports.placeOrder = async (req, res) => {
       if (p) skuMap[sku].product = p;
     }
 
-    const LOT_CATEGORIES = ["JOB LOTS", "B GRADE", "UNDER £5"];
+    const LOT_CATEGORIES = ["JOB LOTS", "UNDER £5"];
     for (const [sku, entry] of Object.entries(skuMap)) {
       const product = entry.product;
       if (!product) continue;
