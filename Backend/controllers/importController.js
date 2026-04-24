@@ -92,6 +92,17 @@ function normalizeImportedSubcategory(category, subcategory, name, description =
   const combined = `${String(name || "").toUpperCase()} ${String(description || "").toUpperCase()} ${upper}`;
   if (!upper) return "";
 
+  // If the Excel provides a recognised canonical subcategory, preserve it
+  // instead of overriding with keyword detection from the product name.
+  const directCanonical = toCanonicalSubcategory(raw);
+  if (directCanonical && directCanonical === upper) {
+    // Already canonical — return as-is
+    return directCanonical;
+  }
+  if (directCanonical && CANONICAL_SUBCATEGORIES.has(upper)) {
+    return directCanonical;
+  }
+
   // Common OCR variants in the provided CSV (e.g. "Shirts & Ierseys").
   if (/\bSHIRTS?\s*&\s*.[A-Z]*ERSEYS?\b/.test(upper)) {
     return toCanonicalSubcategory(cat === "LICENSED TEAM CLOTHING" ? "TEAM JERSEYS" : "T-SHIRTS");
@@ -664,70 +675,62 @@ function consolidateBySku(rows) {
     const strictSizeFailure = rawSizeProvided && rowQty > 0 && normalizedRowSizes.length === 0;
 
     if (skuMap.has(sku)) {
+      // ── OVERWRITE duplicate SKU: last row wins ──
+      // When the same SKU appears again, fully replace sizes/prices/metadata
+      // instead of additively merging quantities (which caused doubling).
       const existing = skuMap.get(sku);
 
+      const sizeErrors = [];
       if (parsedSizes.invalidTokens.length > 0) {
-        existing._sizeWarnings = existing._sizeWarnings || [];
-        existing._sizeWarnings.push(
+        sizeErrors.push(
           `Invalid size token(s): ${parsedSizes.invalidTokens.join(", ")}`,
         );
       }
       if (parsedSizes.checksumMismatch) {
-        existing._sizeWarnings = existing._sizeWarnings || [];
-        existing._sizeWarnings.push(
+        sizeErrors.push(
           `Embedded size quantities (${parsedSizes.parsedTotal}) do not match QTY (${rowQty})`,
         );
       }
       if (parsedSizes.hadNegativeSizes) {
-        existing._sizeWarnings = existing._sizeWarnings || [];
-        existing._sizeWarnings.push(
+        sizeErrors.push(
           "Negative size sign detected and normalized to a positive value",
         );
       }
-      existing._hadNegativeSizes = existing._hadNegativeSizes || parsedSizes.hadNegativeSizes;
-      existing._hadZeroQtyTokens = existing._hadZeroQtyTokens || parsedSizes.hadZeroQtyTokens;
-      existing._rawSizeProvided = existing._rawSizeProvided || rawSizeProvided;
-      existing._sizeParseFailed = existing._sizeParseFailed || strictSizeFailure;
-
       if (rawSizeProvided && rowQty > 0 && normalizedRowSizes.length === 0) {
-        existing._sizeWarnings = existing._sizeWarnings || [];
-        existing._sizeWarnings.push("Provided size values could not be parsed");
+        sizeErrors.push("Provided size values could not be parsed");
       }
 
-      // Merge sizes with quantities
+      // Overwrite sizes completely — do NOT add to existing
       if (normalizedRowSizes.length > 0) {
-        for (const entry of normalizedRowSizes) {
-          const found = existing.sizeEntries.find((e) => e.size === entry.size);
-          if (found) {
-            found.quantity += entry.quantity;
-          } else {
-            existing.sizeEntries.push({
-              size: entry.size,
-              quantity: entry.quantity,
-            });
-          }
-        }
-      }
-      // No fallback to ONE SIZE — if sizes are missing, product stays at 0 quantity
-
-      const beforeNormalizeCount = existing.sizeEntries.length;
-      existing.sizeEntries = normalizeSizeEntries(existing.sizeEntries, existing.category);
-      if (beforeNormalizeCount > 0 && existing.sizeEntries.length === 0) {
-        existing._sizeWarnings = existing._sizeWarnings || [];
-        existing._sizeWarnings.push("All merged sizes became empty after parsing");
+        existing.sizeEntries = normalizeSizeEntries(normalizedRowSizes, row.category);
       }
 
-      // Merge barcode
+      // Overwrite metadata from new row
+      existing._sizeWarnings = sizeErrors;
+      existing._hadNegativeSizes = parsedSizes.hadNegativeSizes;
+      existing._hadZeroQtyTokens = parsedSizes.hadZeroQtyTokens;
+      existing._rawSizeProvided = rawSizeProvided;
+      existing._sizeParseFailed = strictSizeFailure;
+
+      // Merge barcode (barcodes are additive — different rows may have different barcodes)
       const newBarcode = row.barcode ? String(row.barcode).trim() : "";
       if (newBarcode && !existing.barcodes.includes(newBarcode)) {
         existing.barcodes.push(newBarcode);
       }
 
-      // Update price/rrp if existing has 0 and row has value
-      if (!existing.price && row.price) existing.price = row.price;
-      if (!existing.rrp && row.rrp) existing.rrp = row.rrp;
-      if (!existing._rawPrice && row._rawPrice)
-        existing._rawPrice = row._rawPrice;
+      // Overwrite price/rrp from new row if present
+      if (row.price) existing.price = row.price;
+      if (row.rrp) existing.rrp = row.rrp;
+      if (row._rawPrice) existing._rawPrice = row._rawPrice;
+
+      // Overwrite other fields from new row if present
+      if (row.name) existing.name = row.name;
+      if (row.description) existing.description = row.description;
+      if (row.category) existing.category = row.category;
+      if (row.subcategory) existing.subcategory = row.subcategory;
+      if (row.brand) existing.brand = row.brand;
+      if (row.color) existing.color = row.color;
+      if (row.imageUrl) existing.imageUrl = row.imageUrl;
     } else {
       const barcode = row.barcode ? String(row.barcode).trim() : "";
       const sizeEntries = [];

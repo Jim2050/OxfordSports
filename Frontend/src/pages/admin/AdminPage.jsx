@@ -638,6 +638,11 @@ export default function AdminPage() {
             ? Math.round(((rrpVal - salePrice) / rrpVal) * 100)
             : 0);
         const totalQty = p.totalQuantity || p.quantity || 0;
+        // Force sizes to text with ="..." so Excel/CSV parsers don't
+        // misinterpret entries like 9(20) as negative numbers or 5.5(4) as dates
+        const safeSizes = sizesStr
+          ? `"=""${sizesStr.replace(/"/g, '""')}"""`
+          : `""`;
         csvRows.push(
           [
             `"${(p.sku || "").replace(/"/g, '""')}"`,
@@ -651,14 +656,16 @@ export default function AdminPage() {
             salePrice,
             rrpVal,
             discPct,
-            `"${sizesStr.replace(/"/g, '""')}"`,
+            safeSizes,
             totalQty,
             `"${(p.imageUrl || "").replace(/"/g, '""')}"`,
           ].join(","),
         );
       });
 
-      const blob = new Blob([csvRows.join("\n")], { type: "text/csv" });
+      // Add UTF-8 BOM so Excel correctly reads £ and other Unicode characters
+      const BOM = "\uFEFF";
+      const blob = new Blob([BOM + csvRows.join("\n")], { type: "text/csv;charset=utf-8" });
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;

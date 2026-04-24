@@ -214,7 +214,27 @@ function isMalformedSize(size) {
 }
 
 function parseSizeEntries(rawSize, fallbackQty) {
-  const input = normalizeText(rawSize);
+  // Strip Excel text-force wrapper ="..." that our CSV export uses
+  let cleaned = String(rawSize || "").trim();
+  if (/^="(.*)"$/.test(cleaned)) {
+    cleaned = cleaned.slice(2, -1);
+  }
+
+  // Detect values that look like Excel date serial numbers (e.g. 38447.00013888889)
+  // or negative number corruption (e.g. -920 from "9(20)"). These are NOT valid sizes.
+  if (/^-?\d{4,}(\.\d+)?$/.test(cleaned) && !cleaned.includes("(")) {
+    return {
+      entries: [],
+      invalidTokens: [cleaned],
+      checksumMismatch: false,
+      embeddedQuantities: false,
+      parsedTotal: 0,
+      hadNegativeSizes: true,
+      hadZeroQtyTokens: false,
+    };
+  }
+
+  const input = normalizeText(cleaned);
   if (!input) {
     return {
       entries: [],
@@ -415,8 +435,8 @@ const SUBCATEGORY_SPELLING_CORRECTIONS = {
   'JACKET': 'JACKETS & COATS',
   'COAT': 'JACKETS & COATS',
   'WINDBREAKER': 'JACKETS & COATS',
-  'HOODY': 'JACKETS & COATS',
-  'HOODIE': 'JACKETS & COATS',
+  'HOODY': 'HOODED SWEATERS',
+  'HOODIE': 'HOODED SWEATERS',
   'SPECIALIST CLOTHE': 'SPECIALIST CLOTHING',
   'SPECIAL CLOTHING': 'SPECIALIST CLOTHING',
   'SWIM WEAR': 'SWIMWEAR',
