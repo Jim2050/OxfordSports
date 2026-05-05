@@ -2,12 +2,18 @@ import { useEffect } from "react";
 import { Navigate, useLocation } from "react-router-dom";
 import toast from "react-hot-toast";
 import { useAuth } from "../context/AuthContext";
+import { DISABLE_AUTH } from "../config/featureFlags";
 
 /**
  * Protects routes that require member login.
  * Redirects to /register with a toast message if not authenticated.
+ *
+ * When DISABLE_AUTH is true, all routes are publicly accessible.
  */
 export default function ProtectedRoute({ children }) {
+  // Fast path: auth disabled → render children immediately
+  if (DISABLE_AUTH) return children;
+
   const { isAuthenticated, loading } = useAuth();
   const location = useLocation();
 
@@ -37,3 +43,4 @@ export default function ProtectedRoute({ children }) {
 
   return children;
 }
+

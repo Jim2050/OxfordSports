@@ -1,10 +1,30 @@
 import { createContext, useContext, useState, useEffect } from "react";
 import API from "../api/axiosInstance";
 import { isTokenValid } from "../api/axiosInstance";
+import { DISABLE_AUTH } from "../config/featureFlags";
 
 const AuthContext = createContext(null);
 
 export function AuthProvider({ children }) {
+  // ── When auth is disabled, provide a static guest context ──
+  if (DISABLE_AUTH) {
+    const guestCtx = {
+      user: { name: "Guest", email: "guest@oxfordsports.online", role: "member" },
+      token: "public-guest",
+      loading: false,
+      isAuthenticated: true,
+      login: async () => ({ success: true }),
+      register: async () => ({ success: true }),
+      logout: () => {},
+    };
+    return (
+      <AuthContext.Provider value={guestCtx}>
+        {children}
+      </AuthContext.Provider>
+    );
+  }
+
+  // ── Normal auth flow ──
   // isTokenValid checks JWT exp so stale browser-cached tokens are rejected immediately
   const savedToken = localStorage.getItem("memberToken");
   const [user, setUser] = useState(null);

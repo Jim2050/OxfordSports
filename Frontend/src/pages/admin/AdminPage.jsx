@@ -73,15 +73,15 @@ export default function AdminPage() {
   const [subcategoryList, setSubcategoryList] = useState([]);
   const [importBatches, setImportBatches] = useState([]);
   const PRODUCT_PAGE_SIZE = 100;
-  
+
   // Debounce stats loading to prevent excessive API calls (store last load time)
   const lastStatsLoadRef = useRef(0);
   const statsLoadTimer = useRef(null);
-  
+
   const debouncedLoadStats = useCallback(() => {
     // Clear any pending timer
     if (statsLoadTimer.current) clearTimeout(statsLoadTimer.current);
-    
+
     // Only load if more than 3 seconds since last load
     const now = Date.now();
     if (now - lastStatsLoadRef.current >= 3000) {
@@ -124,7 +124,7 @@ export default function AdminPage() {
   const loadStats = () => {
     fetchAdminStats()
       .then(setStats)
-      .catch(() => {});
+      .catch(() => { });
   };
 
   const loadCategories = () => {
@@ -133,7 +133,7 @@ export default function AdminPage() {
         setCategoryList(data.productCategories || []);
         setSubcategoryList(data.subcategories || []);
       })
-      .catch(() => {});
+      .catch(() => { });
   };
 
   const loadProducts = async ({ page = productPage, search = searchQuery } = {}) => {
@@ -355,7 +355,7 @@ export default function AdminPage() {
 
     for (let i = 0; i < accepted.length; i++) {
       try {
-        const res = await uploadImages(accepted[i], () => {});
+        const res = await uploadImages(accepted[i], () => { });
         totalMatched += res.matched ?? 0;
         totalUnmatched += res.unmatched ?? 0;
         if (res.unmatchedFiles) allUnmatchedFiles.push(...res.unmatchedFiles);
@@ -505,7 +505,7 @@ export default function AdminPage() {
         qtyStr = sizesArr
           .reduce((sum, s) => sum + (s.quantity || 0), 0)
           .toString();
-        
+
         // Log for debugging Issue #4
         console.log(
           `[AdminPage] Editing ${product.sku}: sizes="${sizesStr}" total_qty=${qtyStr}`,

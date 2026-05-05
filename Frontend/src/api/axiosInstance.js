@@ -1,4 +1,5 @@
 import axios from "axios";
+import { DISABLE_AUTH } from "../config/featureFlags";
 
 const API = axios.create({
   baseURL: import.meta.env.VITE_API_BASE_URL || "/api",
@@ -42,8 +43,8 @@ API.interceptors.response.use(
         // Admin token expired or invalid
         sessionStorage.removeItem("adminToken");
         window.dispatchEvent(new CustomEvent("admin:logout"));
-      } else {
-        // Member token expired or invalid
+      } else if (!DISABLE_AUTH) {
+        // Member token expired or invalid (skip when auth is disabled)
         localStorage.removeItem("memberToken");
         window.dispatchEvent(new CustomEvent("member:logout"));
       }

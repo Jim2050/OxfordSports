@@ -2,14 +2,40 @@ const jwt = require("jsonwebtoken");
 const User = require("../models/User");
 
 /**
+ * Feature flag: when DISABLE_AUTH=true in .env, member-facing auth
+ * is bypassed so the site is publicly accessible without login.
+ * Admin routes remain protected because they also require adminOnly.
+ */
+const AUTH_DISABLED =
+  String(process.env.DISABLE_AUTH || "").toLowerCase() === "true";
+
+/**
  * Verify JWT token and attach req.user.
  * Works for both member and admin tokens.
+ *
+ * When AUTH_DISABLED is true AND no valid token is provided, a guest
+ * user stub is attached so downstream controllers have req.user data.
+ * If a valid token IS sent (e.g. admin), normal verification proceeds.
  */
 const protect = async (req, res, next) => {
   let token;
 
   if (req.headers.authorization?.startsWith("Bearer")) {
     token = req.headers.authorization.split(" ")[1];
+  }
+
+  // ── Auth-disabled bypass: attach guest user if no token provided ──
+  if (AUTH_DISABLED && !token) {
+    req.user = {
+      _id: "guest",
+      name: "Guest Buyer",
+      email: "guest@oxfordsports.online",
+      role: "member",
+      company: "",
+      mobileNumber: "",
+      deliveryAddress: "",
+    };
+    return next();
   }
 
   if (!token) {
@@ -30,6 +56,19 @@ const protect = async (req, res, next) => {
 
     next();
   } catch (err) {
+    // When auth is disabled, fall back to guest on invalid/expired tokens
+    if (AUTH_DISABLED) {
+      req.user = {
+        _id: "guest",
+        name: "Guest Buyer",
+        email: "guest@oxfordsports.online",
+        role: "member",
+        company: "",
+        mobileNumber: "",
+        deliveryAddress: "",
+      };
+      return next();
+    }
     if (err.name === "TokenExpiredError") {
       return res
         .status(401)

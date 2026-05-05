@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import toast from "react-hot-toast";
 import { useCart } from "../../context/CartContext";
 import { useAuth } from "../../context/AuthContext";
+import { DISABLE_AUTH } from "../../config/featureFlags";
 import { resolveImageUrl, MIN_CART_TOTAL, getSizes } from "../../api/api";
 import API from "../../api/axiosInstance";
 
@@ -136,7 +137,7 @@ export default function CartDrawer() {
 
   /** Open local review modal (does NOT hit API yet). */
   const handleCheckout = () => {
-    if (!isAuthenticated) {
+    if (!DISABLE_AUTH && !isAuthenticated) {
       toast.error("Please sign in to place an order.");
       return;
     }
