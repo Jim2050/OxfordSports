@@ -2,7 +2,7 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import toast from "react-hot-toast";
 import { useAuth } from "../../context/AuthContext";
-import { DISABLE_AUTH } from "../../config/featureFlags";
+import { AUTH_PUBLIC_MODE } from "../../config/featureFlags";
 import { useCart } from "../../context/CartContext";
 import { fetchPublicCategories } from "../../api/api";
 import {
@@ -72,7 +72,7 @@ export default function Header() {
     (e, to) => {
       setMenuOpen(false);
       setOpenDropdown(null);
-      if (!DISABLE_AUTH && !isAuthenticated && !isPublicPath(to)) {
+      if (!AUTH_PUBLIC_MODE && !isAuthenticated && !isPublicPath(to)) {
         e.preventDefault();
         toast("Please sign in to access wholesale pages", { icon: "🔒" });
         navigate("/register", { state: { from: to } });
@@ -85,7 +85,7 @@ export default function Header() {
     e.preventDefault();
     const q = searchQuery.trim();
     if (!q) return;
-    if (!DISABLE_AUTH && !isAuthenticated) {
+    if (!AUTH_PUBLIC_MODE && !isAuthenticated) {
       toast("Please sign in to search products", { icon: "🔒" });
       navigate("/register", {
         state: { from: `/products?search=${encodeURIComponent(q)}` },
@@ -147,7 +147,7 @@ export default function Header() {
         </form>
 
         <div className="header-actions">
-          {DISABLE_AUTH ? null : isAuthenticated ? (
+          {AUTH_PUBLIC_MODE ? null : isAuthenticated ? (
             <button
               className="btn btn-sm"
               onClick={handleLogout}

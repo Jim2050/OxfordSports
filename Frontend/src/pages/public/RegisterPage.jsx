@@ -2,11 +2,11 @@ import { useState } from "react";
 import { useNavigate, useLocation, Link, Navigate } from "react-router-dom";
 import toast from "react-hot-toast";
 import { useAuth } from "../../context/AuthContext";
-import { DISABLE_AUTH } from "../../config/featureFlags";
+import { AUTH_PUBLIC_MODE } from "../../config/featureFlags";
 
 export default function RegisterPage() {
   // When auth is disabled, redirect to home — no login page needed
-  if (DISABLE_AUTH) return <Navigate to="/" replace />;
+  if (AUTH_PUBLIC_MODE) return <Navigate to="/" replace />;
 
   const { isAuthenticated, login, register, logout } = useAuth();
   const [mode, setMode] = useState("login"); // "login" or "register"

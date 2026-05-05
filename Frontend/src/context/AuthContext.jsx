@@ -1,13 +1,13 @@
 import { createContext, useContext, useState, useEffect } from "react";
 import API from "../api/axiosInstance";
 import { isTokenValid } from "../api/axiosInstance";
-import { DISABLE_AUTH } from "../config/featureFlags";
+import { AUTH_PUBLIC_MODE } from "../config/featureFlags";
 
 const AuthContext = createContext(null);
 
 export function AuthProvider({ children }) {
   // ── When auth is disabled, provide a static guest context ──
-  if (DISABLE_AUTH) {
+  if (AUTH_PUBLIC_MODE) {
     const guestCtx = {
       user: { name: "Guest", email: "guest@oxfordsports.online", role: "member" },
       token: "public-guest",
