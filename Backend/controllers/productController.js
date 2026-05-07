@@ -88,7 +88,8 @@ exports.getProducts = async (req, res) => {
           sportOr.push({ categoryCanonical: "SPORTS" });
         }
         conditions.push({ $or: sportOr });
-
+        // Ensure clearance lots don't leak into the general sports category
+        conditions.push({ categoryCanonical: { $nin: ["JOB LOTS", "UNDER £5", "B GRADE"] } });
       } else if (SPORT_SLUGS.has(cat)) {
         // Sport pages: search across category, name AND subcategory fields
         // so products with "Mens" category but "Argentina Rugby Jersey" name are found

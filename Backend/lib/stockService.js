@@ -250,7 +250,7 @@ function enforceMustBuyAll(skuMap, lotSkus) {
         updateOne: {
           filter: {
             _id: product._id,
-            'sizes.size': trimmedSize,
+            'sizes.size': sizeEntry.size,
             'sizes.quantity': { $gte: missingSizeQty },
             totalQuantity: { $gte: missingSizeQty },
           },
