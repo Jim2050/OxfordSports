@@ -6,6 +6,7 @@ const {
   deriveCategoryCanonical,
   deriveSubcategoryCanonical,
 } = require("../utils/taxonomyUtils");
+const cache = require("../lib/catalogCache");
 
 // Escape user input for safe use in $regex queries (prevent ReDoS / NoSQL injection)
 function escapeRegex(str) {
@@ -35,13 +36,6 @@ const SPORT_SLUGS = new Set([
   "football",
   "footwear",
 ]);
-
-// ── In-Memory Caching for heavy aggregations ──
-const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
-let brandsCache = null;
-let brandsCacheTimestamp = 0;
-let categoriesCache = null;
-let categoriesCacheTimestamp = 0;
 
 /**
  * GET /api/products
@@ -242,16 +236,17 @@ exports.getProducts = async (req, res) => {
  */
 exports.getBrands = async (_req, res) => {
   try {
-    if (brandsCache && Date.now() - brandsCacheTimestamp < CACHE_TTL) {
-      return res.json({ brands: brandsCache });
-    }
+    const cacheKey = cache.buildKey('brands', {});
+    const cached = await cache.get(cacheKey);
+    if (cached) return res.json(cached);
+
     const brands = await Product.distinct("brand", {
       isActive: true,
       brand: { $ne: "" },
     });
-    brandsCache = brands.sort();
-    brandsCacheTimestamp = Date.now();
-    res.json({ brands: brandsCache });
+    const result = { brands: brands.sort() };
+    await cache.set(cacheKey, result, 120);
+    res.json(result);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -484,8 +479,22 @@ exports.getProductBySku = async (req, res) => {
       return res.status(404).json({ error: "Product not found." });
     }
 
-    res.json(product);
+    res.json({ product });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
+};
+
+/**
+ * GET /api/products/config
+ * Return public configuration (MOQ limits, feature flags)
+ */
+exports.getConfig = (req, res) => {
+  const { FOOTWEAR_THRESHOLD, DEFAULT_THRESHOLD, LOT_CATEGORIES } = require("../lib/stockService");
+  res.json({
+    FOOTWEAR_THRESHOLD,
+    DEFAULT_THRESHOLD,
+    LOT_CATEGORIES,
+    MIN_ORDER_TOTAL: 300,
+  });
 };

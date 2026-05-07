@@ -48,6 +48,7 @@ const {
   restoreProducts,
   fixPrices: roundPrices,
   cleanupCategories,
+  bulkPriceAdjust,
 } = require("../controllers/adminController");
 
 const {
@@ -64,6 +65,10 @@ const {
   resolveImages,
   fixPrices,
 } = require("../controllers/importController");
+
+const {
+  importDryRun,
+} = require("../controllers/importDryRunController");
 
 // ── Public ──
 router.post("/login", adminLogin);
@@ -93,6 +98,7 @@ router.get("/deleted-batches", getDeletedBatches);
 router.post("/restore-products/:batchId", restoreProducts);
 
 // Import / Export
+router.post("/import-products/dry-run", uploadExcel, importDryRun);  // Preview before commit
 router.post("/import-products", uploadExcel, importProducts);
 router.post("/upload-images", uploadZip, uploadImagesCtrl);
 router.get("/image-upload-status/:jobId", getImageUploadStatus);
@@ -111,5 +117,8 @@ router.post("/fix-prices", fixPrices);
 router.post("/round-prices", roundPrices);
 router.post("/cleanup-categories", cleanupCategories);
 router.post("/resolve-images", resolveImages);
+
+// Bulk operations
+router.post("/bulk-price-adjust", bulkPriceAdjust);
 
 module.exports = router;

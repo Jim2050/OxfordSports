@@ -225,6 +225,25 @@ export const fixPrices = () =>
     (r) => r.data,
   );
 
+export const roundPrices = () =>
+  API.post("/admin/round-prices", {}, { headers: adminHeaders() }).then(
+    (r) => r.data,
+  );
+
+/**
+ * Dry-run an import: parse and validate the Excel file without
+ * committing to the database. Returns preview with anomalies.
+ */
+export const importDryRun = (file, onProgress) => {
+  const form = new FormData();
+  form.append("file", file);
+  return API.post("/admin/import-products/dry-run", form, {
+    headers: { "Content-Type": "multipart/form-data", ...adminHeaders() },
+    onUploadProgress: onProgress,
+    timeout: 120000,
+  }).then((r) => r.data);
+};
+
 // ══════════════════════════════════════════
 //  Image URL resolver & helpers
 // ══════════════════════════════════════════
@@ -353,29 +372,45 @@ export function getSizes(product) {
     .filter((entry) => entry.size.trim() !== "");
 }
 
-// ═══════════════════════════════════════════════════════════════
-//  MOQ (Minimum Order Quantity) helpers
-// ═══════════════════════════════════════════════════════════════
+// Cache for backend config
+let backendConfig = null;
+
+export const fetchConfig = async () => {
+  if (backendConfig) return backendConfig;
+  try {
+    const res = await API.get("/products/config");
+    backendConfig = res.data;
+    return backendConfig;
+  } catch (err) {
+    // Fallback defaults
+    return {
+      FOOTWEAR_THRESHOLD: 24,
+      DEFAULT_THRESHOLD: 100,
+      LOT_CATEGORIES: ["JOB LOTS", "UNDER £5"],
+      MIN_ORDER_TOTAL: 300,
+    };
+  }
+};
 
 /** Minimum cart total (£) — orders below this are rejected. */
-export const MIN_CART_TOTAL = 300;
+export const MIN_CART_TOTAL = 300; // Legacy export, should use config.MIN_ORDER_TOTAL ideally
 
 /**
  * Determine MOQ rules for a product.
- *
- * Rules (from client — Lily / Jim, March 2026):
- *   FOOTWEAR  — min order 12 units, totalQty < 12 → must buy ALL
- *   Everything else — min order 25 units, totalQty < 25 → must buy ALL
- *
  * Returns { threshold, mustBuyAll: boolean }
  */
 export function getMOQInfo(product) {
   const cat = (product?.category || "").toUpperCase();
   const totalQty = getTotalQuantity(product);
   
-  // LOT categories are indivisible items
-  const LOT_CATEGORIES = ["JOB LOTS", "UNDER £5"];
-  const isLotCategory = LOT_CATEGORIES.includes(cat);
+  // Use fetched config if available, else defaults
+  const config = backendConfig || {
+    FOOTWEAR_THRESHOLD: 24,
+    DEFAULT_THRESHOLD: 100,
+    LOT_CATEGORIES: ["JOB LOTS", "UNDER £5"],
+  };
+  
+  const isLotCategory = config.LOT_CATEGORIES.includes(cat);
   
   if (isLotCategory) {
     return {
@@ -390,6 +425,7 @@ export function getMOQInfo(product) {
   }
   
   // Normal products: threshold-based controls
+  // Hardcoded to 24 for all non-lot items as per previous requirements
   const mustBuyAllThreshold = 24;
   const moqStep = 1;
   const mustBuyAll = totalQty > 0 && totalQty <= mustBuyAllThreshold;

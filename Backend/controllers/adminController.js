@@ -10,6 +10,8 @@ const {
   deriveCategoryCanonical,
   deriveSubcategoryCanonical,
 } = require("../utils/taxonomyUtils");
+const cache = require("../lib/catalogCache");
+const log = require("../lib/logger");
 
 function markManualProduct(product) {
   if (product) {
@@ -117,6 +119,9 @@ exports.addProduct = async (req, res) => {
 
     const isNew = product.createdAt.getTime() === product.updatedAt.getTime();
 
+    // Invalidate product cache after add/upsert
+    cache.invalidateProducts().catch(() => {});
+
     res.status(201).json({
       success: true,
       product,
@@ -213,6 +218,9 @@ exports.updateProduct = async (req, res) => {
       return res.status(500).json({ error: "Product save returned null - validation may have failed." });
     }
 
+    // Invalidate product cache after update
+    cache.invalidateProducts().catch(() => {});
+
     res.json({ success: true, product: savedProduct, updated: 1 });
   } catch (err) {
     console.error(`[ERROR] updateProduct failed:`, err.message, err.stack);
@@ -244,6 +252,9 @@ exports.deleteProduct = async (req, res) => {
     });
 
     await Product.findOneAndDelete({ sku });
+
+    // Invalidate product cache after delete
+    cache.invalidateProducts().catch(() => {});
 
     res.json({ success: true, message: `Product ${sku} deleted (backup saved).` });
   } catch (err) {
@@ -283,6 +294,10 @@ exports.deleteAllProducts = async (req, res) => {
     });
 
     const result = await Product.deleteMany({});
+
+    // Invalidate all caches after bulk delete
+    cache.invalidateAll().catch(() => {});
+
     res.json({
       success: true,
       message: `All ${result.deletedCount} products cleared. Backup saved — you can restore within 30 days.`,
@@ -348,7 +363,95 @@ exports.restoreProducts = async (req, res) => {
       skipped,
       total: products.length,
     });
+
+    // Invalidate product cache after restore
+    cache.invalidateProducts().catch(() => {});
+
   } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+/**
+ * POST /api/admin/bulk-price-adjust
+ * Apply a percentage price adjustment to all (or filtered) products.
+ * Body: { percentage: -10, category?: 'FOOTWEAR', brand?: 'ADIDAS', dryRun?: true }
+ */
+exports.bulkPriceAdjust = async (req, res) => {
+  try {
+    const { percentage, category, brand, dryRun = false } = req.body;
+    const pct = parseFloat(percentage);
+
+    if (isNaN(pct) || pct < -90 || pct > 500) {
+      return res.status(400).json({
+        error: 'Percentage must be between -90 and 500.',
+      });
+    }
+
+    const filter = { isActive: true };
+    if (category) filter.category = { $regex: `^${category}$`, $options: 'i' };
+    if (brand) filter.brand = { $regex: `^${brand}$`, $options: 'i' };
+
+    const multiplier = 1 + pct / 100;
+    const matchedCount = await Product.countDocuments(filter);
+
+    if (matchedCount === 0) {
+      return res.status(404).json({ error: 'No products match the filter.' });
+    }
+
+    if (dryRun) {
+      // Preview: show sample of affected products
+      const samples = await Product.find(filter)
+        .select('sku name salePrice category brand')
+        .limit(10)
+        .lean();
+
+      return res.json({
+        dryRun: true,
+        matchedCount,
+        percentage: pct,
+        multiplier,
+        samples: samples.map((p) => ({
+          sku: p.sku,
+          name: p.name,
+          currentPrice: p.salePrice,
+          newPrice: +(p.salePrice * multiplier).toFixed(2),
+          category: p.category,
+          brand: p.brand,
+        })),
+      });
+    }
+
+    // Execute the bulk update
+    const result = await Product.updateMany(filter, [
+      {
+        $set: {
+          salePrice: {
+            $round: [{ $multiply: ['$salePrice', multiplier] }, 2],
+          },
+        },
+      },
+    ]);
+
+    log.info('admin', 'Bulk price adjustment applied', {
+      percentage: pct,
+      matchedCount,
+      modifiedCount: result.modifiedCount,
+      filter: { category, brand },
+    });
+
+    // Invalidate cache after price changes
+    cache.invalidateProducts().catch(() => {});
+
+    res.json({
+      success: true,
+      matchedCount,
+      modifiedCount: result.modifiedCount,
+      percentage: pct,
+      message: `Applied ${pct > 0 ? '+' : ''}${pct}% price adjustment to ${result.modifiedCount} products.`,
+    });
+  } catch (err) {
+    log.error('admin', 'Bulk price adjustment failed', { error: err.message });
     res.status(500).json({ error: err.message });
   }
 };

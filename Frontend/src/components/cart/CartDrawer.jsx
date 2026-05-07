@@ -6,6 +6,7 @@ import { useAuth } from "../../context/AuthContext";
 import { AUTH_PUBLIC_MODE } from "../../config/featureFlags";
 import { resolveImageUrl, MIN_CART_TOTAL, getSizes } from "../../api/api";
 import API from "../../api/axiosInstance";
+import { parseApiError } from "../../utils/errorReporter";
 
 const PLACEHOLDER = "https://placehold.co/64x64/e2e8f0/64748b?text=—";
 
@@ -180,7 +181,14 @@ export default function CartDrawer() {
       clearCart();
       toast.success("Order confirmed!");
     } catch (err) {
-      toast.error(err?.response?.data?.error || "Failed to confirm order. Please try again.");
+      const { message, fieldErrors } = parseApiError(err);
+      if (fieldErrors.length > 0) {
+        // Show field-level validation errors from Zod
+        const details = fieldErrors.slice(0, 3).map((e) => `${e.field}: ${e.message}`).join("\n");
+        toast.error(`${message}\n${details}`, { duration: 6000 });
+      } else {
+        toast.error(message || "Failed to confirm order. Please try again.");
+      }
     } finally {
       setSubmitting(false);
     }

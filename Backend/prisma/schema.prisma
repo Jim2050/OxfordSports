@@ -1,0 +1,121 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+enum Role {
+  MEMBER
+  ADMIN
+}
+
+enum OrderStatus {
+  PENDING
+  PAYMENT_VERIFIED
+  PROCESSING
+  SHIPPED
+  DELIVERED
+  ABORTED
+}
+
+model User {
+  id              String   @id @default(uuid())
+  name            String
+  email           String   @unique
+  password        String
+  company         String?
+  mobileNumber    String?
+  deliveryAddress String?
+  role            Role     @default(MEMBER)
+  isApproved      Boolean  @default(true)
+  orders          Order[]
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+model Product {
+  id            String   @id @default(uuid())
+  sku           String   @unique
+  name          String
+  description   String?
+  category      String?
+  subcategory   String?
+  brand         String?
+  salePrice     Float
+  rrp           Float?   @default(0)
+  totalQuantity Int      @default(0)
+  imageUrl      String?
+  imagePublicId String?
+  isActive      Boolean  @default(true)
+  
+  sizes            ProductSize[]
+  wholesalePricing WholesalePricing[] // Tiered pricing & MOQ
+  orderItems       OrderItem[]
+  
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
+
+model ProductSize {
+  id        String  @id @default(uuid())
+  productId String
+  size      String
+  quantity  Int     @default(0)
+  
+  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+}
+
+model WholesalePricing {
+  id             String  @id @default(uuid())
+  productId      String
+  minQuantity    Int     @default(1)
+  pricePerUnit   Float
+  discountPercent Float?
+  
+  product        Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+}
+
+model Order {
+  id              String      @id @default(uuid())
+  orderNumber     String      @unique
+  userId          String
+  user            User        @relation(fields: [userId], references: [id])
+  
+  customerName    String
+  customerEmail   String
+  customerCompany String?
+  customerPhone   String?
+  deliveryAddress String?
+  
+  totalAmount     Float
+  status          OrderStatus @default(PENDING)
+  notes           String?
+  
+  emailSent       Boolean     @default(false)
+  emailError      String?
+  
+  items           OrderItem[]
+  
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+}
+
+model OrderItem {
+  id              String   @id @default(uuid())
+  orderId         String
+  productId       String
+  sku             String
+  name            String
+  size            String?
+  quantity        Int
+  unitPrice       Float
+  lineTotal       Float
+  lotItem         Boolean  @default(false)
+  lotSizeBreakdown String?
+
+  order           Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  product         Product  @relation(fields: [productId], references: [id])
+}

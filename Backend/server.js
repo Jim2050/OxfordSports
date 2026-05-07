@@ -48,6 +48,9 @@ const authRoutes = require("./routes/authRoutes");
 const orderRoutes = require("./routes/orderRoutes");
 const testRoutes = require("./routes/testRoutes");
 const { notFound, errorHandler } = require("./middleware/errorMiddleware");
+const { initEmailQueue, shutdownEmailQueue } = require("./lib/emailQueue");
+const { initImportQueue, shutdownImportQueue } = require("./lib/importQueue");
+const log = require("./lib/logger");
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -122,6 +125,19 @@ if (process.env.NODE_ENV !== "production") {
   app.use("/api/test", testRoutes);  // Test endpoints for health checks and verification
 }
 
+// ── Client error reporting endpoint (receives frontend errors via sendBeacon) ──
+app.post("/api/client-errors", express.json({ limit: "16kb" }), (req, res) => {
+  const { type, message, stack, url, timestamp, ...extra } = req.body || {};
+  log.warn("client-error", message || "Unknown client error", {
+    type: type || "unknown",
+    clientUrl: url,
+    clientTimestamp: timestamp,
+    stack: stack ? String(stack).slice(0, 500) : undefined,
+    ...extra,
+  });
+  res.status(204).end();
+});
+
 // ── Health check ──
 app.get("/api/health", async (_req, res) => {
   const Product = require("./models/Product");
@@ -192,10 +208,32 @@ async function seedAdmin() {
 async function start() {
   await connectDB();
   await seedAdmin();
-  app.listen(PORT, () => {
+
+  // Initialize BullMQ queues (graceful if Redis unavailable)
+  initEmailQueue();
+  initImportQueue();
+
+  const server = app.listen(PORT, () => {
+    log.info('server', 'Oxford Sports API started', { port: PORT, nodeEnv: process.env.NODE_ENV });
     console.log(`\n🚀  Oxford Sports API running on http://localhost:${PORT}`);
     console.log(`📦  Database: MongoDB Atlas\n`);
   });
+
+  // ── Graceful shutdown (Railway sends SIGTERM on deploy) ──
+  async function shutdown(signal) {
+    log.info('server', `${signal} received — shutting down gracefully`);
+    server.close(async () => {
+      await shutdownEmailQueue();
+      await shutdownImportQueue();
+      log.info('server', 'Server shut down complete');
+      process.exit(0);
+    });
+    // Force kill after 10 seconds if graceful fails
+    setTimeout(() => process.exit(1), 10000);
+  }
+
+  process.on('SIGTERM', () => shutdown('SIGTERM'));
+  process.on('SIGINT', () => shutdown('SIGINT'));
 }
 
 start();

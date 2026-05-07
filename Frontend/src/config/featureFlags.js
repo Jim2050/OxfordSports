@@ -7,4 +7,4 @@
  * Currently set to true (temporary public mode).
  * To re-enable auth: change the value below to false, commit, and push.
  */
-export const AUTH_PUBLIC_MODE = true;
+export const AUTH_PUBLIC_MODE = false;
