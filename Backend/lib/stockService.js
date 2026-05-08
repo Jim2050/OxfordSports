@@ -220,6 +220,11 @@ function enforceMustBuyAll(skuMap, lotSkus) {
 
     if (totalQty <= 0 || totalQty >= threshold) continue;
 
+    // Fix: If the user already bought the entire product stock (e.g. clicked "Buy all items"),
+    // skip adding missing sizes to avoid duplicate allocations and stock conflicts.
+    const orderedQty = entry.items.reduce((sum, i) => sum + i.quantity, 0);
+    if (orderedQty >= totalQty) continue;
+
     const availableSizes = (product.sizes || [])
       .filter((s) => s.quantity > 0 && String(s.size || '').trim() !== '');
     const orderedSizes = new Set(entry.items.map((i) => (i.size || '').trim()));
