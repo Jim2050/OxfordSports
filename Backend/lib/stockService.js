@@ -273,42 +273,105 @@ function enforceMustBuyAll(skuMap, lotSkus) {
 }
 
 /**
- * Execute stock deductions atomically, with manual rollback on failure.
+ * Execute stock deductions atomically, with retry and manual rollback on failure.
+ *
+ * Strategy:
+ *   1. Send ALL operations in a single bulkWrite so MongoDB processes them
+ *      in one round-trip. This eliminates the window between sequential writes
+ *      that caused false-positive STOCK_CONFLICT errors.
+ *   2. Verify that every operation modified exactly one document.
+ *      If not, the stock genuinely changed between validation and deduction.
+ *   3. Retry once (with a short jitter delay) before declaring a real conflict,
+ *      to handle the rare case where a concurrent write resolves immediately.
+ *   4. On confirmed failure, roll back all successful deductions.
+ *
  * @param {object[]} stockUpdates - Array of bulkWrite operations
+ * @param {number} [attempt=1] - Internal retry counter (max 2 attempts)
  * @returns {Promise<void>}
  */
-async function executeStockDeductions(stockUpdates) {
-  const rollbacks = [];
+async function executeStockDeductions(stockUpdates, attempt = 1) {
+  if (!stockUpdates || stockUpdates.length === 0) return;
+
+  const MAX_ATTEMPTS = 2;
 
   try {
-    for (const op of stockUpdates) {
-      const result = await Product.bulkWrite([op], { ordered: true });
-      if (result.modifiedCount !== 1) {
-        const err = new Error('Concurrent stock change detected');
-        err.code = 'STOCK_CONFLICT';
-        throw err;
+    // Execute all deductions in a single bulkWrite call.
+    // ordered:true ensures ops run sequentially and stop on first error.
+    const result = await Product.bulkWrite(stockUpdates, { ordered: true });
+
+    if (result.modifiedCount !== stockUpdates.length) {
+      // Some ops did not match — stock changed between validation and deduction.
+      // With ordered:true, bulkWrite stops at the first unmatched op, so
+      // modifiedCount tells us exactly how many succeeded before the failure.
+      const appliedOps = stockUpdates.slice(0, result.modifiedCount);
+
+      if (attempt < MAX_ATTEMPTS) {
+        // Roll back what succeeded, then retry after a short jitter delay.
+        await rollbackOps(appliedOps, stockUpdates.length);
+        const jitter = 50 + Math.floor(Math.random() * 100); // 50–150 ms
+        await new Promise((resolve) => setTimeout(resolve, jitter));
+        log.warn('stock', 'Stock deduction partial match — retrying', {
+          attempt,
+          matched: result.modifiedCount,
+          expected: stockUpdates.length,
+        });
+        return executeStockDeductions(stockUpdates, attempt + 1);
       }
-      rollbacks.push(op);
+
+      // Genuine conflict after retries — roll back and surface to caller.
+      await rollbackOps(appliedOps, stockUpdates.length);
+      const err = new Error('Concurrent stock change detected');
+      err.code = 'STOCK_CONFLICT';
+      throw err;
     }
-  } catch (err) {
-    // Rollback all successful deductions
-    log.warn('stock', 'Rolling back stock deductions', {
-      successfulOps: rollbacks.length,
-      totalOps: stockUpdates.length,
-      error: err.message,
+
+    log.info('stock', 'Stock deductions applied', {
+      ops: stockUpdates.length,
+      attempt,
     });
-
-    for (const op of rollbacks) {
-      const rollback = JSON.parse(JSON.stringify(op));
-      const inc = rollback.updateOne.update.$inc;
-      for (const key of Object.keys(inc)) {
-        inc[key] = -inc[key];
-      }
-      await Product.bulkWrite([rollback], { ordered: false }).catch(() => {});
+  } catch (err) {
+    if (err.code === 'STOCK_CONFLICT') {
+      // Already rolled back inside the retry path above; just re-throw.
+      throw err;
     }
 
+    // Unexpected DB error — log and re-throw; caller handles the 500 response.
+    log.error('stock', 'Stock deduction DB error', {
+      error: err.message,
+      attempt,
+    });
     throw err;
   }
+}
+
+/**
+ * Reverse a set of stock deduction operations.
+ * @param {object[]} ops - Operations to reverse
+ * @param {number} totalOps - Total ops in the original batch (for logging)
+ */
+async function rollbackOps(ops, totalOps) {
+  if (!ops || ops.length === 0) return;
+
+  log.warn('stock', 'Rolling back stock deductions', {
+    successfulOps: ops.length,
+    totalOps,
+  });
+
+  const rollbacks = ops.map((op) => {
+    const rollback = JSON.parse(JSON.stringify(op));
+    const inc = rollback.updateOne.update.$inc;
+    for (const key of Object.keys(inc)) {
+      inc[key] = -inc[key];
+    }
+    return rollback;
+  });
+
+  await Product.bulkWrite(rollbacks, { ordered: false }).catch((rbErr) => {
+    log.error('stock', 'Rollback failed — manual intervention may be required', {
+      error: rbErr.message,
+      ops: rollbacks.length,
+    });
+  });
 }
 
 /** Helper to create errors with status codes */
