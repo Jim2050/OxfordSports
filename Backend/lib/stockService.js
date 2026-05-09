@@ -29,9 +29,11 @@ function validateAndAllocateItem(item, product) {
   const sizeEntries = Array.isArray(product.sizes) ? product.sizes : [];
   const hasSizeStock = sizeEntries.length > 0 && sizeEntries.some((s) => s.quantity > 0);
   const validLotSizes = sizeEntries.filter((s) => s.quantity > 0 && String(s.size || '').trim() !== '');
+  const totalFromSizes = sizeEntries.reduce((sum, s) => sum + (Number(s.quantity) || 0), 0);
+  const totalAvailable = hasSizeStock ? totalFromSizes : (Number(product.totalQuantity) || 0);
 
   const effectiveQty = isLotItem
-    ? Math.floor(Math.max(0, Number(product.totalQuantity) || 0))
+    ? Math.floor(Math.max(0, totalAvailable))
     : qty;
 
   const incomingSize = isLotItem ? '' : (item.size || '').trim();
@@ -57,17 +59,17 @@ function validateAndAllocateItem(item, product) {
   if (hasSizeStock) {
     if (isLotItem) {
       // Lot allocation: take from all sizes proportionally
-      const ops = allocateAcrossAllSizes(product, effectiveQty, validLotSizes, sizeEntries);
+      const ops = allocateAcrossAllSizes(product, effectiveQty, validLotSizes, sizeEntries, totalAvailable);
       stockOps.push(...ops);
     } else {
       // Regular item: allocate specific size
-      const result = allocateSpecificSize(product, size, effectiveQty, sizeEntries, validLotSizes);
+      const result = allocateSpecificSize(product, size, effectiveQty, sizeEntries, validLotSizes, totalAvailable);
       size = result.size;
       stockOps.push(...result.ops);
     }
-  } else if (product.totalQuantity > 0) {
-    if (effectiveQty > product.totalQuantity) {
-      throw createError(400, `Only ${product.totalQuantity} available for ${product.name}.`);
+  } else if (totalAvailable > 0) {
+    if (effectiveQty > totalAvailable) {
+      throw createError(400, `Only ${totalAvailable} available for ${product.name}.`);
     }
     stockOps.push({
       updateOne: {
@@ -102,9 +104,9 @@ function validateAndAllocateItem(item, product) {
 /**
  * Allocate stock across all available sizes (lot-style).
  */
-function allocateAcrossAllSizes(product, effectiveQty, validLotSizes, sizeEntries) {
-  if (effectiveQty > product.totalQuantity) {
-    throw createError(400, `Only ${product.totalQuantity} units available for ${product.name}.`);
+function allocateAcrossAllSizes(product, effectiveQty, validLotSizes, sizeEntries, totalAvailable) {
+  if (effectiveQty > totalAvailable) {
+    throw createError(400, `Only ${totalAvailable} units available for ${product.name}.`);
   }
 
   let remaining = effectiveQty;
@@ -125,7 +127,6 @@ function allocateAcrossAllSizes(product, effectiveQty, validLotSizes, sizeEntrie
           _id: product._id,
           'sizes.size': sizeEntry.size,
           'sizes.quantity': { $gte: takeQty },
-          totalQuantity: { $gte: takeQty },
         },
         update: {
           $inc: { 'sizes.$.quantity': -takeQty, totalQuantity: -takeQty },
@@ -136,7 +137,7 @@ function allocateAcrossAllSizes(product, effectiveQty, validLotSizes, sizeEntrie
   }
 
   if (remaining > 0) {
-    throw createError(400, `Only ${product.totalQuantity} units available for ${product.name}.`);
+    throw createError(400, `Only ${totalAvailable} units available for ${product.name}.`);
   }
 
   return ops;
@@ -145,7 +146,7 @@ function allocateAcrossAllSizes(product, effectiveQty, validLotSizes, sizeEntrie
 /**
  * Allocate a specific size for a regular (non-lot) item.
  */
-function allocateSpecificSize(product, size, effectiveQty, sizeEntries, validLotSizes) {
+function allocateSpecificSize(product, size, effectiveQty, sizeEntries, validLotSizes, totalAvailable) {
   const normalizedSize = size.trim();
   let sizeEntry = sizeEntries.find((s) => s.size && s.size.trim() === normalizedSize);
 
@@ -160,12 +161,12 @@ function allocateSpecificSize(product, size, effectiveQty, sizeEntries, validLot
 
   const available = sizeEntry ? sizeEntry.quantity : 0;
 
-  if (!sizeEntry && product.totalQuantity > 0) {
+  if (!sizeEntry && totalAvailable > 0) {
     if (normalizedSize) {
       throw createError(400, `Out of stock for ${product.name} in size ${normalizedSize}.`);
     }
     // Fallback: allocate across all sizes
-    const ops = allocateAcrossAllSizes(product, effectiveQty, validLotSizes, sizeEntries);
+    const ops = allocateAcrossAllSizes(product, effectiveQty, validLotSizes, sizeEntries, totalAvailable);
     return { size, ops };
   }
 
@@ -183,7 +184,6 @@ function allocateSpecificSize(product, size, effectiveQty, sizeEntries, validLot
         _id: product._id,
         'sizes.size': sizeEntry.size,
         'sizes.quantity': { $gte: effectiveQty },
-        totalQuantity: { $gte: effectiveQty },
       },
       update: {
         $inc: { 'sizes.$.quantity': -effectiveQty, totalQuantity: -effectiveQty },
@@ -216,7 +216,9 @@ function enforceMustBuyAll(skuMap, lotSkus) {
 
     const isFootwear = cat === 'FOOTWEAR';
     const threshold = isFootwear ? FOOTWEAR_THRESHOLD : DEFAULT_THRESHOLD;
-    const totalQty = product.totalQuantity || 0;
+    const sizeEntries = Array.isArray(product.sizes) ? product.sizes : [];
+    const totalFromSizes = sizeEntries.reduce((sum, s) => sum + (Number(s.quantity) || 0), 0);
+    const totalQty = sizeEntries.length > 0 ? totalFromSizes : (product.totalQuantity || 0);
 
     if (totalQty <= 0 || totalQty >= threshold) continue;
 
@@ -225,7 +227,7 @@ function enforceMustBuyAll(skuMap, lotSkus) {
     const orderedQty = entry.items.reduce((sum, i) => sum + i.quantity, 0);
     if (orderedQty >= totalQty) continue;
 
-    const availableSizes = (product.sizes || [])
+    const availableSizes = sizeEntries
       .filter((s) => s.quantity > 0 && String(s.size || '').trim() !== '');
     const orderedSizes = new Set(entry.items.map((i) => (i.size || '').trim()));
 
@@ -257,7 +259,6 @@ function enforceMustBuyAll(skuMap, lotSkus) {
             _id: product._id,
             'sizes.size': sizeEntry.size,
             'sizes.quantity': { $gte: missingSizeQty },
-            totalQuantity: { $gte: missingSizeQty },
           },
           update: {
             $inc: { 'sizes.$.quantity': -missingSizeQty, totalQuantity: -missingSizeQty },
@@ -280,6 +281,7 @@ function enforceMustBuyAll(skuMap, lotSkus) {
 async function executeStockDeductions(stockUpdates) {
   if (!Array.isArray(stockUpdates) || stockUpdates.length === 0) return;
 
+  const sizeProductIds = collectSizeTrackedProductIds(stockUpdates);
   const maxAttempts = Math.max(1, parseInt(process.env.STOCK_DEDUCTION_RETRIES || '3', 10));
   const retryMin = Math.max(0, parseInt(process.env.STOCK_DEDUCTION_RETRY_MIN_MS || '50', 10));
   const retryMax = Math.max(retryMin, parseInt(process.env.STOCK_DEDUCTION_RETRY_MAX_MS || '150', 10));
@@ -297,6 +299,14 @@ async function executeStockDeductions(stockUpdates) {
           const err = new Error('Concurrent stock change detected');
           err.code = 'STOCK_CONFLICT';
           throw err;
+        }
+
+        if (sizeProductIds.length > 0) {
+          await Product.updateMany(
+            { _id: { $in: sizeProductIds } },
+            [{ $set: { totalQuantity: { $sum: '$sizes.quantity' } } }],
+            { session },
+          );
         }
       });
 
@@ -334,6 +344,22 @@ async function executeStockDeductions(stockUpdates) {
       session.endSession();
     }
   }
+}
+
+function collectSizeTrackedProductIds(stockUpdates) {
+  const ids = new Set();
+  for (const op of stockUpdates || []) {
+    const updateOne = op && op.updateOne;
+    if (!updateOne || !updateOne.filter) continue;
+    const filter = updateOne.filter || {};
+    const update = updateOne.update || {};
+    const hasSizeFilter = Object.prototype.hasOwnProperty.call(filter, 'sizes.size');
+    const hasSizeInc = update.$inc && Object.prototype.hasOwnProperty.call(update.$inc, 'sizes.$.quantity');
+    if ((hasSizeFilter || hasSizeInc) && filter._id) {
+      ids.add(String(filter._id));
+    }
+  }
+  return Array.from(ids);
 }
 
 function randomBetween(min, max) {
