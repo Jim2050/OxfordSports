@@ -286,29 +286,49 @@ async function executeStockDeductions(stockUpdates) {
 
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
     const session = await Product.startSession();
+    let modifiedCount = 0;
+
     try {
-      let result;
       await session.withTransaction(async () => {
-        result = await Product.bulkWrite(stockUpdates, { ordered: true, session });
-        if (result.modifiedCount !== stockUpdates.length) {
+        const result = await Product.bulkWrite(stockUpdates, { ordered: true, session });
+        modifiedCount = result.modifiedCount || 0;
+
+        if (modifiedCount !== stockUpdates.length) {
           const err = new Error('Concurrent stock change detected');
           err.code = 'STOCK_CONFLICT';
           throw err;
         }
       });
+
+      log.info('stock', 'Stock deductions applied', {
+        ops: stockUpdates.length,
+        attempt,
+      });
       return;
     } catch (err) {
       if (err.code === 'STOCK_CONFLICT') {
-        log.warn('stock', 'Stock deduction conflict', {
-          attempt,
-          maxAttempts,
-          error: err.message,
-        });
         if (attempt < maxAttempts) {
+          log.warn('stock', 'Stock deduction partial match — retrying', {
+            attempt,
+            matched: modifiedCount,
+            expected: stockUpdates.length,
+          });
           await sleep(randomBetween(retryMin, retryMax));
           continue;
         }
+
+        log.warn('stock', 'Stock deduction conflict — giving up', {
+          attempt,
+          matched: modifiedCount,
+          expected: stockUpdates.length,
+        });
+        throw err;
       }
+
+      log.error('stock', 'Stock deduction failed', {
+        error: err.message,
+        attempt,
+      });
       throw err;
     } finally {
       session.endSession();

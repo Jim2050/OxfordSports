@@ -7,6 +7,13 @@ const {
   deriveSubcategoryCanonical,
 } = require("../utils/taxonomyUtils");
 const cache = require("../lib/catalogCache");
+const log = require("../lib/logger");
+
+// ── In-memory cache for the categories endpoint ──
+// These are intentionally module-level so they persist across requests.
+const CACHE_TTL = 5 * 60 * 1000; // 5 minutes in milliseconds
+let categoriesCache = null;
+let categoriesCacheTimestamp = 0;
 
 // Escape user input for safe use in $regex queries (prevent ReDoS / NoSQL injection)
 function escapeRegex(str) {
@@ -418,6 +425,7 @@ exports.getCategories = async (_req, res) => {
     categoriesCacheTimestamp = Date.now();
     res.json({ categories: withCounts });
   } catch (err) {
+    log.error('product', 'getCategories failed', { error: err.message, stack: err.stack });
     res.status(500).json({ error: err.message });
   }
 };
