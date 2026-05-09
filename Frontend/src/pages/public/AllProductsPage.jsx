@@ -28,6 +28,7 @@ export default function AllProductsPage() {
   const [page, setPage] = useState(1);
   const [totalProducts, setTotalProducts] = useState(0);
   const ITEMS_PER_PAGE = 100;
+  const [refreshTick, setRefreshTick] = useState(0);
 
   // Load brands on mount
   useEffect(() => {
@@ -38,6 +39,12 @@ export default function AllProductsPage() {
     fetchPublicCategories()
       .then((data) => setCategories(Array.isArray(data?.categories) ? data.categories : []))
       .catch(() => setCategories([]));
+  }, []);
+
+  useEffect(() => {
+    const handleCatalogRefresh = () => setRefreshTick((tick) => tick + 1);
+    window.addEventListener("catalog:refresh", handleCatalogRefresh);
+    return () => window.removeEventListener("catalog:refresh", handleCatalogRefresh);
   }, []);
 
   // Sync ALL filter params from URL when navigating (e.g. nav dropdown links).
@@ -104,7 +111,7 @@ export default function AllProductsPage() {
       })
       .catch(() => { setProducts([]); setTotalProducts(0); })
       .finally(() => setLoading(false));
-  }, [search, brand, gender, category, subcategory, debouncedMinPrice, debouncedMaxPrice, page]);
+  }, [search, brand, gender, category, subcategory, debouncedMinPrice, debouncedMaxPrice, page, refreshTick]);
 
   const resetPage = () => setPage(1);
 

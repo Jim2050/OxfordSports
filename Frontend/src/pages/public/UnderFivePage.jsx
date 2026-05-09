@@ -7,6 +7,7 @@ export default function UnderFivePage() {
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
+  const [refreshTick, setRefreshTick] = useState(0);
 
   useEffect(() => {
     setLoading(true);
@@ -18,7 +19,13 @@ export default function UnderFivePage() {
       )
       .catch(() => setProducts([]))
       .finally(() => setLoading(false));
-  }, [search]);
+  }, [search, refreshTick]);
+
+  useEffect(() => {
+    const handleCatalogRefresh = () => setRefreshTick((tick) => tick + 1);
+    window.addEventListener("catalog:refresh", handleCatalogRefresh);
+    return () => window.removeEventListener("catalog:refresh", handleCatalogRefresh);
+  }, []);
 
   return (
     <>

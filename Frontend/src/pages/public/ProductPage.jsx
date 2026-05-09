@@ -21,6 +21,7 @@ export default function ProductPage() {
   // Total qty the customer wants to order
   const [orderQty, setOrderQty] = useState(1);
   const [orderQtyInput, setOrderQtyInput] = useState("1");
+  const [refreshTick, setRefreshTick] = useState(0);
   const { addToCart, isSkuInCart, openDrawer } = useCart();
 
   useEffect(() => {
@@ -37,7 +38,13 @@ export default function ProductPage() {
       })
       .catch(() => setProduct(null))
       .finally(() => setLoading(false));
-  }, [sku]);
+  }, [sku, refreshTick]);
+
+  useEffect(() => {
+    const handleCatalogRefresh = () => setRefreshTick((tick) => tick + 1);
+    window.addEventListener("catalog:refresh", handleCatalogRefresh);
+    return () => window.removeEventListener("catalog:refresh", handleCatalogRefresh);
+  }, []);
 
   if (loading) {
     return (

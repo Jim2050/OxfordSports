@@ -31,6 +31,7 @@ export default function CategoryPage() {
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
+  const [refreshTick, setRefreshTick] = useState(0);
 
   const meta = CATEGORY_META[slug] || {
     title: slug.replace(/-/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()),
@@ -47,7 +48,13 @@ export default function CategoryPage() {
       )
       .catch(() => setProducts([]))
       .finally(() => setLoading(false));
-  }, [slug, search]);
+  }, [slug, search, refreshTick]);
+
+  useEffect(() => {
+    const handleCatalogRefresh = () => setRefreshTick((tick) => tick + 1);
+    window.addEventListener("catalog:refresh", handleCatalogRefresh);
+    return () => window.removeEventListener("catalog:refresh", handleCatalogRefresh);
+  }, []);
 
   // Pick up to 4 products with images for the background showcase
   const bgProducts = products

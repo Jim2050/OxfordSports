@@ -179,6 +179,7 @@ export default function CartDrawer() {
       setConfirmedOrder(order);
       setReviewingLocal(false);
       clearCart();
+      window.dispatchEvent(new Event("catalog:refresh"));
       toast.success("Order confirmed!");
     } catch (err) {
       const { message, fieldErrors } = parseApiError(err);
