@@ -273,42 +273,57 @@ function enforceMustBuyAll(skuMap, lotSkus) {
 }
 
 /**
- * Execute stock deductions atomically, with manual rollback on failure.
+ * Execute stock deductions atomically in a transaction, with retry on conflict.
  * @param {object[]} stockUpdates - Array of bulkWrite operations
  * @returns {Promise<void>}
  */
 async function executeStockDeductions(stockUpdates) {
-  const rollbacks = [];
+  if (!Array.isArray(stockUpdates) || stockUpdates.length === 0) return;
 
-  try {
-    for (const op of stockUpdates) {
-      const result = await Product.bulkWrite([op], { ordered: true });
-      if (result.modifiedCount !== 1) {
-        const err = new Error('Concurrent stock change detected');
-        err.code = 'STOCK_CONFLICT';
-        throw err;
+  const maxAttempts = Math.max(1, parseInt(process.env.STOCK_DEDUCTION_RETRIES || '3', 10));
+  const retryMin = Math.max(0, parseInt(process.env.STOCK_DEDUCTION_RETRY_MIN_MS || '50', 10));
+  const retryMax = Math.max(retryMin, parseInt(process.env.STOCK_DEDUCTION_RETRY_MAX_MS || '150', 10));
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    const session = await Product.startSession();
+    try {
+      let result;
+      await session.withTransaction(async () => {
+        result = await Product.bulkWrite(stockUpdates, { ordered: true, session });
+        if (result.modifiedCount !== stockUpdates.length) {
+          const err = new Error('Concurrent stock change detected');
+          err.code = 'STOCK_CONFLICT';
+          throw err;
+        }
+      });
+      return;
+    } catch (err) {
+      if (err.code === 'STOCK_CONFLICT') {
+        log.warn('stock', 'Stock deduction conflict', {
+          attempt,
+          maxAttempts,
+          error: err.message,
+        });
+        if (attempt < maxAttempts) {
+          await sleep(randomBetween(retryMin, retryMax));
+          continue;
+        }
       }
-      rollbacks.push(op);
+      throw err;
+    } finally {
+      session.endSession();
     }
-  } catch (err) {
-    // Rollback all successful deductions
-    log.warn('stock', 'Rolling back stock deductions', {
-      successfulOps: rollbacks.length,
-      totalOps: stockUpdates.length,
-      error: err.message,
-    });
-
-    for (const op of rollbacks) {
-      const rollback = JSON.parse(JSON.stringify(op));
-      const inc = rollback.updateOne.update.$inc;
-      for (const key of Object.keys(inc)) {
-        inc[key] = -inc[key];
-      }
-      await Product.bulkWrite([rollback], { ordered: false }).catch(() => {});
-    }
-
-    throw err;
   }
+}
+
+function randomBetween(min, max) {
+  const low = Math.min(min, max);
+  const high = Math.max(min, max);
+  return Math.floor(Math.random() * (high - low + 1)) + low;
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 /** Helper to create errors with status codes */
