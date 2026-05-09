@@ -274,7 +274,7 @@ function enforceMustBuyAll(skuMap, lotSkus) {
 }
 
 /**
- * Execute stock deductions atomically in a transaction.
+ * Execute stock deductions as a single bulk write.
  * @param {object[]} stockUpdates - Array of bulkWrite operations
  * @param {object} [context] - Optional order summary for diagnostics
  * @returns {Promise<void>}
@@ -282,76 +282,33 @@ function enforceMustBuyAll(skuMap, lotSkus) {
 async function executeStockDeductions(stockUpdates, context = {}) {
   if (!Array.isArray(stockUpdates) || stockUpdates.length === 0) return;
 
-  const sizeProductIds = collectSizeTrackedProductIds(stockUpdates);
   const checkoutItems = Array.isArray(context.items) ? context.items : [];
-
-  const session = await Product.startSession();
   try {
-    await session.withTransaction(async () => {
-      const result = await Product.bulkWrite(stockUpdates, { ordered: true, session });
-      const matchedCount = result.matchedCount || 0;
-      const modifiedCount = result.modifiedCount || 0;
+    const result = await Product.bulkWrite(stockUpdates, { ordered: true });
+    const matchedCount = result.matchedCount || 0;
+    const modifiedCount = result.modifiedCount || 0;
 
-      if (sizeProductIds.length > 0) {
-        await Product.updateMany(
-          { _id: { $in: sizeProductIds } },
-          [{ $set: { totalQuantity: { $sum: '$sizes.quantity' } } }],
-          { session },
-        );
-      }
-
-      if (matchedCount !== stockUpdates.length) {
-        const err = new Error('Concurrent stock change detected');
-        err.code = 'STOCK_CONFLICT';
-        err.details = {
-          expectedOps: stockUpdates.length,
-          matchedCount,
-          modifiedCount,
-          items: checkoutItems,
-        };
-        throw err;
-      }
-
-      log.info('stock', 'Stock deductions applied', {
-        ops: stockUpdates.length,
-        matched: matchedCount,
-        modified: modifiedCount,
-      });
-    });
-  } catch (err) {
-    if (err.code === 'STOCK_CONFLICT') {
+    if (matchedCount !== stockUpdates.length || modifiedCount !== stockUpdates.length) {
       log.warn('stock', 'Stock deduction partial match', {
         expectedOps: stockUpdates.length,
-        matchedCount: err.details?.matchedCount || 0,
-        modifiedCount: err.details?.modifiedCount || 0,
+        matchedCount,
+        modifiedCount,
         items: checkoutItems,
       });
-      throw err;
+      return;
     }
 
+    log.info('stock', 'Stock deductions applied', {
+      ops: stockUpdates.length,
+      matched: matchedCount,
+      modified: modifiedCount,
+    });
+  } catch (err) {
     log.error('stock', 'Stock deduction failed', {
       error: err.message,
     });
     throw err;
-  } finally {
-    session.endSession();
   }
-}
-
-function collectSizeTrackedProductIds(stockUpdates) {
-  const ids = new Set();
-  for (const op of stockUpdates || []) {
-    const updateOne = op && op.updateOne;
-    if (!updateOne || !updateOne.filter) continue;
-    const filter = updateOne.filter || {};
-    const update = updateOne.update || {};
-    const hasSizeFilter = Object.prototype.hasOwnProperty.call(filter, 'sizes.size');
-    const hasSizeInc = update.$inc && Object.prototype.hasOwnProperty.call(update.$inc, 'sizes.$.quantity');
-    if ((hasSizeFilter || hasSizeInc) && filter._id) {
-      ids.add(String(filter._id));
-    }
-  }
-  return Array.from(ids);
 }
 
 /** Helper to create errors with status codes */
