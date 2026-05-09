@@ -146,12 +146,20 @@ exports.placeOrder = async (req, res) => {
 
     // ── Execute stock deductions (with automatic rollback on conflict) ──
     try {
-      await executeStockDeductions(stockUpdates);
+      await executeStockDeductions(stockUpdates, {
+        items: orderItems.map((item) => ({
+          sku: item.sku,
+          size: item.size || '',
+          quantity: item.quantity,
+          lotItem: Boolean(item.lotItem),
+        })),
+      });
     } catch (stockErr) {
       if (stockErr.code === 'STOCK_CONFLICT') {
         log.warn('order', 'Stock conflict during checkout', {
           userId: req.user?._id?.toString(),
           error: stockErr.message,
+          details: stockErr.details,
         });
         return res.status(409).json({
           error: 'Stock changed during checkout. Please review your cart and try again.',

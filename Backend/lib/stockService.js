@@ -274,75 +274,67 @@ function enforceMustBuyAll(skuMap, lotSkus) {
 }
 
 /**
- * Execute stock deductions atomically in a transaction, with retry on conflict.
+ * Execute stock deductions atomically in a transaction.
  * @param {object[]} stockUpdates - Array of bulkWrite operations
+ * @param {object} [context] - Optional order summary for diagnostics
  * @returns {Promise<void>}
  */
-async function executeStockDeductions(stockUpdates) {
+async function executeStockDeductions(stockUpdates, context = {}) {
   if (!Array.isArray(stockUpdates) || stockUpdates.length === 0) return;
 
   const sizeProductIds = collectSizeTrackedProductIds(stockUpdates);
-  const maxAttempts = Math.max(1, parseInt(process.env.STOCK_DEDUCTION_RETRIES || '3', 10));
-  const retryMin = Math.max(0, parseInt(process.env.STOCK_DEDUCTION_RETRY_MIN_MS || '50', 10));
-  const retryMax = Math.max(retryMin, parseInt(process.env.STOCK_DEDUCTION_RETRY_MAX_MS || '150', 10));
+  const checkoutItems = Array.isArray(context.items) ? context.items : [];
 
-  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
-    const session = await Product.startSession();
-    let modifiedCount = 0;
+  const session = await Product.startSession();
+  try {
+    await session.withTransaction(async () => {
+      const result = await Product.bulkWrite(stockUpdates, { ordered: true, session });
+      const matchedCount = result.matchedCount || 0;
+      const modifiedCount = result.modifiedCount || 0;
 
-    try {
-      await session.withTransaction(async () => {
-        const result = await Product.bulkWrite(stockUpdates, { ordered: true, session });
-        modifiedCount = result.modifiedCount || 0;
+      if (sizeProductIds.length > 0) {
+        await Product.updateMany(
+          { _id: { $in: sizeProductIds } },
+          [{ $set: { totalQuantity: { $sum: '$sizes.quantity' } } }],
+          { session },
+        );
+      }
 
-        if (modifiedCount !== stockUpdates.length) {
-          const err = new Error('Concurrent stock change detected');
-          err.code = 'STOCK_CONFLICT';
-          throw err;
-        }
-
-        if (sizeProductIds.length > 0) {
-          await Product.updateMany(
-            { _id: { $in: sizeProductIds } },
-            [{ $set: { totalQuantity: { $sum: '$sizes.quantity' } } }],
-            { session },
-          );
-        }
-      });
-
-      log.info('stock', 'Stock deductions applied', {
-        ops: stockUpdates.length,
-        attempt,
-      });
-      return;
-    } catch (err) {
-      if (err.code === 'STOCK_CONFLICT') {
-        if (attempt < maxAttempts) {
-          log.warn('stock', 'Stock deduction partial match — retrying', {
-            attempt,
-            matched: modifiedCount,
-            expected: stockUpdates.length,
-          });
-          await sleep(randomBetween(retryMin, retryMax));
-          continue;
-        }
-
-        log.warn('stock', 'Stock deduction conflict — giving up', {
-          attempt,
-          matched: modifiedCount,
-          expected: stockUpdates.length,
-        });
+      if (matchedCount !== stockUpdates.length) {
+        const err = new Error('Concurrent stock change detected');
+        err.code = 'STOCK_CONFLICT';
+        err.details = {
+          expectedOps: stockUpdates.length,
+          matchedCount,
+          modifiedCount,
+          items: checkoutItems,
+        };
         throw err;
       }
 
-      log.error('stock', 'Stock deduction failed', {
-        error: err.message,
-        attempt,
+      log.info('stock', 'Stock deductions applied', {
+        ops: stockUpdates.length,
+        matched: matchedCount,
+        modified: modifiedCount,
+      });
+    });
+  } catch (err) {
+    if (err.code === 'STOCK_CONFLICT') {
+      log.warn('stock', 'Stock deduction partial match', {
+        expectedOps: stockUpdates.length,
+        matchedCount: err.details?.matchedCount || 0,
+        modifiedCount: err.details?.modifiedCount || 0,
+        items: checkoutItems,
       });
       throw err;
-    } finally {
-      session.endSession();
     }
+
+    log.error('stock', 'Stock deduction failed', {
+      error: err.message,
+    });
+    throw err;
+  } finally {
+    session.endSession();
   }
 }
 
@@ -360,16 +352,6 @@ function collectSizeTrackedProductIds(stockUpdates) {
     }
   }
   return Array.from(ids);
-}
-
-function randomBetween(min, max) {
-  const low = Math.min(min, max);
-  const high = Math.max(min, max);
-  return Math.floor(Math.random() * (high - low + 1)) + low;
-}
-
-function sleep(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 /** Helper to create errors with status codes */
