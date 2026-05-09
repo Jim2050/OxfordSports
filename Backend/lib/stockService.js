@@ -62,10 +62,15 @@ function validateAndAllocateItem(item, product) {
       const ops = allocateAcrossAllSizes(product, effectiveQty, validLotSizes, sizeEntries, totalAvailable);
       stockOps.push(...ops);
     } else {
+      // If the customer is taking every available unit, zero the entire product in one write.
+      if (effectiveQty >= totalAvailable) {
+        stockOps.push(createDepleteAllSizeStockOp(product, totalAvailable));
+      } else {
       // Regular item: allocate specific size
-      const result = allocateSpecificSize(product, size, effectiveQty, sizeEntries, validLotSizes, totalAvailable);
-      size = result.size;
-      stockOps.push(...result.ops);
+        const result = allocateSpecificSize(product, size, effectiveQty, sizeEntries, validLotSizes, totalAvailable);
+        size = result.size;
+        stockOps.push(...result.ops);
+      }
     }
   } else if (totalAvailable > 0) {
     if (effectiveQty > totalAvailable) {
@@ -141,6 +146,26 @@ function allocateAcrossAllSizes(product, effectiveQty, validLotSizes, sizeEntrie
   }
 
   return ops;
+}
+
+/**
+ * Zero out all size quantities for a product that is being sold out completely.
+ */
+function createDepleteAllSizeStockOp(product, totalAvailable) {
+  return {
+    updateOne: {
+      filter: {
+        _id: product._id,
+        totalQuantity: { $gte: totalAvailable },
+      },
+      update: {
+        $set: {
+          'sizes.$[].quantity': 0,
+          totalQuantity: 0,
+        },
+      },
+    },
+  };
 }
 
 /**
