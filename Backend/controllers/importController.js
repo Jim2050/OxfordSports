@@ -5,6 +5,7 @@ const AdmZip = require("adm-zip");
 const Product = require("../models/Product");
 const Category = require("../models/Category");
 const ImportBatch = require("../models/ImportBatch");
+const DeletedProductBatch = require("../models/DeletedProductBatch");
 const cloudinary = require("../config/cloudinary");
 const {
   resolveProductImage,
@@ -1709,40 +1710,53 @@ exports.importProducts = async (req, res) => {
       console.error("[IMPORT] Error creating subcategory records:", err);
     }
 
-    let soldOutSyncedCount = 0;
+    let removedCount = 0;
 
-    // ── Mark products NOT in this upload as sold out (quantity = 0) ──
+    // ── REMOVE products NOT in this upload (preserve manually added items) ──
+    // Jim's rule: "When the same sheet is reuploaded, any items not on the
+    // new sheet would need removing. All manually added items are preserved."
     try {
       debug(`[IMPORT] Synchronizing catalog in ${syncMode} mode...`);
       const syncStart = Date.now();
 
       if (syncMode === "additive") {
-        debug("[IMPORT] Additive mode: skipped sold-out synchronization for SKUs not in upload");
+        debug("[IMPORT] Additive mode: skipped removal of SKUs not in upload");
       } else {
-        const syncResult = await Product.updateMany(
-          {
+        // Step 1: Find non-manual products whose SKU is absent from the uploaded sheet
+        const productsToRemove = await Product.find({
+          sku: { $nin: uploadedSkus },
+          isManuallyEdited: { $ne: true },
+        }).lean();
+
+        if (productsToRemove.length > 0) {
+          // Step 2: Backup before deletion (safety net — restorable via admin UI)
+          await DeletedProductBatch.create({
+            deletedBy: req.user?._id,
+            reason: `Sheet re-upload sync — removed ${productsToRemove.length} product(s) not in "${req.file.originalname}"`,
+            count: productsToRemove.length,
+            products: productsToRemove,
+          });
+
+          // Step 3: Hard-delete from catalog
+          const deleteResult = await Product.deleteMany({
             sku: { $nin: uploadedSkus },
             isManuallyEdited: { $ne: true },
-          },
-          {
-            $set: {
-              sizes: [],
-              totalQuantity: 0,
-            },
-          },
-        );
-        soldOutSyncedCount = syncResult.modifiedCount || 0;
-        debug(`[IMPORT] Sync complete: ${soldOutSyncedCount} products not in sheet marked as sold out`);
+          });
+          removedCount = deleteResult.deletedCount || 0;
+          debug(`[IMPORT] Sync complete: ${removedCount} products not in sheet REMOVED (backup saved)`);
+        } else {
+          debug(`[IMPORT] Sync complete: no products to remove (all SKUs present in sheet or manually added)`);
+        }
       }
 
       phaseMarks.syncComplete = Date.now();
       logInfo(`Catalog sync complete in ${phaseMarks.syncComplete - syncStart}ms`, {
-        modifiedCount: soldOutSyncedCount,
+        removedCount,
         syncMode,
       });
     } catch (err) {
-      console.error("[IMPORT] Error during sold-out synchronization:", err.message);
-      debug(`[IMPORT WARNING] Failed to synchronize missing SKUs: ${err.message}`);
+      console.error("[IMPORT] Error during catalog sync (removal):", err.message);
+      debug(`[IMPORT WARNING] Failed to remove missing SKUs: ${err.message}`);
       logWarn(`Catalog sync warning: ${err.message}`);
     }
 
@@ -1908,7 +1922,7 @@ exports.importProducts = async (req, res) => {
         protectedManualRows,
         extractedSizeFromDescription: extractedSizeFromDescriptionCount,
         syncMode,
-        soldOutSyncedCount,
+        removedCount,
         imageResolved,
         imageFailed,
         imagePending: Math.max(0, pendingImageProducts.length - 50),
@@ -1959,7 +1973,7 @@ exports.importProducts = async (req, res) => {
       protectedManualRows,
       protectedManualSamples,
       syncMode,
-      soldOutSyncedCount,
+      removedCount,
       extractedSizeFromDescription: extractedSizeFromDescriptionCount,
       errors,
       headers,

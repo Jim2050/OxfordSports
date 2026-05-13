@@ -198,11 +198,13 @@ export default function AdminPage() {
         const checks = Array.isArray(diagnostics?.checks) ? diagnostics.checks : [];
         const phaseMs = diagnostics?.performance?.phaseMs || {};
         console.groupCollapsed(
-          `[Excel Import] ${file.name} | imported=${res?.imported ?? 0} updated=${res?.updated ?? 0} failed=${res?.failed ?? 0} warnings=${res?.warnings ?? 0}`,
+          `[Excel Import] ${file.name} | added=${res?.imported ?? 0} updated=${res?.updated ?? 0} removed=${res?.removedCount ?? 0} preserved=${res?.protectedManualRows ?? 0} failed=${res?.failed ?? 0}`,
         );
         console.log("Import summary", {
           imported: res?.imported ?? 0,
           updated: res?.updated ?? 0,
+          removedCount: res?.removedCount ?? 0,
+          protectedManualRows: res?.protectedManualRows ?? 0,
           failed: res?.failed ?? 0,
           warnings: res?.warnings ?? 0,
           totalRawRows: res?.totalRawRows ?? res?.total ?? 0,
@@ -231,6 +233,8 @@ export default function AdminPage() {
         console.groupEnd();
       }
       const parts = [`${res.imported ?? 0} added`, `${res.updated ?? 0} updated`];
+      if (res.removedCount > 0) parts.push(`${res.removedCount} removed`);
+      if (res.protectedManualRows > 0) parts.push(`${res.protectedManualRows} manual preserved`);
       if (res.failed > 0) parts.push(`${res.failed} failed`);
       if (res.warnings > 0) parts.push(`${res.warnings} warnings`);
       toast.success(`Import complete: ${parts.join(", ")}.`);
@@ -865,6 +869,11 @@ export default function AdminPage() {
               auto-detects columns: Code, Gender, Style, Colour Desc, UK Size,
               Barcode, RRP, Trade. Same-SKU rows with different sizes are merged
               automatically.
+              <br />
+              <span style={{ color: "#b45309", fontWeight: 600 }}>
+                ⚠️ Re-uploading a sheet will remove products not in the new file.
+                Manually added items (job lots etc.) are always preserved.
+              </span>
             </p>
 
             <div
@@ -905,10 +914,108 @@ export default function AdminPage() {
                   className={`import-result ${excelResult.failed > 0 ? "warning" : "success"}`}
                 >
                   <strong>
-                    Import Summary: {excelResult.imported ?? 0} imported, {excelResult.updated ?? 0} updated, {excelResult.failed ?? 0} failed, {excelResult.warnings ?? 0} warnings, {excelResult.totalRawRows ?? excelResult.total ?? 0} raw rows to {excelResult.consolidatedProducts ?? "?"} SKUs
-                    {excelResult.executionTime ? ` in ${excelResult.executionTime}` : ""}.
+                    Import Summary: {excelResult.imported ?? 0} added, {excelResult.updated ?? 0} updated
+                    {(excelResult.removedCount ?? 0) > 0 ? `, ${excelResult.removedCount} removed` : ""}
+                    , {excelResult.failed ?? 0} failed, {excelResult.warnings ?? 0} warnings
+                    {excelResult.executionTime ? ` — ${excelResult.executionTime}` : ""}.
                   </strong>
                 </div>
+
+                {/* Sync summary — removed / preserved counts */}
+                <div style={{ display: "flex", gap: "0.65rem", marginTop: "0.65rem", flexWrap: "wrap" }}>
+                  <div style={{
+                    flex: "1 1 140px",
+                    border: "1px solid #bbf7d0",
+                    background: "#f0fdf4",
+                    borderRadius: "10px",
+                    padding: "0.6rem 0.75rem",
+                    textAlign: "center",
+                  }}>
+                    <div style={{ fontSize: "1.35rem", fontWeight: 800, color: "#166534" }}>
+                      {excelResult.imported ?? 0}
+                    </div>
+                    <div style={{ fontSize: "0.78rem", color: "#15803d", fontWeight: 600 }}>New Products Added</div>
+                  </div>
+                  <div style={{
+                    flex: "1 1 140px",
+                    border: "1px solid #bfdbfe",
+                    background: "#eff6ff",
+                    borderRadius: "10px",
+                    padding: "0.6rem 0.75rem",
+                    textAlign: "center",
+                  }}>
+                    <div style={{ fontSize: "1.35rem", fontWeight: 800, color: "#1e40af" }}>
+                      {excelResult.updated ?? 0}
+                    </div>
+                    <div style={{ fontSize: "0.78rem", color: "#1d4ed8", fontWeight: 600 }}>Existing Updated</div>
+                  </div>
+                  <div style={{
+                    flex: "1 1 140px",
+                    border: `1px solid ${(excelResult.removedCount ?? 0) > 0 ? "#fecaca" : "#e5e7eb"}`,
+                    background: (excelResult.removedCount ?? 0) > 0 ? "#fef2f2" : "#f9fafb",
+                    borderRadius: "10px",
+                    padding: "0.6rem 0.75rem",
+                    textAlign: "center",
+                  }}>
+                    <div style={{ fontSize: "1.35rem", fontWeight: 800, color: (excelResult.removedCount ?? 0) > 0 ? "#991b1b" : "#6b7280" }}>
+                      {excelResult.removedCount ?? 0}
+                    </div>
+                    <div style={{ fontSize: "0.78rem", color: (excelResult.removedCount ?? 0) > 0 ? "#b91c1c" : "#6b7280", fontWeight: 600 }}>Removed (Not in Sheet)</div>
+                  </div>
+                  <div style={{
+                    flex: "1 1 140px",
+                    border: "1px solid #c4b5fd",
+                    background: "#f5f3ff",
+                    borderRadius: "10px",
+                    padding: "0.6rem 0.75rem",
+                    textAlign: "center",
+                  }}>
+                    <div style={{ fontSize: "1.35rem", fontWeight: 800, color: "#5b21b6" }}>
+                      {excelResult.protectedManualRows ?? 0}
+                    </div>
+                    <div style={{ fontSize: "0.78rem", color: "#6d28d9", fontWeight: 600 }}>Manual Items Preserved</div>
+                  </div>
+                  {(excelResult.failed ?? 0) > 0 && (
+                    <div style={{
+                      flex: "1 1 140px",
+                      border: "1px solid #fecaca",
+                      background: "#fef2f2",
+                      borderRadius: "10px",
+                      padding: "0.6rem 0.75rem",
+                      textAlign: "center",
+                    }}>
+                      <div style={{ fontSize: "1.35rem", fontWeight: 800, color: "#991b1b" }}>
+                        {excelResult.failed}
+                      </div>
+                      <div style={{ fontSize: "0.78rem", color: "#b91c1c", fontWeight: 600 }}>Failed Rows</div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Protected manual products detail */}
+                {(excelResult.protectedManualRows ?? 0) > 0 && Array.isArray(excelResult.protectedManualSamples) && (
+                  <div style={{
+                    marginTop: "0.65rem",
+                    border: "1px solid #c4b5fd",
+                    background: "#f5f3ff",
+                    borderRadius: "10px",
+                    padding: "0.6rem 0.75rem",
+                    fontSize: "0.84rem",
+                  }}>
+                    <div style={{ fontWeight: 700, color: "#5b21b6", marginBottom: "0.3rem" }}>
+                      🛡️ Protected Manual Products ({excelResult.protectedManualRows})
+                    </div>
+                    <div style={{ color: "#4b5563" }}>
+                      These manually added items were preserved and not overwritten by the sheet:
+                      <strong style={{ marginLeft: "0.3rem" }}>
+                        {excelResult.protectedManualSamples.join(", ")}
+                        {excelResult.protectedManualRows > excelResult.protectedManualSamples.length
+                          ? ` and ${excelResult.protectedManualRows - excelResult.protectedManualSamples.length} more…`
+                          : ""}
+                      </strong>
+                    </div>
+                  </div>
+                )}
 
                 <div style={{ marginTop: "0.9rem", display: "grid", gap: "0.75rem" }}>
                   {uploadDiagnostics && (
