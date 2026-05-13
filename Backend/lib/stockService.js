@@ -320,7 +320,13 @@ async function executeStockDeductions(stockUpdates, context = {}) {
         modifiedCount,
         items: checkoutItems,
       });
-      return;
+      // Throw so the order transaction is aborted — prevents overselling
+      const conflictErr = new Error(
+        'Stock conflict during checkout: one or more items could not be reserved. ' +
+        'Please refresh and try again.'
+      );
+      conflictErr.statusCode = 409;
+      throw conflictErr;
     }
 
     log.info('stock', 'Stock deductions applied', {

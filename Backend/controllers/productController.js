@@ -11,7 +11,8 @@ const log = require("../lib/logger");
 
 // ── In-memory cache for the categories endpoint ──
 // These are intentionally module-level so they persist across requests.
-const CACHE_TTL = 5 * 60 * 1000; // 5 minutes in milliseconds
+const CACHE_TTL = 10 * 60 * 1000; // 10 minutes (categories only change on import/edit)
+const CATEGORIES_REDIS_KEY = 'categories:full';
 let categoriesCache = null;
 let categoriesCacheTimestamp = 0;
 
@@ -267,8 +268,16 @@ exports.getBrands = async (_req, res) => {
  */
 exports.getCategories = async (_req, res) => {
   try {
+    // 1. In-memory hit (fastest — no network round-trip)
     if (categoriesCache && Date.now() - categoriesCacheTimestamp < CACHE_TTL) {
       return res.json({ categories: categoriesCache });
+    }
+    // 2. Redis hit (shared across server restarts and instances)
+    const redisCached = await cache.get(CATEGORIES_REDIS_KEY);
+    if (redisCached) {
+      categoriesCache = redisCached;
+      categoriesCacheTimestamp = Date.now();
+      return res.json({ categories: redisCached });
     }
     const [categories, categoryCounts, rawCategoryCounts, subcategoryCounts, rawSubcategoryCounts, brandCounts, sportCounts, underFiveCount, brandTotalCount, sportTotalCount] =
       await Promise.all([
@@ -423,6 +432,8 @@ exports.getCategories = async (_req, res) => {
 
     categoriesCache = withCounts;
     categoriesCacheTimestamp = Date.now();
+    // Store in Redis so the next cold hit is also fast
+    await cache.set(CATEGORIES_REDIS_KEY, withCounts, 600); // 10 min TTL
     res.json({ categories: withCounts });
   } catch (err) {
     log.error('product', 'getCategories failed', { error: err.message, stack: err.stack });

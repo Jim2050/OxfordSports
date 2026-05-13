@@ -97,6 +97,21 @@ async function invalidateProducts() {
 }
 
 /**
+ * Invalidate the categories cache.
+ * Called after imports and category edits so the nav menu updates immediately.
+ */
+async function invalidateCategories() {
+  if (!isRedisAvailable()) return;
+  try {
+    const conn = getRedisConnection();
+    await conn.del(`${CACHE_PREFIX}categories:full`);
+    log.info('cache', 'Categories cache invalidated');
+  } catch (err) {
+    log.warn('cache', 'Categories cache invalidation failed', { error: err.message });
+  }
+}
+
+/**
  * Invalidate all cache entries (full flush).
  */
 async function invalidateAll() {
@@ -133,6 +148,7 @@ module.exports = {
   set,
   del,
   invalidateProducts,
+  invalidateCategories,
   invalidateAll,
   buildKey,
 };

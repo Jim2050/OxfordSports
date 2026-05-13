@@ -155,14 +155,13 @@ exports.placeOrder = async (req, res) => {
         })),
       });
     } catch (stockErr) {
-      if (stockErr.code === 'STOCK_CONFLICT') {
+      if (stockErr.code === 'STOCK_CONFLICT' || stockErr.statusCode === 409) {
         log.warn('order', 'Stock conflict during checkout', {
           userId: req.user?._id?.toString(),
           error: stockErr.message,
-          details: stockErr.details,
         });
         return res.status(409).json({
-          error: 'Stock changed during checkout. Please review your cart and try again.',
+          error: stockErr.message || 'Stock changed during checkout. Please review your cart and try again.',
         });
       }
       log.error('order', 'Stock deduction failed', { error: stockErr.message });

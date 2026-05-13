@@ -6,6 +6,7 @@ const Product = require("../models/Product");
 const Category = require("../models/Category");
 const ImportBatch = require("../models/ImportBatch");
 const DeletedProductBatch = require("../models/DeletedProductBatch");
+const cache = require("../lib/catalogCache");
 const cloudinary = require("../config/cloudinary");
 const {
   resolveProductImage,
@@ -1708,6 +1709,13 @@ exports.importProducts = async (req, res) => {
       }
     } catch (err) {
       console.error("[IMPORT] Error creating subcategory records:", err);
+    }
+
+    // Bust the categories cache so the nav menu reflects new categories immediately
+    try {
+      await cache.invalidateCategories();
+    } catch (err) {
+      debug(`[IMPORT] Categories cache invalidation skipped: ${err.message}`);
     }
 
     let removedCount = 0;
