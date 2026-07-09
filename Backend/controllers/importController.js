@@ -677,62 +677,44 @@ function consolidateBySku(rows) {
     const strictSizeFailure = rawSizeProvided && rowQty > 0 && normalizedRowSizes.length === 0;
 
     if (skuMap.has(sku)) {
-      // ── OVERWRITE duplicate SKU: last row wins ──
-      // When the same SKU appears again, fully replace sizes/prices/metadata
-      // instead of additively merging quantities (which caused doubling).
+      // ── ADDITIVE consolidation: sum quantities for same SKU ──
       const existing = skuMap.get(sku);
 
-      const sizeErrors = [];
-      if (parsedSizes.invalidTokens.length > 0) {
-        sizeErrors.push(
-          `Invalid size token(s): ${parsedSizes.invalidTokens.join(", ")}`,
-        );
-      }
-      if (parsedSizes.checksumMismatch) {
-        sizeErrors.push(
-          `Embedded size quantities (${parsedSizes.parsedTotal}) do not match QTY (${rowQty})`,
-        );
-      }
-      if (parsedSizes.hadNegativeSizes) {
-        sizeErrors.push(
-          "Negative size sign detected and normalized to a positive value",
-        );
-      }
-      if (rawSizeProvided && rowQty > 0 && normalizedRowSizes.length === 0) {
-        sizeErrors.push("Provided size values could not be parsed");
-      }
-
-      // Overwrite sizes completely — do NOT add to existing
       if (normalizedRowSizes.length > 0) {
-        existing.sizeEntries = normalizeSizeEntries(normalizedRowSizes, row.category);
+        for (const entry of normalizedRowSizes) {
+          const found = existing.sizeEntries.find((e) => e.size === entry.size);
+          if (found) {
+            found.quantity += entry.quantity;
+          } else {
+            existing.sizeEntries.push({ ...entry });
+          }
+        }
       }
 
-      // Overwrite metadata from new row
-      existing._sizeWarnings = sizeErrors;
-      existing._hadNegativeSizes = parsedSizes.hadNegativeSizes;
-      existing._hadZeroQtyTokens = parsedSizes.hadZeroQtyTokens;
-      existing._rawSizeProvided = rawSizeProvided;
-      existing._sizeParseFailed = strictSizeFailure;
-
-      // Merge barcode (barcodes are additive — different rows may have different barcodes)
+      // Merge barcode (barcodes are additive)
       const newBarcode = row.barcode ? String(row.barcode).trim() : "";
       if (newBarcode && !existing.barcodes.includes(newBarcode)) {
         existing.barcodes.push(newBarcode);
       }
 
-      // Overwrite price/rrp from new row if present
-      if (row.price) existing.price = row.price;
-      if (row.rrp) existing.rrp = row.rrp;
-      if (row._rawPrice) existing._rawPrice = row._rawPrice;
+      // Update metadata only if current is empty (preserve first row's data)
+      if (!existing.name && row.name) existing.name = row.name;
+      if (!existing.description && row.description) existing.description = row.description;
+      if (!existing.category && row.category) existing.category = row.category;
+      if (!existing.subcategory && row.subcategory) existing.subcategory = row.subcategory;
+      if (!existing.brand && row.brand) existing.brand = row.brand;
+      if (!existing.color && row.color) existing.color = row.color;
+      if (!existing.imageUrl && row.imageUrl) existing.imageUrl = row.imageUrl;
 
-      // Overwrite other fields from new row if present
-      if (row.name) existing.name = row.name;
-      if (row.description) existing.description = row.description;
-      if (row.category) existing.category = row.category;
-      if (row.subcategory) existing.subcategory = row.subcategory;
-      if (row.brand) existing.brand = row.brand;
-      if (row.color) existing.color = row.color;
-      if (row.imageUrl) existing.imageUrl = row.imageUrl;
+      // Update price if existing is zero/empty
+      if ((!existing.price || existing.price === 0) && row.price) existing.price = row.price;
+      if ((!existing.rrp || existing.rrp === 0) && row.rrp) existing.rrp = row.rrp;
+      if (!existing._rawPrice && row._rawPrice) existing._rawPrice = row._rawPrice;
+
+      // Collect warnings
+      if (parsedSizes.invalidTokens.length > 0) {
+        existing._sizeWarnings.push(`Invalid size token(s): ${parsedSizes.invalidTokens.join(", ")}`);
+      }
     } else {
       const barcode = row.barcode ? String(row.barcode).trim() : "";
       const sizeEntries = [];
@@ -1559,24 +1541,15 @@ exports.importProducts = async (req, res) => {
       });
       productData.brandCanonical = deriveBrandCanonical(productData.brand);
 
-      // ── Image URL: store only direct image URLs ──
+      // ── Image URL logic (Reverted to previous behavior) ──
       const rawImageUrl = row.imageUrl ? String(row.imageUrl).trim() : "";
-      const hasExistingCloudinary = !!(existingProduct?.imageUrl?.includes('cloudinary.com') || existingProduct?.imagePublicId);
 
       if (isDirectImageUrl(rawImageUrl)) {
-        // Only overwrite existing Cloudinary image if it's a direct URL from Excel
         productData.imageUrl = rawImageUrl;
-      } else if (isValidImageUrl(rawImageUrl) && !hasExistingCloudinary) {
-        // HTTP URL but not a direct image (Google search link) — queue for resolution
-        // ONLY if there's no existing high-quality Cloudinary image
+      } else if (isValidImageUrl(rawImageUrl)) {
         productData._pendingImageQuery = rawImageUrl;
         if (i < 5) {
           debug(`[IMPORT] Row ${i + 1} (${sku}) imageUrl queued for resolution: "${rawImageUrl.substring(0, 80)}"`);
-        }
-      } else {
-        // No valid image in Excel or we already have a Cloudinary image to protect
-        if (rawImageUrl && i < 5 && !hasExistingCloudinary) {
-          debug(`[IMPORT] Row ${i + 1} (${sku}) imageUrl is not a valid URL: "${rawImageUrl}"`);
         }
       }
 
@@ -1591,23 +1564,7 @@ exports.importProducts = async (req, res) => {
         delete productData._pendingImageQuery;
       }
 
-      // Separate image fields — only $set them when Excel provides a valid URL
-      // Otherwise use $setOnInsert so existing images survive re-imports
-      const hasExcelImage = !!productData.imageUrl;
-      const imageFields = {};
-      if (hasExcelImage) {
-        imageFields.imageUrl = productData.imageUrl;
-      }
-      delete productData.imageUrl; // remove from main $set
-
       const updateOp = { $set: productData };
-      if (!hasExcelImage) {
-        // Only set imageUrl on brand-new products (upsert insert)
-        updateOp.$setOnInsert = { imageUrl: "", imagePublicId: "" };
-      } else {
-        // Excel provided a valid direct image URL — overwrite
-        updateOp.$set.imageUrl = imageFields.imageUrl;
-      }
 
       operations.push({
         updateOne: {
@@ -1734,31 +1691,23 @@ exports.importProducts = async (req, res) => {
       if (syncMode === "additive") {
         debug("[IMPORT] Additive mode: skipped removal of SKUs not in upload");
       } else {
-        // Step 1: Find non-manual products whose SKU is absent from the uploaded sheet
-        const productsToRemove = await Product.find({
-          sku: { $nin: uploadedSkus },
-          isManuallyEdited: { $ne: true },
-        }).lean();
-
-        if (productsToRemove.length > 0) {
-          // Step 2: Backup before deletion (safety net — restorable via admin UI)
-          await DeletedProductBatch.create({
-            deletedBy: req.user?._id,
-            reason: `Sheet re-upload sync — removed ${productsToRemove.length} product(s) not in "${req.file.originalname}"`,
-            count: productsToRemove.length,
-            products: productsToRemove,
-          });
-
-          // Step 3: Hard-delete from catalog
-          const deleteResult = await Product.deleteMany({
+        // OLD METHOD: Mark missing products as sold out (isActive=false, quantity=0)
+        // Jim prefers this over hard-deletion to preserve SEO and order history links.
+        const result = await Product.updateMany(
+          {
             sku: { $nin: uploadedSkus },
-            isManuallyEdited: { $ne: true },
-          });
-          removedCount = deleteResult.deletedCount || 0;
-          debug(`[IMPORT] Sync complete: ${removedCount} products not in sheet REMOVED (backup saved)`);
-        } else {
-          debug(`[IMPORT] Sync complete: no products to remove (all SKUs present in sheet or manually added)`);
-        }
+            isManuallyEdited: { $ne: true }
+          },
+          {
+            $set: {
+              isActive: false,
+              totalQuantity: 0,
+              sizes: [] // Clear sizes to show as sold out
+            }
+          }
+        );
+        removedCount = result.modifiedCount || 0;
+        debug(`[IMPORT] Sync complete: ${removedCount} products not in sheet marked as SOLD OUT`);
       }
 
       phaseMarks.syncComplete = Date.now();
