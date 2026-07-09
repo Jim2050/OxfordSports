@@ -1559,32 +1559,22 @@ exports.importProducts = async (req, res) => {
       });
       productData.brandCanonical = deriveBrandCanonical(productData.brand);
 
-      // ── Image URL handling ──
-      // Priority:
-      //   1. Direct image URL (Cloudinary, imgur, known CDN, or image extension) → store immediately
-      //   2. Google/Bing search URL → store original as fallback, queue for background resolution
-      //   3. No URL provided → store empty string so the field always exists in the DB
+      // ── Image URL: store only direct image URLs ──
       const rawImageUrl = row.imageUrl ? String(row.imageUrl).trim() : "";
       const hasExistingCloudinary = !!(existingProduct?.imageUrl?.includes('cloudinary.com') || existingProduct?.imagePublicId);
 
       if (isDirectImageUrl(rawImageUrl)) {
-        // Already a direct image URL — use it as-is, no resolution needed
+        // Only overwrite existing Cloudinary image if it's a direct URL from Excel
         productData.imageUrl = rawImageUrl;
-        if (i < 5) {
-          debug(`[IMPORT] Row ${i + 1} (${sku}) direct imageUrl stored: "${rawImageUrl.substring(0, 80)}"`);
-        }
       } else if (isValidImageUrl(rawImageUrl) && !hasExistingCloudinary) {
-        // HTTP URL but not a direct image (e.g. Google search link) — store the
-        // original URL immediately as a fallback so the product always has an
-        // imageUrl, then queue it for background resolution to find a better URL.
-        productData.imageUrl = rawImageUrl;
+        // HTTP URL but not a direct image (Google search link) — queue for resolution
+        // ONLY if there's no existing high-quality Cloudinary image
         productData._pendingImageQuery = rawImageUrl;
         if (i < 5) {
-          debug(`[IMPORT] Row ${i + 1} (${sku}) imageUrl stored as fallback and queued for resolution: "${rawImageUrl.substring(0, 80)}"`);
+          debug(`[IMPORT] Row ${i + 1} (${sku}) imageUrl queued for resolution: "${rawImageUrl.substring(0, 80)}"`);
         }
       } else {
-        // No valid image URL in CSV, or existing Cloudinary image is protected
-        productData.imageUrl = productData.imageUrl || "";
+        // No valid image in Excel or we already have a Cloudinary image to protect
         if (rawImageUrl && i < 5 && !hasExistingCloudinary) {
           debug(`[IMPORT] Row ${i + 1} (${sku}) imageUrl is not a valid URL: "${rawImageUrl}"`);
         }
@@ -1601,20 +1591,23 @@ exports.importProducts = async (req, res) => {
         delete productData._pendingImageQuery;
       }
 
-      // Separate image fields — always write imageUrl so the field exists in the DB.
-      // For existing products with a Cloudinary image, preserve it by only writing
-      // imageUrl when the CSV provides a value (direct or fallback).
-      const imageUrlToWrite = productData.imageUrl ?? "";
-      delete productData.imageUrl; // remove from main $set to handle separately
+      // Separate image fields — only $set them when Excel provides a valid URL
+      // Otherwise use $setOnInsert so existing images survive re-imports
+      const hasExcelImage = !!productData.imageUrl;
+      const imageFields = {};
+      if (hasExcelImage) {
+        imageFields.imageUrl = productData.imageUrl;
+      }
+      delete productData.imageUrl; // remove from main $set
 
       const updateOp = { $set: productData };
-      if (imageUrlToWrite || !hasExistingCloudinary) {
-        // Write the imageUrl: either a real/fallback URL from CSV, or an empty
-        // string for new products so the field is always present in the document.
-        updateOp.$set.imageUrl = imageUrlToWrite;
+      if (!hasExcelImage) {
+        // Only set imageUrl on brand-new products (upsert insert)
+        updateOp.$setOnInsert = { imageUrl: "", imagePublicId: "" };
+      } else {
+        // Excel provided a valid direct image URL — overwrite
+        updateOp.$set.imageUrl = imageFields.imageUrl;
       }
-      // Always initialise imagePublicId on insert if not already set
-      updateOp.$setOnInsert = { imagePublicId: "" };
 
       operations.push({
         updateOne: {
@@ -2487,3 +2480,100 @@ function cleanup(filePath) {
     } catch { }
   }
 }
+
+/**
+ * POST /api/admin/relink-cloudinary
+ * Scans Cloudinary for existing images and maps them back to products.
+ * Use this to recover from accidental data loss.
+ */
+exports.relinkCloudinaryImages = async (req, res) => {
+  try {
+    const folders = ["oxford-sports", "oxford-sports/products"];
+    let totalMatched = 0;
+    const log = [];
+
+    console.log("[RELINK] Starting Cloudinary scan...");
+
+    for (const folder of folders) {
+      let nextCursor = null;
+      do {
+        const response = await cloudinary.api.resources({
+          type: "upload",
+          prefix: folder + "/",
+          max_results: 500,
+          next_cursor: nextCursor,
+        });
+
+        const resources = response.resources;
+        nextCursor = response.next_cursor;
+
+        if (!resources || resources.length === 0) break;
+
+        // Fetch all products that are currently missing images to optimize matching
+        const productsWithoutImages = await Product.find({
+          $or: [{ imageUrl: "" }, { imageUrl: null }, { imageUrl: { $exists: false } }],
+        }).select("sku").lean();
+
+        const missingSkuMap = new Map();
+        productsWithoutImages.forEach(p => {
+          missingSkuMap.set(p.sku, true);
+          // Also map sanitized version for matching admin-uploaded images
+          missingSkuMap.set(p.sku.replace(/[^a-zA-Z0-9_-]/g, "_"), p.sku);
+        });
+
+        const bulkOps = [];
+
+        for (const resource of resources) {
+          const publicId = resource.public_id;
+          const fileName = publicId.split("/").pop(); // Get the SKU part
+
+          let targetSku = null;
+          if (missingSkuMap.has(fileName)) {
+            const val = missingSkuMap.get(fileName);
+            targetSku = val === true ? fileName : val;
+          }
+
+          if (targetSku) {
+            bulkOps.push({
+              updateOne: {
+                filter: { sku: targetSku },
+                update: {
+                  $set: {
+                    imageUrl: resource.secure_url,
+                    imagePublicId: publicId
+                  }
+                }
+              }
+            });
+            totalMatched++;
+            if (log.length < 50) log.push(`Linked ${targetSku}`);
+          }
+        }
+
+        if (bulkOps.length > 0) {
+          await Product.bulkWrite(bulkOps, { ordered: false });
+        }
+
+        console.log(`[RELINK] Processed batch in ${folder}, matched ${totalMatched} so far...`);
+      } while (nextCursor);
+    }
+
+    // Bust cache so images show up immediately
+    try { await cache.invalidateProducts(); } catch (e) {}
+
+    res.json({
+      success: true,
+      message: `Successfully relinked ${totalMatched} images from Cloudinary.`,
+      count: totalMatched,
+      samples: log
+    });
+
+  } catch (err) {
+    console.error("[RELINK ERROR]", err);
+    res.status(500).json({
+      error: "Cloudinary Scan Failed",
+      details: err.message,
+      hint: "Ensure CLOUDINARY_API_KEY and SECRET are correctly set in Railway."
+    });
+  }
+};
