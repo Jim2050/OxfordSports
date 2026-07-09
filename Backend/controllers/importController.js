@@ -1559,22 +1559,32 @@ exports.importProducts = async (req, res) => {
       });
       productData.brandCanonical = deriveBrandCanonical(productData.brand);
 
-      // ── Image URL: store only direct image URLs ──
+      // ── Image URL handling ──
+      // Priority:
+      //   1. Direct image URL (Cloudinary, imgur, known CDN, or image extension) → store immediately
+      //   2. Google/Bing search URL → store original as fallback, queue for background resolution
+      //   3. No URL provided → store empty string so the field always exists in the DB
       const rawImageUrl = row.imageUrl ? String(row.imageUrl).trim() : "";
       const hasExistingCloudinary = !!(existingProduct?.imageUrl?.includes('cloudinary.com') || existingProduct?.imagePublicId);
 
       if (isDirectImageUrl(rawImageUrl)) {
-        // Only overwrite existing Cloudinary image if it's a direct URL from Excel
+        // Already a direct image URL — use it as-is, no resolution needed
         productData.imageUrl = rawImageUrl;
+        if (i < 5) {
+          debug(`[IMPORT] Row ${i + 1} (${sku}) direct imageUrl stored: "${rawImageUrl.substring(0, 80)}"`);
+        }
       } else if (isValidImageUrl(rawImageUrl) && !hasExistingCloudinary) {
-        // HTTP URL but not a direct image (Google search link) — queue for resolution
-        // ONLY if there's no existing high-quality Cloudinary image
+        // HTTP URL but not a direct image (e.g. Google search link) — store the
+        // original URL immediately as a fallback so the product always has an
+        // imageUrl, then queue it for background resolution to find a better URL.
+        productData.imageUrl = rawImageUrl;
         productData._pendingImageQuery = rawImageUrl;
         if (i < 5) {
-          debug(`[IMPORT] Row ${i + 1} (${sku}) imageUrl queued for resolution: "${rawImageUrl.substring(0, 80)}"`);
+          debug(`[IMPORT] Row ${i + 1} (${sku}) imageUrl stored as fallback and queued for resolution: "${rawImageUrl.substring(0, 80)}"`);
         }
       } else {
-        // No valid image in Excel or we already have a Cloudinary image to protect
+        // No valid image URL in CSV, or existing Cloudinary image is protected
+        productData.imageUrl = productData.imageUrl || "";
         if (rawImageUrl && i < 5 && !hasExistingCloudinary) {
           debug(`[IMPORT] Row ${i + 1} (${sku}) imageUrl is not a valid URL: "${rawImageUrl}"`);
         }
@@ -1591,23 +1601,20 @@ exports.importProducts = async (req, res) => {
         delete productData._pendingImageQuery;
       }
 
-      // Separate image fields — only $set them when Excel provides a valid URL
-      // Otherwise use $setOnInsert so existing images survive re-imports
-      const hasExcelImage = !!productData.imageUrl;
-      const imageFields = {};
-      if (hasExcelImage) {
-        imageFields.imageUrl = productData.imageUrl;
-      }
-      delete productData.imageUrl; // remove from main $set
+      // Separate image fields — always write imageUrl so the field exists in the DB.
+      // For existing products with a Cloudinary image, preserve it by only writing
+      // imageUrl when the CSV provides a value (direct or fallback).
+      const imageUrlToWrite = productData.imageUrl ?? "";
+      delete productData.imageUrl; // remove from main $set to handle separately
 
       const updateOp = { $set: productData };
-      if (!hasExcelImage) {
-        // Only set imageUrl on brand-new products (upsert insert)
-        updateOp.$setOnInsert = { imageUrl: "", imagePublicId: "" };
-      } else {
-        // Excel provided a valid direct image URL — overwrite
-        updateOp.$set.imageUrl = imageFields.imageUrl;
+      if (imageUrlToWrite || !hasExistingCloudinary) {
+        // Write the imageUrl: either a real/fallback URL from CSV, or an empty
+        // string for new products so the field is always present in the document.
+        updateOp.$set.imageUrl = imageUrlToWrite;
       }
+      // Always initialise imagePublicId on insert if not already set
+      updateOp.$setOnInsert = { imagePublicId: "" };
 
       operations.push({
         updateOne: {
