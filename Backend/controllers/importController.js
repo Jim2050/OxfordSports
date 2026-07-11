@@ -1752,18 +1752,23 @@ exports.importProducts = async (req, res) => {
           debug(`[IMPORT-BG] Background image resolution started for ${filteredPendingProducts.length} items.`);
 
           // Resolve in batches to avoid overwhelming external APIs
-          const batch50 = filteredPendingProducts.slice(0, 50);
-          const { resolved } = await batchResolveImages(batch50, 2);
+          const BATCH_SIZE_RESOLVE = 99;
+          for (let i = 0; i < filteredPendingProducts.length; i += BATCH_SIZE_RESOLVE) {
+            const batch = filteredPendingProducts.slice(i, i + BATCH_SIZE_RESOLVE);
+            debug(`[IMPORT-BG] Processing batch ${Math.floor(i / BATCH_SIZE_RESOLVE) + 1} (${batch.length} images)...`);
 
-          if (resolved.length > 0) {
-            const imgOps = resolved.map((r) => ({
-              updateOne: {
-                filter: { sku: r.sku },
-                update: { $set: { imageUrl: r.imageUrl } },
-              },
-            }));
-            await Product.bulkWrite(imgOps, { ordered: false });
-            debug(`[IMPORT-BG] Background resolution complete: ${resolved.length} images linked.`);
+            const { resolved } = await batchResolveImages(batch, 2);
+
+            if (resolved.length > 0) {
+              const imgOps = resolved.map((r) => ({
+                updateOne: {
+                  filter: { sku: r.sku },
+                  update: { $set: { imageUrl: r.imageUrl } },
+                },
+              }));
+              await Product.bulkWrite(imgOps, { ordered: false });
+              debug(`[IMPORT-BG] Batch complete: ${resolved.length} images linked.`);
+            }
           }
         }
       })().catch(err => console.error("[IMPORT-BG-IMAGE] Error in background resolution:", err));
