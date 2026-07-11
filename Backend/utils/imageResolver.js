@@ -204,16 +204,27 @@ async function searchBing(query) {
 }
 
 /**
- * Strategy 3: Brand-specific CDN URL patterns.
- * For adidas, construct known CDN URL patterns.
+ * Strategy 3: Brand-specific and Internal CDN URL patterns.
+ * Constructs known URL patterns based on SKU and Brand.
  */
 function brandCdnCandidates(sku, brand) {
   const candidates = [];
   const b = (brand || "").toLowerCase();
   const s = (sku || "").toUpperCase();
 
+  // 1. Internal Cloudinary Store (SKU-linked)
+  const cName = process.env.CLOUDINARY_CLOUD_NAME;
+  if (cName) {
+    // Check for standard SKU-named images in the products folder
+    // Use encodeURIComponent to handle SKUs with spaces or special chars
+    const encodedSku = encodeURIComponent(s);
+    candidates.push(`https://res.cloudinary.com/${cName}/image/upload/v1/oxford-sports/products/${encodedSku}.jpg`);
+    candidates.push(`https://res.cloudinary.com/${cName}/image/upload/v1/oxford-sports/products/${encodedSku}.png`);
+    candidates.push(`https://res.cloudinary.com/${cName}/image/upload/v1/oxford-sports/products/${encodedSku}.webp`);
+  }
+
+  // 2. External Brand CDNs
   if (b.includes("adidas")) {
-    // adidas assets CDN pattern (common format)
     candidates.push(
       `https://assets.adidas.com/images/w_600,f_auto,q_auto/assets/${s}_1.jpg`,
     );
@@ -226,19 +237,17 @@ function brandCdnCandidates(sku, brand) {
 }
 
 /**
- * Resolve a single product's image. Returns the resolved direct image URL,
- * the fallbackUrl if resolution fails (instead of null), or null if neither
- * a resolved URL nor a fallback is available.
+ * Resolve a single product's image. Returns the resolved direct image URL
+ * or null if resolution fails.
  *
  * @param {Object} opts
  * @param {string} opts.sku - Product SKU
  * @param {string} opts.brand - Product brand name
  * @param {string} opts.name - Product name
  * @param {string} opts.currentUrl - Current imageUrl (may be Google search link)
- * @param {string} [opts.fallbackUrl] - URL to return if resolution fails (e.g. original CSV URL)
  * @returns {Promise<string|null>}
  */
-async function resolveProductImage({ sku, brand, name, currentUrl, fallbackUrl }) {
+async function resolveProductImage({ sku, brand, name, currentUrl }) {
   // 1. If it's already a direct image, verify it
   if (currentUrl && IMG_EXT_RE.test(currentUrl)) {
     const valid = await verifyImageUrl(currentUrl);
@@ -251,7 +260,7 @@ async function resolveProductImage({ sku, brand, name, currentUrl, fallbackUrl }
     // Build query from product metadata
     query = [brand, sku, name].filter(Boolean).join(" ");
   }
-  if (!query) return fallbackUrl || null;
+  if (!query) return null;
 
   // 3. Try brand CDN patterns first (fastest)
   const cdnUrls = brandCdnCandidates(sku, brand);
@@ -274,10 +283,7 @@ async function resolveProductImage({ sku, brand, name, currentUrl, fallbackUrl }
     if (valid) return url;
   }
 
-  // 6. Resolution failed — return the original URL as a fallback so it is
-  //    not silently discarded. The caller can distinguish a "resolved" result
-  //    from a "fallback" result by comparing the returned URL to fallbackUrl.
-  return fallbackUrl || null;
+  return null;
 }
 
 /**
@@ -299,12 +305,7 @@ async function batchResolveImages(products, concurrency = 3, onProgress) {
       const i = idx++;
       const p = products[i];
       try {
-        // Pass the original URL as fallbackUrl so resolution failures still
-        // produce a storable URL rather than silently returning null.
-        const url = await resolveProductImage({
-          ...p,
-          fallbackUrl: p.currentUrl || "",
-        });
+        const url = await resolveProductImage(p);
         if (url) {
           resolved.push({ sku: p.sku, imageUrl: url });
         } else {
