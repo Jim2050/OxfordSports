@@ -158,54 +158,139 @@ function parseExcelFile(filePath) {
 }
 
 /**
+ * Normalize a size token.
+ */
+function normalizeSizeToken(value) {
+  return String(value || "").replace(/\s+/g, " ").trim();
+}
+
+/**
+ * Extract size from child description by comparing it with parent description.
+ */
+function extractSizeFromChildDescription(childDescription, parentDescription = "") {
+  const child = normalizeSizeToken(childDescription);
+  if (!child) return "";
+
+  const parent = normalizeSizeToken(parentDescription);
+  let remainder = child;
+
+  if (parent) {
+    const escapedParent = parent.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    remainder = remainder.replace(new RegExp(`^${escapedParent}\\s*`, "i"), "").trim();
+  }
+
+  if (!remainder || remainder.length === child.length) {
+    const parts = child.split(/\s+/);
+    if (parts.length > 1) {
+      remainder = parts.slice(1).join(" ");
+    }
+  }
+
+  const patterns = [
+    /(UK\s*\d+(?:\.\d+)?)$/i,
+    /(\d+-\d+\s*Y(?:RS?)?)$/i,
+    /((?:2X|3X|4X)?[SMLX]{1,3}L?)$/i,
+    /(\d+(?:\.\d+)?)$/,
+  ];
+
+  for (const pattern of patterns) {
+    const match = remainder.match(pattern);
+    if (!match) continue;
+    const token = normalizeSizeToken(match[1]);
+    if (!token) continue;
+    if (/^UK\s*\d/i.test(token)) {
+      const ukNormalized = token
+        .toUpperCase()
+        .replace(/^UK\s*/i, "")
+        .trim();
+      return `UK ${ukNormalized}`;
+    }
+    return token.toUpperCase();
+  }
+
+  return "";
+}
+
+/**
  * Normalize parent-child SKU relationships.
- * Some suppliers list a parent SKU and child size rows separately.
- * This merges them into consolidated rows.
+ * Some suppliers (like adidas) list a parent SKU summary and child size rows separately.
+ * This logic identifies parents, skips summary rows, and maps children to the parent SKU.
  *
  * @param {Array<object>} rows
  * @param {boolean} hasSizeMapping
  * @returns {Array<object>}
  */
 function normalizeParentChildSkus(rows, hasSizeMapping = false) {
-  if (!hasSizeMapping) return rows;
+  if (rows.length === 0 || hasSizeMapping) return rows;
 
-  const parentMap = new Map();
-  const output = [];
+  // Collect all SKUs
+  const allSkus = [
+    ...new Set(
+      rows
+        .map((r) => (r.sku ? String(r.sku).trim().toUpperCase() : ""))
+        .filter(Boolean),
+    ),
+  ];
 
-  for (const row of rows) {
-    const sku = String(row.sku || '').trim().toUpperCase();
-    if (!sku) { output.push(row); continue; }
-
-    // Check for parent-child pattern: PARENT-SIZE or PARENT.SIZE
-    const parentMatch = sku.match(/^(.+?)[-.](\d+[.\d]*)$/);
-    if (parentMatch) {
-      const parentSku = parentMatch[1];
-      const sizeValue = parentMatch[2];
-      if (!parentMap.has(parentSku)) {
-        parentMap.set(parentSku, { ...row, sku: parentSku, _childSizes: [] });
-      }
-      const parent = parentMap.get(parentSku);
-      parent._childSizes.push({
-        size: sizeValue,
-        quantity: parseInt(row.quantity) || 0,
+  // Find parent SKUs: a SKU that is a prefix of at least 2 other longer SKUs
+  const parentSkus = new Map(); // parentSku -> parent row data (for name/description)
+  for (const sku of allSkus) {
+    const children = allSkus.filter(
+      (s) => s !== sku && s.startsWith(sku) && s.length > sku.length,
+    );
+    if (children.length >= 2) {
+      // Find the parent row to get its clean name
+      const parentRow = rows.find(
+        (r) => String(r.sku || "").trim().toUpperCase() === sku,
+      );
+      parentSkus.set(sku, {
+        name: parentRow ? String(parentRow.name || "").trim() : "",
+        description: parentRow ? String(parentRow.description || "").trim() : "",
       });
-    } else {
-      output.push(row);
     }
   }
 
-  // Merge parent rows with collected child sizes
-  for (const [, parent] of parentMap) {
-    if (parent._childSizes.length > 0) {
-      parent.sizes = parent._childSizes.map((s) => `${s.size}`).join(',');
-      parent.quantity = parent._childSizes.reduce((sum, s) => sum + s.quantity, 0);
-      parent._sizeDetails = parent._childSizes;
+  if (parentSkus.size === 0) return rows;
+
+  const result = [];
+  for (const row of rows) {
+    const sku = row.sku ? String(row.sku).trim().toUpperCase() : "";
+
+    // Skip parent/summary rows (they have aggregate qty, not per-size)
+    if (parentSkus.has(sku)) continue;
+
+    // Check if this is a child of a parent
+    for (const [parentSku, parentInfo] of parentSkus) {
+      if (sku.startsWith(parentSku) && sku.length > parentSku.length) {
+        const childDescription = String(row.name || "").trim();
+        const parentDescription = String(parentInfo.name || "").trim();
+
+        if (!row.sizes && childDescription) {
+          const extractedSize = extractSizeFromChildDescription(
+            childDescription,
+            parentDescription,
+          );
+          if (extractedSize) {
+            row.sizes = extractedSize;
+            row._sizeExtractedFromDescription = true;
+          }
+        }
+
+        // Replace child SKU with parent SKU for consolidation
+        row.sku = parentSku;
+
+        // Use parent's clean name instead of child's name+color+size string
+        if (parentInfo.name) {
+          row.name = parentInfo.name;
+        }
+        break;
+      }
     }
-    delete parent._childSizes;
-    output.push(parent);
+
+    result.push(row);
   }
 
-  return output;
+  return result;
 }
 
 /**
