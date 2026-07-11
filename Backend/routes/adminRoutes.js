@@ -121,6 +121,6 @@ router.post("/resolve-images", resolveImages);
 router.post("/relink-cloudinary", relinkCloudinaryImages);
 
 // Bulk operations
-router.post("/bulk-price-adjust", bulkPriceAdjust);
+router.post("/bulk-price-adjust", bulkPriceAdjust); 
 
 module.exports = router;
