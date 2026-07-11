@@ -677,62 +677,51 @@ function consolidateBySku(rows) {
     const strictSizeFailure = rawSizeProvided && rowQty > 0 && normalizedRowSizes.length === 0;
 
     if (skuMap.has(sku)) {
-      // ── OVERWRITE duplicate SKU: last row wins ──
-      // When the same SKU appears again, fully replace sizes/prices/metadata
-      // instead of additively merging quantities (which caused doubling).
+      // ── ADDITIVE consolidation: sum quantities for same SKU ──
       const existing = skuMap.get(sku);
 
-      const sizeErrors = [];
-      if (parsedSizes.invalidTokens.length > 0) {
-        sizeErrors.push(
-          `Invalid size token(s): ${parsedSizes.invalidTokens.join(", ")}`,
-        );
-      }
-      if (parsedSizes.checksumMismatch) {
-        sizeErrors.push(
-          `Embedded size quantities (${parsedSizes.parsedTotal}) do not match QTY (${rowQty})`,
-        );
-      }
-      if (parsedSizes.hadNegativeSizes) {
-        sizeErrors.push(
-          "Negative size sign detected and normalized to a positive value",
-        );
-      }
-      if (rawSizeProvided && rowQty > 0 && normalizedRowSizes.length === 0) {
-        sizeErrors.push("Provided size values could not be parsed");
-      }
-
-      // Overwrite sizes completely — do NOT add to existing
       if (normalizedRowSizes.length > 0) {
-        existing.sizeEntries = normalizeSizeEntries(normalizedRowSizes, row.category);
+        for (const entry of normalizedRowSizes) {
+          const found = existing.sizeEntries.find((e) => e.size === entry.size);
+          if (found) {
+            found.quantity += entry.quantity;
+          } else {
+            existing.sizeEntries.push({ ...entry });
+          }
+        }
       }
 
-      // Overwrite metadata from new row
-      existing._sizeWarnings = sizeErrors;
-      existing._hadNegativeSizes = parsedSizes.hadNegativeSizes;
-      existing._hadZeroQtyTokens = parsedSizes.hadZeroQtyTokens;
-      existing._rawSizeProvided = rawSizeProvided;
-      existing._sizeParseFailed = strictSizeFailure;
-
-      // Merge barcode (barcodes are additive — different rows may have different barcodes)
+      // Merge barcode (barcodes are additive)
       const newBarcode = row.barcode ? String(row.barcode).trim() : "";
       if (newBarcode && !existing.barcodes.includes(newBarcode)) {
         existing.barcodes.push(newBarcode);
       }
 
-      // Overwrite price/rrp from new row if present
-      if (row.price) existing.price = row.price;
-      if (row.rrp) existing.rrp = row.rrp;
-      if (row._rawPrice) existing._rawPrice = row._rawPrice;
+      // Update metadata only if current is empty (preserve first row's data)
+      if (!existing.name && row.name) existing.name = row.name;
+      if (!existing.description && row.description) existing.description = row.description;
+      if (!existing.category && row.category) existing.category = row.category;
+      if (!existing.subcategory && row.subcategory) existing.subcategory = row.subcategory;
+      if (!existing.brand && row.brand) existing.brand = row.brand;
+      if (!existing.color && row.color) existing.color = row.color;
 
-      // Overwrite other fields from new row if present
-      if (row.name) existing.name = row.name;
-      if (row.description) existing.description = row.description;
-      if (row.category) existing.category = row.category;
-      if (row.subcategory) existing.subcategory = row.subcategory;
-      if (row.brand) existing.brand = row.brand;
-      if (row.color) existing.color = row.color;
-      if (row.imageUrl) existing.imageUrl = row.imageUrl;
+      // ── Image Prioritization: Prefer Cloudinary URLs over search engine URLs ──
+      const isCloudinary = (url) => String(url || "").toLowerCase().includes("cloudinary.com");
+      if (row.imageUrl) {
+        if (!existing.imageUrl || (!isCloudinary(existing.imageUrl) && isCloudinary(row.imageUrl))) {
+          existing.imageUrl = row.imageUrl;
+        }
+      }
+
+      // Update price if existing is zero/empty
+      if ((!existing.price || existing.price === 0) && row.price) existing.price = row.price;
+      if ((!existing.rrp || existing.rrp === 0) && row.rrp) existing.rrp = row.rrp;
+      if (!existing._rawPrice && row._rawPrice) existing._rawPrice = row._rawPrice;
+
+      // Collect warnings
+      if (parsedSizes.invalidTokens.length > 0) {
+        existing._sizeWarnings.push(`Invalid size token(s): ${parsedSizes.invalidTokens.join(", ")}`);
+      }
     } else {
       const barcode = row.barcode ? String(row.barcode).trim() : "";
       const sizeEntries = [];
@@ -1559,29 +1548,19 @@ exports.importProducts = async (req, res) => {
       });
       productData.brandCanonical = deriveBrandCanonical(productData.brand);
 
-      // ── Image URL: store only direct image URLs ──
+      // ── Image URL logic: Prioritize Direct URLs; Queue others for background lookup ──
+      // This ensures even empty fields trigger a Cloudinary SKU-based check.
       const rawImageUrl = row.imageUrl ? String(row.imageUrl).trim() : "";
-      const hasExistingCloudinary = !!(existingProduct?.imageUrl?.includes('cloudinary.com') || existingProduct?.imagePublicId);
 
       if (isDirectImageUrl(rawImageUrl)) {
-        // Only overwrite existing Cloudinary image if it's a direct URL from Excel
         productData.imageUrl = rawImageUrl;
-      } else if (isValidImageUrl(rawImageUrl) && !hasExistingCloudinary) {
-        // HTTP URL but not a direct image (Google search link) — queue for resolution
-        // ONLY if there's no existing high-quality Cloudinary image
-        productData._pendingImageQuery = rawImageUrl;
-        if (i < 5) {
-          debug(`[IMPORT] Row ${i + 1} (${sku}) imageUrl queued for resolution: "${rawImageUrl.substring(0, 80)}"`);
-        }
       } else {
-        // No valid image in Excel or we already have a Cloudinary image to protect
-        if (rawImageUrl && i < 5 && !hasExistingCloudinary) {
-          debug(`[IMPORT] Row ${i + 1} (${sku}) imageUrl is not a valid URL: "${rawImageUrl}"`);
-        }
+        // Queue for background resolution (Google Search OR Cloudinary SKU match)
+        productData._pendingImageQuery = rawImageUrl;
       }
 
       // Track products that need image resolution (for post-import phase)
-      if (productData._pendingImageQuery) {
+      if (productData._pendingImageQuery !== undefined) {
         pendingImageProducts.push({
           sku: productData.sku,
           brand: productData.brand,
@@ -1591,23 +1570,7 @@ exports.importProducts = async (req, res) => {
         delete productData._pendingImageQuery;
       }
 
-      // Separate image fields — only $set them when Excel provides a valid URL
-      // Otherwise use $setOnInsert so existing images survive re-imports
-      const hasExcelImage = !!productData.imageUrl;
-      const imageFields = {};
-      if (hasExcelImage) {
-        imageFields.imageUrl = productData.imageUrl;
-      }
-      delete productData.imageUrl; // remove from main $set
-
       const updateOp = { $set: productData };
-      if (!hasExcelImage) {
-        // Only set imageUrl on brand-new products (upsert insert)
-        updateOp.$setOnInsert = { imageUrl: "", imagePublicId: "" };
-      } else {
-        // Excel provided a valid direct image URL — overwrite
-        updateOp.$set.imageUrl = imageFields.imageUrl;
-      }
 
       operations.push({
         updateOne: {
@@ -1734,31 +1697,23 @@ exports.importProducts = async (req, res) => {
       if (syncMode === "additive") {
         debug("[IMPORT] Additive mode: skipped removal of SKUs not in upload");
       } else {
-        // Step 1: Find non-manual products whose SKU is absent from the uploaded sheet
-        const productsToRemove = await Product.find({
-          sku: { $nin: uploadedSkus },
-          isManuallyEdited: { $ne: true },
-        }).lean();
-
-        if (productsToRemove.length > 0) {
-          // Step 2: Backup before deletion (safety net — restorable via admin UI)
-          await DeletedProductBatch.create({
-            deletedBy: req.user?._id,
-            reason: `Sheet re-upload sync — removed ${productsToRemove.length} product(s) not in "${req.file.originalname}"`,
-            count: productsToRemove.length,
-            products: productsToRemove,
-          });
-
-          // Step 3: Hard-delete from catalog
-          const deleteResult = await Product.deleteMany({
+        // OLD METHOD: Mark missing products as sold out (isActive=false, quantity=0)
+        // Jim prefers this over hard-deletion to preserve SEO and order history links.
+        const result = await Product.updateMany(
+          {
             sku: { $nin: uploadedSkus },
-            isManuallyEdited: { $ne: true },
-          });
-          removedCount = deleteResult.deletedCount || 0;
-          debug(`[IMPORT] Sync complete: ${removedCount} products not in sheet REMOVED (backup saved)`);
-        } else {
-          debug(`[IMPORT] Sync complete: no products to remove (all SKUs present in sheet or manually added)`);
-        }
+            isManuallyEdited: { $ne: true }
+          },
+          {
+            $set: {
+              isActive: false,
+              totalQuantity: 0,
+              sizes: [] // Clear sizes to show as sold out
+            }
+          }
+        );
+        removedCount = result.modifiedCount || 0;
+        debug(`[IMPORT] Sync complete: ${removedCount} products not in sheet marked as SOLD OUT`);
       }
 
       phaseMarks.syncComplete = Date.now();
@@ -1775,47 +1730,31 @@ exports.importProducts = async (req, res) => {
     const totalMs = Date.now() - startTime;
     const elapsed = (totalMs / 1000).toFixed(2);
 
-    // ── Post-import: auto-resolve images from Google search URLs (async, non-blocking) ──
-    let imageResolved = 0;
-    let imageFailed = 0;
+    // ── Post-import: auto-resolve images (non-blocking background process) ──
+    // This prevents Gateway Timeouts for large imports.
+    const imageResolutionStatus = pendingImageProducts.length > 0 ? "processing_in_background" : "not_needed";
     if (pendingImageProducts.length > 0) {
-      const imageResolveStart = Date.now();
+      // Start background process (IIFE)
+      (async () => {
+        const skusToResolve = pendingImageProducts.map(p => p.sku);
+        const currentProducts = await Product.find({
+          sku: { $in: skusToResolve },
+          $or: [
+            { imageUrl: { $regex: /cloudinary\.com/i } },
+            { imagePublicId: { $ne: "" } }
+          ]
+        }).select("sku").lean();
 
-      // Safety Filter: Double-check that these products don't have Cloudinary images
-      // (This handles cases where the database state changed during the import process)
-      const skusToResolve = pendingImageProducts.map(p => p.sku);
-      const currentProducts = await Product.find({
-        sku: { $in: skusToResolve },
-        $or: [
-          { imageUrl: { $regex: /cloudinary\.com/i } },
-          { imagePublicId: { $ne: "" } }
-        ]
-      }).select("sku").lean();
+        const skusWithCloudinary = new Set(currentProducts.map(p => p.sku));
+        const filteredPendingProducts = pendingImageProducts.filter(p => !skusWithCloudinary.has(p.sku));
 
-      const skusWithCloudinary = new Set(currentProducts.map(p => p.sku));
-      const filteredPendingProducts = pendingImageProducts.filter(p => !skusWithCloudinary.has(p.sku));
+        if (filteredPendingProducts.length > 0) {
+          debug(`[IMPORT-BG] Background image resolution started for ${filteredPendingProducts.length} items.`);
 
-      if (filteredPendingProducts.length > 0) {
-        debug(
-          `[IMPORT] Starting auto image resolution for ${filteredPendingProducts.length} products (skipped ${pendingImageProducts.length - filteredPendingProducts.length} protected Cloudinary images)...`,
-        );
-        // Resolve up to 50 images during import (rest handled by /resolve-images endpoint)
-        const batch50 = filteredPendingProducts.slice(0, 50);
-        try {
-          const { resolved, failed: imgFailed } = await batchResolveImages(
-            batch50,
-            3,
-            (r, f, t) => {
-              if ((r + f) % 10 === 0)
-                debug(
-                  `[IMAGE-RESOLVE] Progress: ${r} resolved, ${f} failed of ${t}`,
-                );
-            },
-          );
-          imageResolved = resolved.length;
-          imageFailed = imgFailed.length;
+          // Resolve in batches to avoid overwhelming external APIs
+          const batch50 = filteredPendingProducts.slice(0, 50);
+          const { resolved } = await batchResolveImages(batch50, 2);
 
-          // Update resolved products in DB
           if (resolved.length > 0) {
             const imgOps = resolved.map((r) => ({
               updateOne: {
@@ -1824,31 +1763,14 @@ exports.importProducts = async (req, res) => {
               },
             }));
             await Product.bulkWrite(imgOps, { ordered: false });
-            debug(`[IMPORT] Auto-resolved ${resolved.length} product images`);
+            debug(`[IMPORT-BG] Background resolution complete: ${resolved.length} images linked.`);
           }
-          if (imgFailed.length > 0) {
-            debug(
-              `[IMPORT] Image resolution failed for ${imgFailed.length} products (first 5):`,
-              imgFailed.slice(0, 5).map((f) => `${f.sku}: ${f.reason}`),
-            );
-          }
-          if (filteredPendingProducts.length > 50) {
-            debug(
-              `[IMPORT] ${filteredPendingProducts.length - 50} products still need image resolution — use POST /api/admin/resolve-images`,
-            );
-          }
-          phaseMarks.imageResolveComplete = Date.now();
-          logInfo(`Image resolution complete in ${phaseMarks.imageResolveComplete - imageResolveStart}ms`, {
-            imageResolved,
-            imageFailed,
-            remaining: Math.max(0, filteredPendingProducts.length - 50),
-          });
-        } catch (imgErr) {
-          console.error("[IMPORT] Image auto-resolution error:", imgErr.message);
-          logWarn(`Image auto-resolution warning: ${imgErr.message}`);
         }
-      }
+      })().catch(err => console.error("[IMPORT-BG-IMAGE] Error in background resolution:", err));
     }
+
+    const imageResolved = 0; // Handled in background
+    const imageFailed = 0;   // Handled in background
 
     // Log import summary
     debug(
@@ -1952,9 +1874,8 @@ exports.importProducts = async (req, res) => {
         extractedSizeFromDescription: extractedSizeFromDescriptionCount,
         syncMode,
         removedCount,
-        imageResolved,
-        imageFailed,
-        imagePending: Math.max(0, pendingImageProducts.length - 50),
+        imageResolutionStatus,
+        imagePending: pendingImageProducts.length,
       },
       sizeProfile: sizeConsolidationStats,
       checks,
@@ -1996,9 +1917,8 @@ exports.importProducts = async (req, res) => {
       failed,
       warnings,
       warningDetails,
-      imageResolved,
-      imageFailed,
-      imagePending: Math.max(0, pendingImageProducts.length - 50),
+      imageResolutionStatus,
+      imagePending: pendingImageProducts.length,
       protectedManualRows,
       protectedManualSamples,
       syncMode,
@@ -2480,3 +2400,100 @@ function cleanup(filePath) {
     } catch { }
   }
 }
+
+/**
+ * POST /api/admin/relink-cloudinary
+ * Scans Cloudinary for existing images and maps them back to products.
+ * Use this to recover from accidental data loss.
+ */
+exports.relinkCloudinaryImages = async (req, res) => {
+  try {
+    const folders = ["oxford-sports", "oxford-sports/products"];
+    let totalMatched = 0;
+    const log = [];
+
+    console.log("[RELINK] Starting Cloudinary scan...");
+
+    for (const folder of folders) {
+      let nextCursor = null;
+      do {
+        const response = await cloudinary.api.resources({
+          type: "upload",
+          prefix: folder + "/",
+          max_results: 500,
+          next_cursor: nextCursor,
+        });
+
+        const resources = response.resources;
+        nextCursor = response.next_cursor;
+
+        if (!resources || resources.length === 0) break;
+
+        // Fetch all products that are currently missing images to optimize matching
+        const productsWithoutImages = await Product.find({
+          $or: [{ imageUrl: "" }, { imageUrl: null }, { imageUrl: { $exists: false } }],
+        }).select("sku").lean();
+
+        const missingSkuMap = new Map();
+        productsWithoutImages.forEach(p => {
+          missingSkuMap.set(p.sku, true);
+          // Also map sanitized version for matching admin-uploaded images
+          missingSkuMap.set(p.sku.replace(/[^a-zA-Z0-9_-]/g, "_"), p.sku);
+        });
+
+        const bulkOps = [];
+
+        for (const resource of resources) {
+          const publicId = resource.public_id;
+          const fileName = publicId.split("/").pop(); // Get the SKU part
+
+          let targetSku = null;
+          if (missingSkuMap.has(fileName)) {
+            const val = missingSkuMap.get(fileName);
+            targetSku = val === true ? fileName : val;
+          }
+
+          if (targetSku) {
+            bulkOps.push({
+              updateOne: {
+                filter: { sku: targetSku },
+                update: {
+                  $set: {
+                    imageUrl: resource.secure_url,
+                    imagePublicId: publicId
+                  }
+                }
+              }
+            });
+            totalMatched++;
+            if (log.length < 50) log.push(`Linked ${targetSku}`);
+          }
+        }
+
+        if (bulkOps.length > 0) {
+          await Product.bulkWrite(bulkOps, { ordered: false });
+        }
+
+        console.log(`[RELINK] Processed batch in ${folder}, matched ${totalMatched} so far...`);
+      } while (nextCursor);
+    }
+
+    // Bust cache so images show up immediately
+    try { await cache.invalidateProducts(); } catch (e) {}
+
+    res.json({
+      success: true,
+      message: `Successfully relinked ${totalMatched} images from Cloudinary.`,
+      count: totalMatched,
+      samples: log
+    });
+
+  } catch (err) {
+    console.error("[RELINK ERROR]", err);
+    res.status(500).json({
+      error: "Cloudinary Scan Failed",
+      details: err.message,
+      hint: "Ensure CLOUDINARY_API_KEY and SECRET are correctly set in Railway."
+    });
+  }
+};

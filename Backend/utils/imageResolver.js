@@ -204,16 +204,27 @@ async function searchBing(query) {
 }
 
 /**
- * Strategy 3: Brand-specific CDN URL patterns.
- * For adidas, construct known CDN URL patterns.
+ * Strategy 3: Brand-specific and Internal CDN URL patterns.
+ * Constructs known URL patterns based on SKU and Brand.
  */
 function brandCdnCandidates(sku, brand) {
   const candidates = [];
   const b = (brand || "").toLowerCase();
   const s = (sku || "").toUpperCase();
 
+  // 1. Internal Cloudinary Store (SKU-linked)
+  const cName = process.env.CLOUDINARY_CLOUD_NAME;
+  if (cName) {
+    // Check for standard SKU-named images in the products folder
+    // Use encodeURIComponent to handle SKUs with spaces or special chars
+    const encodedSku = encodeURIComponent(s);
+    candidates.push(`https://res.cloudinary.com/${cName}/image/upload/v1/oxford-sports/products/${encodedSku}.jpg`);
+    candidates.push(`https://res.cloudinary.com/${cName}/image/upload/v1/oxford-sports/products/${encodedSku}.png`);
+    candidates.push(`https://res.cloudinary.com/${cName}/image/upload/v1/oxford-sports/products/${encodedSku}.webp`);
+  }
+
+  // 2. External Brand CDNs
   if (b.includes("adidas")) {
-    // adidas assets CDN pattern (common format)
     candidates.push(
       `https://assets.adidas.com/images/w_600,f_auto,q_auto/assets/${s}_1.jpg`,
     );
