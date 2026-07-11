@@ -704,7 +704,14 @@ function consolidateBySku(rows) {
       if (!existing.subcategory && row.subcategory) existing.subcategory = row.subcategory;
       if (!existing.brand && row.brand) existing.brand = row.brand;
       if (!existing.color && row.color) existing.color = row.color;
-      if (!existing.imageUrl && row.imageUrl) existing.imageUrl = row.imageUrl;
+
+      // ── Image Prioritization: Prefer Cloudinary URLs over search engine URLs ──
+      const isCloudinary = (url) => String(url || "").toLowerCase().includes("cloudinary.com");
+      if (row.imageUrl) {
+        if (!existing.imageUrl || (!isCloudinary(existing.imageUrl) && isCloudinary(row.imageUrl))) {
+          existing.imageUrl = row.imageUrl;
+        }
+      }
 
       // Update price if existing is zero/empty
       if ((!existing.price || existing.price === 0) && row.price) existing.price = row.price;
@@ -1541,20 +1548,19 @@ exports.importProducts = async (req, res) => {
       });
       productData.brandCanonical = deriveBrandCanonical(productData.brand);
 
-      // ── Image URL logic (Reverted to previous behavior) ──
+      // ── Image URL logic: Prioritize Direct URLs; Queue others for background lookup ──
+      // This ensures even empty fields trigger a Cloudinary SKU-based check.
       const rawImageUrl = row.imageUrl ? String(row.imageUrl).trim() : "";
 
       if (isDirectImageUrl(rawImageUrl)) {
         productData.imageUrl = rawImageUrl;
-      } else if (isValidImageUrl(rawImageUrl)) {
+      } else {
+        // Queue for background resolution (Google Search OR Cloudinary SKU match)
         productData._pendingImageQuery = rawImageUrl;
-        if (i < 5) {
-          debug(`[IMPORT] Row ${i + 1} (${sku}) imageUrl queued for resolution: "${rawImageUrl.substring(0, 80)}"`);
-        }
       }
 
       // Track products that need image resolution (for post-import phase)
-      if (productData._pendingImageQuery) {
+      if (productData._pendingImageQuery !== undefined) {
         pendingImageProducts.push({
           sku: productData.sku,
           brand: productData.brand,
@@ -1724,47 +1730,31 @@ exports.importProducts = async (req, res) => {
     const totalMs = Date.now() - startTime;
     const elapsed = (totalMs / 1000).toFixed(2);
 
-    // ── Post-import: auto-resolve images from Google search URLs (async, non-blocking) ──
-    let imageResolved = 0;
-    let imageFailed = 0;
+    // ── Post-import: auto-resolve images (non-blocking background process) ──
+    // This prevents Gateway Timeouts for large imports.
+    const imageResolutionStatus = pendingImageProducts.length > 0 ? "processing_in_background" : "not_needed";
     if (pendingImageProducts.length > 0) {
-      const imageResolveStart = Date.now();
+      // Start background process (IIFE)
+      (async () => {
+        const skusToResolve = pendingImageProducts.map(p => p.sku);
+        const currentProducts = await Product.find({
+          sku: { $in: skusToResolve },
+          $or: [
+            { imageUrl: { $regex: /cloudinary\.com/i } },
+            { imagePublicId: { $ne: "" } }
+          ]
+        }).select("sku").lean();
 
-      // Safety Filter: Double-check that these products don't have Cloudinary images
-      // (This handles cases where the database state changed during the import process)
-      const skusToResolve = pendingImageProducts.map(p => p.sku);
-      const currentProducts = await Product.find({
-        sku: { $in: skusToResolve },
-        $or: [
-          { imageUrl: { $regex: /cloudinary\.com/i } },
-          { imagePublicId: { $ne: "" } }
-        ]
-      }).select("sku").lean();
+        const skusWithCloudinary = new Set(currentProducts.map(p => p.sku));
+        const filteredPendingProducts = pendingImageProducts.filter(p => !skusWithCloudinary.has(p.sku));
 
-      const skusWithCloudinary = new Set(currentProducts.map(p => p.sku));
-      const filteredPendingProducts = pendingImageProducts.filter(p => !skusWithCloudinary.has(p.sku));
+        if (filteredPendingProducts.length > 0) {
+          debug(`[IMPORT-BG] Background image resolution started for ${filteredPendingProducts.length} items.`);
 
-      if (filteredPendingProducts.length > 0) {
-        debug(
-          `[IMPORT] Starting auto image resolution for ${filteredPendingProducts.length} products (skipped ${pendingImageProducts.length - filteredPendingProducts.length} protected Cloudinary images)...`,
-        );
-        // Resolve up to 50 images during import (rest handled by /resolve-images endpoint)
-        const batch50 = filteredPendingProducts.slice(0, 50);
-        try {
-          const { resolved, failed: imgFailed } = await batchResolveImages(
-            batch50,
-            3,
-            (r, f, t) => {
-              if ((r + f) % 10 === 0)
-                debug(
-                  `[IMAGE-RESOLVE] Progress: ${r} resolved, ${f} failed of ${t}`,
-                );
-            },
-          );
-          imageResolved = resolved.length;
-          imageFailed = imgFailed.length;
+          // Resolve in batches to avoid overwhelming external APIs
+          const batch50 = filteredPendingProducts.slice(0, 50);
+          const { resolved } = await batchResolveImages(batch50, 2);
 
-          // Update resolved products in DB
           if (resolved.length > 0) {
             const imgOps = resolved.map((r) => ({
               updateOne: {
@@ -1773,31 +1763,14 @@ exports.importProducts = async (req, res) => {
               },
             }));
             await Product.bulkWrite(imgOps, { ordered: false });
-            debug(`[IMPORT] Auto-resolved ${resolved.length} product images`);
+            debug(`[IMPORT-BG] Background resolution complete: ${resolved.length} images linked.`);
           }
-          if (imgFailed.length > 0) {
-            debug(
-              `[IMPORT] Image resolution failed for ${imgFailed.length} products (first 5):`,
-              imgFailed.slice(0, 5).map((f) => `${f.sku}: ${f.reason}`),
-            );
-          }
-          if (filteredPendingProducts.length > 50) {
-            debug(
-              `[IMPORT] ${filteredPendingProducts.length - 50} products still need image resolution — use POST /api/admin/resolve-images`,
-            );
-          }
-          phaseMarks.imageResolveComplete = Date.now();
-          logInfo(`Image resolution complete in ${phaseMarks.imageResolveComplete - imageResolveStart}ms`, {
-            imageResolved,
-            imageFailed,
-            remaining: Math.max(0, filteredPendingProducts.length - 50),
-          });
-        } catch (imgErr) {
-          console.error("[IMPORT] Image auto-resolution error:", imgErr.message);
-          logWarn(`Image auto-resolution warning: ${imgErr.message}`);
         }
-      }
+      })().catch(err => console.error("[IMPORT-BG-IMAGE] Error in background resolution:", err));
     }
+
+    const imageResolved = 0; // Handled in background
+    const imageFailed = 0;   // Handled in background
 
     // Log import summary
     debug(
@@ -1901,9 +1874,8 @@ exports.importProducts = async (req, res) => {
         extractedSizeFromDescription: extractedSizeFromDescriptionCount,
         syncMode,
         removedCount,
-        imageResolved,
-        imageFailed,
-        imagePending: Math.max(0, pendingImageProducts.length - 50),
+        imageResolutionStatus,
+        imagePending: pendingImageProducts.length,
       },
       sizeProfile: sizeConsolidationStats,
       checks,
@@ -1945,9 +1917,8 @@ exports.importProducts = async (req, res) => {
       failed,
       warnings,
       warningDetails,
-      imageResolved,
-      imageFailed,
-      imagePending: Math.max(0, pendingImageProducts.length - 50),
+      imageResolutionStatus,
+      imagePending: pendingImageProducts.length,
       protectedManualRows,
       protectedManualSamples,
       syncMode,
