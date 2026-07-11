@@ -193,10 +193,36 @@ const COLUMN_MAP = {
     "item code",
     "article",
     "article number",
+    "article no",
+    "article no.",
+    "art no",
+    "art no.",
+    "artno",
     "style code",
     "ref",
     "reference",
     "product", // Feb adidas export uses "Product" for SKU codes
+    "material",
+    "material number",
+    "material no",
+    "material no.",
+    "global material number",
+    "item number",
+    "style",
+    "model",
+    "model number",
+    "articleid",
+    "article id",
+    "no",
+    "no.",
+    "id",
+    "productid",
+    "ean",
+    "barcode",
+    "ean/upc",
+    "style number",
+    "style no",
+    "style no.",
   ],
   name: [
     "style",
@@ -205,14 +231,24 @@ const COLUMN_MAP = {
     "product name",
     "name",
     "title",
+    "description",
+    "article description",
+    "model name",
+    "model description",
+    "product description",
+    "item name",
+    "item description",
+    "material description",
+    "description 1",
+    "description 2",
   ],
   description: [
-    "description",
-    "desc",
-    "details",
-    "product description",
     "long description",
     "notes",
+    "product details",
+    "details",
+    "desc",
+    "web description",
   ],
   price: [
     "trade",
@@ -252,7 +288,7 @@ const COLUMN_MAP = {
     "amount",
     "value",
   ],
-  rrp: ["rrp", "retail price", "recommended retail price", "srp", "msrp"],
+  rrp: ["rrp", "retail price", "recommended retail price", "srp", "msrp", "retail"],
   category: [
     "gender",
     "category",
@@ -261,6 +297,9 @@ const COLUMN_MAP = {
     "type",
     "product type",
     "group",
+    "division",
+    "consumer",
+    "age group",
   ],
   subcategory: [
     "subcategory",
@@ -270,6 +309,7 @@ const COLUMN_MAP = {
     "team",
     "brand line",
     "collection",
+    "category description",
   ],
   brand: [
     "brand",
@@ -288,6 +328,8 @@ const COLUMN_MAP = {
     "colour",
     "color",
     "col",
+    "color name",
+    "colour name",
   ],
   sizes: [
     "uk size",
@@ -296,8 +338,9 @@ const COLUMN_MAP = {
     "size range",
     "available sizes",
     "sizes available",
+    "size desc",
   ],
-  barcode: ["barcode", "ean", "upc", "ean13", "gtin", "bar code"],
+  barcode: ["barcode", "ean", "upc", "ean13", "gtin", "bar code", "eanupc"],
   quantity: [
     "qty",
     "quantity",
@@ -312,6 +355,7 @@ const COLUMN_MAP = {
     "total quantity",
     "on hand",
     "stock on hand",
+    "free stock",
   ],
   imageUrl: [
     "image link",
@@ -321,7 +365,6 @@ const COLUMN_MAP = {
     "photo",
     "picture",
     "image file",
-    "image url", // Added to match "Image URL" column
     "filename",
     "empty1", // unnamed second column in adidas Master sheet (__EMPTY_1 → 'empty1')
   ],
@@ -422,23 +465,23 @@ function detectMapping(headers) {
 
   // ── Fallback heuristics for critical fields ──
   if (!mapping.sku) {
-    const skuH = headers.find((h) => /\bcode\b|sku|article|ref\b/i.test(h));
+    const skuH = headers.find((h) => /\bcode\b|sku|article|ref\b|material|art\s*no|art\.no|product\s*id|item\s*no/i.test(h));
     if (skuH) mapping.sku = skuH;
   }
   if (!mapping.name) {
-    const nameH = headers.find((h) => /^(style|name|title|product\s+name)$/i.test(h) || /^(style|name|title)\s+(desc|description)$/i.test(h));
+    const nameH = headers.find((h) => /^(style|name|title|product\s+name|description)$/i.test(h) || /^(style|name|title|article|material)\s+(desc|description)$/i.test(h));
     if (nameH && nameH !== mapping.sku) mapping.name = nameH;
   }
   if (!mapping.price) {
-    const priceH = headers.find((h) => /trade|price|cost|sale|£|gbp|net|landing|offer|fob|wholesale|total|amount|value/i.test(h));
+    const priceH = headers.find((h) => /trade|price|cost|sale|£|gbp|net|landing|offer|fob|wholesale|total|amount|value|msrp|rrp|retail/i.test(h));
     if (priceH) mapping.price = priceH;
   }
   if (!mapping.category) {
-    const catH = headers.find((h) => /gender|category|department/i.test(h));
+    const catH = headers.find((h) => /gender|category|department|division|consumer|age\s*group/i.test(h));
     if (catH) mapping.category = catH;
   }
   if (!mapping.imageUrl) {
-    const imgH = headers.find((h) => /image|img|photo|picture/i.test(h));
+    const imgH = headers.find((h) => /image|img|photo|picture|url|link|file/i.test(h));
     if (imgH) mapping.imageUrl = imgH;
   }
 
@@ -469,7 +512,7 @@ function detectMapping(headers) {
  * and does not infer size labels from text.
  */
 function normalizeParentChildSkus(rows, hasSizeMapping) {
-  if (rows.length === 0 || hasSizeMapping) return rows;
+  if (rows.length === 0) return rows;
 
   // Collect all SKUs
   const allSkus = [
@@ -480,13 +523,14 @@ function normalizeParentChildSkus(rows, hasSizeMapping) {
     ),
   ];
 
-  // Find parent SKUs: a SKU that is a prefix of at least 2 other longer SKUs
-  const parentSkus = new Map(); // parentSku -> parent row data (for name/description)
+  // Find parent SKUs: a SKU that is a prefix of at least 1 other longer SKU
+  // (Lowered from 2 to catch products with only one size variant left in stock)
+  const parentSkus = new Map(); // parentSku -> parent row data
   for (const sku of allSkus) {
     const children = allSkus.filter(
       (s) => s !== sku && s.startsWith(sku) && s.length > sku.length,
     );
-    if (children.length >= 2) {
+    if (children.length >= 1) {
       // Find the parent row to get its clean name
       const parentRow = rows.find(
         (r) => String(r.sku || "").trim().toUpperCase() === sku,
