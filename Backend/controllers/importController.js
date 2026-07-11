@@ -1795,13 +1795,14 @@ exports.importProducts = async (req, res) => {
         if (filteredPendingProducts.length > 0) {
           debug(`[IMPORT-BG] Background image resolution started for ${filteredPendingProducts.length} items.`);
 
-          // Resolve in batches to avoid overwhelming external APIs
-          const BATCH_SIZE_RESOLVE = 99;
+          // Resolve in larger batches with higher concurrency
+          const BATCH_SIZE_RESOLVE = 250;
           for (let i = 0; i < filteredPendingProducts.length; i += BATCH_SIZE_RESOLVE) {
             const batch = filteredPendingProducts.slice(i, i + BATCH_SIZE_RESOLVE);
             debug(`[IMPORT-BG] Processing batch ${Math.floor(i / BATCH_SIZE_RESOLVE) + 1} (${batch.length} images)...`);
 
-            const { resolved } = await batchResolveImages(batch, 2);
+            // Higher concurrency (5) + parallelized candidate checks inside resolver
+            const { resolved } = await batchResolveImages(batch, 5);
 
             if (resolved.length > 0) {
               const imgOps = resolved.map((r) => ({
