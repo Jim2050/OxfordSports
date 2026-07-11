@@ -395,13 +395,22 @@ function extractSizeFromChildDescription(childDescription, parentDescription = "
 function normalizeParentChildSkus(rows, hasSizeMapping = false) {
   if (rows.length === 0) return rows;
 
-  const allSkus = [...new Set(rows.map((r) => (r.sku ? String(r.sku).trim().toUpperCase() : "")).filter(Boolean))];
+  const skuToRowMap = new Map();
+  for (const r of rows) {
+    const s = String(r.sku || "").trim().toUpperCase();
+    if (s && !skuToRowMap.has(s)) skuToRowMap.set(s, r);
+  }
+
+  const allSkus = Array.from(skuToRowMap.keys()).sort();
   const parentSkus = new Map();
-  for (const sku of allSkus) {
-    const children = allSkus.filter((s) => s !== sku && s.startsWith(sku) && s.length > sku.length);
-    if (children.length >= 1) {
-      const parentRow = rows.find((r) => String(r.sku || "").trim().toUpperCase() === sku);
-      parentSkus.set(sku, {
+
+  for (let i = 0; i < allSkus.length - 1; i++) {
+    const current = allSkus[i];
+    const next = allSkus[i + 1];
+    // In a sorted list, if current is a parent, the very next item MUST start with it
+    if (next.startsWith(current) && next.length > current.length) {
+      const parentRow = skuToRowMap.get(current);
+      parentSkus.set(current, {
         name: parentRow ? String(parentRow.name || "").trim() : "",
         description: parentRow ? String(parentRow.description || "").trim() : "",
       });
@@ -415,22 +424,30 @@ function normalizeParentChildSkus(rows, hasSizeMapping = false) {
     const sku = row.sku ? String(row.sku).trim().toUpperCase() : "";
     if (parentSkus.has(sku)) continue;
 
-    for (const [parentSku, parentInfo] of parentSkus) {
-      if (sku.startsWith(parentSku) && sku.length > parentSku.length) {
-        const childDescription = String(row.description || row.name || "").trim();
-        const parentDescription = String(parentInfo.description || parentInfo.name || "").trim();
-
-        if (!row.sizes && childDescription) {
-          const extractedSize = extractSizeFromChildDescription(childDescription, parentDescription);
-          if (extractedSize) {
-            row.sizes = extractedSize;
-            row._sizeExtractedFromDescription = true;
-          }
-        }
-        row.sku = parentSku;
-        if (parentInfo.name) row.name = parentInfo.name;
+    // Fast O(SKU_LEN) lookup for longest parent prefix
+    let matchedParentSku = null;
+    for (let len = sku.length - 1; len >= 1; len--) {
+      const potential = sku.substring(0, len);
+      if (parentSkus.has(potential)) {
+        matchedParentSku = potential;
         break;
       }
+    }
+
+    if (matchedParentSku) {
+      const parentInfo = parentSkus.get(matchedParentSku);
+      const childDescription = String(row.description || row.name || "").trim();
+      const parentDescription = String(parentInfo.description || parentInfo.name || "").trim();
+
+      if (!row.sizes && childDescription) {
+        const extractedSize = extractSizeFromChildDescription(childDescription, parentDescription);
+        if (extractedSize) {
+          row.sizes = extractedSize;
+          row._sizeExtractedFromDescription = true;
+        }
+      }
+      row.sku = matchedParentSku;
+      if (parentInfo.name) row.name = parentInfo.name;
     }
     result.push(row);
   }
