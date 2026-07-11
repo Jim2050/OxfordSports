@@ -3,10 +3,6 @@
  * ───────────────────────────────────────────────────
  * Standalone Excel/CSV parsing utilities for the dry-run pipeline.
  * These functions are pure data transformers — no database writes.
- *
- * Used by:
- *   - importDryRunController.js (preview mode)
- *   - importQueue.js (background processing)
  */
 
 const XLSX = require('xlsx');
@@ -17,71 +13,206 @@ const log = require('./logger');
  * Maps common header variations → canonical field names.
  */
 const COLUMN_MAP = {
-  // SKU
-  'sku': 'sku', 'code': 'sku', 'product code': 'sku', 'item code': 'sku',
-  'style code': 'sku', 'style': 'sku', 'article': 'sku', 'article number': 'sku',
-  'item number': 'sku', 'product id': 'sku',
-
-  // Name
-  'name': 'name', 'product name': 'name', 'title': 'name', 'description': 'name',
-  'product': 'name', 'item name': 'name', 'item': 'name', 'product description': 'name',
-
-  // Price
-  'price': 'price', 'sale price': 'price', 'cost': 'price', 'unit price': 'price',
-  'wholesale price': 'price', 'trade price': 'price', 'our price': 'price',
-  'net price': 'price', 'selling price': 'price',
-
-  // RRP
-  'rrp': 'rrp', 'retail price': 'rrp', 'retail': 'rrp', 'msrp': 'rrp',
-  'recommended retail price': 'rrp', 'rrp price': 'rrp',
-
-  // Category
-  'category': 'category', 'dept': 'category', 'department': 'category',
-  'product type': 'category', 'type': 'category', 'group': 'category',
-
-  // Subcategory
-  'subcategory': 'subcategory', 'sub category': 'subcategory',
-  'sub-category': 'subcategory', 'sub type': 'subcategory',
-
-  // Brand
-  'brand': 'brand', 'manufacturer': 'brand', 'vendor': 'brand',
-  'supplier': 'brand', 'make': 'brand',
-
-  // Color
-  'color': 'color', 'colour': 'color', 'col': 'color',
-
-  // Barcode
-  'barcode': 'barcode', 'ean': 'barcode', 'upc': 'barcode',
-  'gtin': 'barcode', 'ean13': 'barcode',
-
-  // Sizes
-  'size': 'sizes', 'sizes': 'sizes', 'uk size': 'sizes', 'eu size': 'sizes',
-  'size range': 'sizes',
-
-  // Quantity
-  'quantity': 'quantity', 'qty': 'quantity', 'stock': 'quantity',
-  'stock qty': 'quantity', 'available': 'quantity', 'in stock': 'quantity',
-  'units': 'quantity', 'on hand': 'quantity',
-
-  // Image
-  'image': 'imageUrl', 'image url': 'imageUrl', 'imageurl': 'imageUrl',
-  'picture': 'imageUrl', 'photo': 'imageUrl', 'img': 'imageUrl',
+  sku: [
+    "code",
+    "sku",
+    "product code",
+    "item code",
+    "article",
+    "article number",
+    "style code",
+    "ref",
+    "reference",
+    "product", // Feb adidas export uses "Product" for SKU codes
+  ],
+  name: [
+    "style",
+    "style desc",
+    "style description",
+    "product name",
+    "name",
+    "title",
+  ],
+  description: [
+    "description",
+    "desc",
+    "details",
+    "product description",
+    "long description",
+    "notes",
+  ],
+  price: [
+    "trade",
+    "trade price",
+    "trade (£)",
+    "trade price (£)",
+    "wholesale price",
+    "wholesale",
+    "our price",
+    "price",
+    "unit price",
+    "cost",
+    "cost price",
+    "sell price",
+    "sale",
+    "sale price",
+    "sale (£)",
+    "price (£)",
+    "price gbp",
+    "gbp",
+    "net",
+    "nett",
+    "net price",
+    "nett price",
+    "landing",
+    "landing price",
+    "offer price",
+    "special price",
+    "special offer",
+    "clearance price",
+    "clearance",
+    "fob",
+    "fob price",
+    "ex vat",
+    "total",
+    "total price",
+    "amount",
+    "value",
+  ],
+  rrp: ["rrp", "retail price", "recommended retail price", "srp", "msrp"],
+  category: [
+    "gender",
+    "category",
+    "cat",
+    "department",
+    "type",
+    "product type",
+    "group",
+  ],
+  subcategory: [
+    "subcategory",
+    "sub category",
+    "sub-category",
+    "club",
+    "team",
+    "brand line",
+    "collection",
+  ],
+  brand: [
+    "brand",
+    "manufacturer",
+    "make",
+    "label",
+    "empty", // unnamed first column in adidas Master sheet (__EMPTY → 'empty')
+    "supplier",
+    "vendor",
+  ],
+  color: [
+    "colour desc",
+    "colour description",
+    "color desc",
+    "color description",
+    "colour",
+    "color",
+    "col",
+  ],
+  sizes: [
+    "uk size",
+    "size",
+    "sizes",
+    "size range",
+    "available sizes",
+    "sizes available",
+  ],
+  barcode: ["barcode", "ean", "upc", "ean13", "gtin", "bar code"],
+  quantity: [
+    "qty",
+    "quantity",
+    "stock",
+    "stock qty",
+    "stock quantity",
+    "qty available",
+    "available qty",
+    "available",
+    "units",
+    "pcs",
+    "total quantity",
+    "on hand",
+    "stock on hand",
+  ],
+  imageUrl: [
+    "image link",
+    "image url",
+    "image",
+    "img",
+    "photo",
+    "picture",
+    "image file",
+    "filename",
+    "empty1", // unnamed second column in adidas Master sheet (__EMPTY_1 → 'empty1')
+  ],
 };
 
-/**
- * Parse an Excel or CSV file into structured rows.
- * Auto-detects column mapping from headers.
- *
- * @param {string} filePath - Path to the uploaded file
- * @returns {{ rows: object[], headers: string[], mapping: Record<string,string>, unmappedHeaders: string[], sheetSummary: Array<{name:string,rows:number}> }}
- */
+function normalizeHeader(h) {
+  return (h || "")
+    .toString()
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9 ()£]/g, "")
+    .replace(/\s+/g, " ");
+}
+
+function detectMapping(headers) {
+  const mapping = {};
+  const unmappedHeaders = [];
+
+  const sortedHeaders = [...headers].sort((a, b) => {
+    const aEmpty = a.startsWith("__EMPTY") ? 1 : 0;
+    const bEmpty = b.startsWith("__EMPTY") ? 1 : 0;
+    return aEmpty - bEmpty;
+  });
+
+  for (const raw of sortedHeaders) {
+    const norm = normalizeHeader(raw);
+    let matched = false;
+    for (const [field, aliases] of Object.entries(COLUMN_MAP)) {
+      if (aliases.includes(norm)) {
+        if (!mapping[field]) {
+          mapping[field] = raw;
+          matched = true;
+          break;
+        }
+      }
+    }
+    if (!matched && !Object.values(mapping).includes(raw)) {
+      unmappedHeaders.push(raw);
+    }
+  }
+
+  // Fallback heuristics
+  if (!mapping.sku) {
+    const skuH = headers.find((h) => /\bcode\b|sku|article|ref\b/i.test(h));
+    if (skuH) mapping.sku = skuH;
+  }
+  if (!mapping.name) {
+    const nameH = headers.find((h) => /^(style|name|title|product\s+name)$/i.test(h) || /^(style|name|title)\s+(desc|description)$/i.test(h));
+    if (nameH && nameH !== mapping.sku) mapping.name = nameH;
+  }
+  if (!mapping.price) {
+    const priceH = headers.find((h) => /trade|price|cost|sale|£|gbp|net|landing|offer|fob|wholesale|total|amount|value/i.test(h));
+    if (priceH) mapping.price = priceH;
+  }
+
+  return { mapping, unmappedHeaders };
+}
+
 function parseExcelFile(filePath) {
   const workbook = XLSX.readFile(filePath, { cellDates: true });
   const allRows = [];
   const sheetSummary = [];
-  let detectedMapping = {};
+  let mainMapping = {};
   let allHeaders = [];
-  let unmappedHeaders = [];
+  let allUnmapped = [];
 
   for (const sheetName of workbook.SheetNames) {
     const sheet = workbook.Sheets[sheetName];
@@ -93,80 +224,53 @@ function parseExcelFile(filePath) {
     }
 
     const headers = Object.keys(rawData[0]);
+    const { mapping, unmappedHeaders } = detectMapping(headers);
 
-    // Auto-map columns on the first sheet with data
-    if (Object.keys(detectedMapping).length === 0) {
-      const mapped = {};
-      const unmapped = [];
-
-      for (const header of headers) {
-        const normalized = header.toLowerCase().trim().replace(/[_\-\.]/g, ' ');
-        const canonical = COLUMN_MAP[normalized];
-        if (canonical) {
-          mapped[canonical] = header; // canonical → original header name
-        } else {
-          unmapped.push(header);
-        }
-      }
-      detectedMapping = mapped;
-      unmappedHeaders = unmapped;
+    if (Object.keys(mainMapping).length === 0) {
+      mainMapping = mapping;
       allHeaders = headers;
+      allUnmapped = unmappedHeaders;
     }
 
-    // Transform rows using detected mapping
+    const currentMapping = Object.keys(mapping).length > 0 ? mapping : mainMapping;
+
+    let rowCount = 0;
     for (const raw of rawData) {
-      // Skip completely empty rows
-      const values = Object.values(raw).filter(
-        (v) => v !== '' && v !== null && v !== undefined
-      );
+      const values = Object.values(raw).filter((v) => v !== '' && v !== null && v !== undefined);
       if (values.length === 0) continue;
 
       const row = { _sheetName: sheetName };
-
-      // Map known columns
-      for (const [canonical, originalHeader] of Object.entries(detectedMapping)) {
-        row[canonical] = raw[originalHeader] ?? '';
+      for (const [field, col] of Object.entries(currentMapping)) {
+        row[field] = raw[col] !== undefined ? raw[col] : "";
       }
 
-      // Preserve unmapped columns for debugging
-      for (const header of unmappedHeaders) {
-        if (raw[header] !== '' && raw[header] !== undefined) {
-          row[`_unmapped_${header}`] = raw[header];
+      // Price fallback
+      if (row.price === "" || row.price === undefined) {
+        if (raw.Price !== undefined && raw.Price !== "") {
+          row._rawPrice = raw.Price;
         }
       }
 
       allRows.push(row);
+      rowCount++;
     }
 
-    sheetSummary.push({ name: sheetName, rows: rawData.length });
+    sheetSummary.push({ name: sheetName, rows: rowCount });
   }
-
-  log.info('import-parser', 'Excel parsed', {
-    sheets: sheetSummary.length,
-    totalRows: allRows.length,
-    mappedColumns: Object.keys(detectedMapping),
-    unmappedHeaders,
-  });
 
   return {
     rows: allRows,
     headers: allHeaders,
-    mapping: detectedMapping,
-    unmappedHeaders,
+    mapping: mainMapping,
+    unmappedHeaders: allUnmapped,
     sheetSummary,
   };
 }
 
-/**
- * Normalize a size token.
- */
 function normalizeSizeToken(value) {
   return String(value || "").replace(/\s+/g, " ").trim();
 }
 
-/**
- * Extract size from child description by comparing it with parent description.
- */
 function extractSizeFromChildDescription(childDescription, parentDescription = "") {
   const child = normalizeSizeToken(childDescription);
   if (!child) return "";
@@ -199,10 +303,7 @@ function extractSizeFromChildDescription(childDescription, parentDescription = "
     const token = normalizeSizeToken(match[1]);
     if (!token) continue;
     if (/^UK\s*\d/i.test(token)) {
-      const ukNormalized = token
-        .toUpperCase()
-        .replace(/^UK\s*/i, "")
-        .trim();
+      const ukNormalized = token.toUpperCase().replace(/^UK\s*/i, "").trim();
       return `UK ${ukNormalized}`;
     }
     return token.toUpperCase();
@@ -211,38 +312,15 @@ function extractSizeFromChildDescription(childDescription, parentDescription = "
   return "";
 }
 
-/**
- * Normalize parent-child SKU relationships.
- * Some suppliers (like adidas) list a parent SKU summary and child size rows separately.
- * This logic identifies parents, skips summary rows, and maps children to the parent SKU.
- *
- * @param {Array<object>} rows
- * @param {boolean} hasSizeMapping
- * @returns {Array<object>}
- */
 function normalizeParentChildSkus(rows, hasSizeMapping = false) {
   if (rows.length === 0 || hasSizeMapping) return rows;
 
-  // Collect all SKUs
-  const allSkus = [
-    ...new Set(
-      rows
-        .map((r) => (r.sku ? String(r.sku).trim().toUpperCase() : ""))
-        .filter(Boolean),
-    ),
-  ];
-
-  // Find parent SKUs: a SKU that is a prefix of at least 2 other longer SKUs
-  const parentSkus = new Map(); // parentSku -> parent row data (for name/description)
+  const allSkus = [...new Set(rows.map((r) => (r.sku ? String(r.sku).trim().toUpperCase() : "")).filter(Boolean))];
+  const parentSkus = new Map();
   for (const sku of allSkus) {
-    const children = allSkus.filter(
-      (s) => s !== sku && s.startsWith(sku) && s.length > sku.length,
-    );
+    const children = allSkus.filter((s) => s !== sku && s.startsWith(sku) && s.length > sku.length);
     if (children.length >= 2) {
-      // Find the parent row to get its clean name
-      const parentRow = rows.find(
-        (r) => String(r.sku || "").trim().toUpperCase() === sku,
-      );
+      const parentRow = rows.find((r) => String(r.sku || "").trim().toUpperCase() === sku);
       parentSkus.set(sku, {
         name: parentRow ? String(parentRow.name || "").trim() : "",
         description: parentRow ? String(parentRow.description || "").trim() : "",
@@ -255,77 +333,61 @@ function normalizeParentChildSkus(rows, hasSizeMapping = false) {
   const result = [];
   for (const row of rows) {
     const sku = row.sku ? String(row.sku).trim().toUpperCase() : "";
-
-    // Skip parent/summary rows (they have aggregate qty, not per-size)
     if (parentSkus.has(sku)) continue;
 
-    // Check if this is a child of a parent
     for (const [parentSku, parentInfo] of parentSkus) {
       if (sku.startsWith(parentSku) && sku.length > parentSku.length) {
-        const childDescription = String(row.name || "").trim();
-        const parentDescription = String(parentInfo.name || "").trim();
+        const childDescription = String(row.description || row.name || "").trim();
+        const parentDescription = String(parentInfo.description || parentInfo.name || "").trim();
 
         if (!row.sizes && childDescription) {
-          const extractedSize = extractSizeFromChildDescription(
-            childDescription,
-            parentDescription,
-          );
+          const extractedSize = extractSizeFromChildDescription(childDescription, parentDescription);
           if (extractedSize) {
             row.sizes = extractedSize;
             row._sizeExtractedFromDescription = true;
           }
         }
-
-        // Replace child SKU with parent SKU for consolidation
         row.sku = parentSku;
-
-        // Use parent's clean name instead of child's name+color+size string
-        if (parentInfo.name) {
-          row.name = parentInfo.name;
-        }
+        if (parentInfo.name) row.name = parentInfo.name;
         break;
       }
     }
-
     result.push(row);
   }
 
   return result;
 }
 
-/**
- * Consolidate parsed rows by SKU.
- * Merges duplicate SKU entries, summing quantities.
- *
- * @param {Array<object>} rows
- * @returns {Array<object>}
- */
 function consolidateBySku(rows) {
   const map = new Map();
-
   for (const row of rows) {
     const sku = String(row.sku || '').trim().toUpperCase();
     if (!sku) continue;
 
+    const qty = parseInt(row.quantity) || 0;
     if (!map.has(sku)) {
-      map.set(sku, { ...row, sku });
+      const sizeEntries = [];
+      if (row.sizes) {
+        sizeEntries.push({ size: String(row.sizes).trim(), quantity: qty });
+      }
+      map.set(sku, { ...row, sku, sizeEntries, quantity: qty });
     } else {
       const existing = map.get(sku);
-      // Sum quantities
-      existing.quantity = (parseInt(existing.quantity) || 0) + (parseInt(row.quantity) || 0);
-      // Merge sizes if both have size data
-      if (row.sizes && existing.sizes) {
-        existing.sizes = `${existing.sizes},${row.sizes}`;
-      } else if (row.sizes) {
-        existing.sizes = row.sizes;
+      existing.quantity += qty;
+      if (row.sizes) {
+        const s = String(row.sizes).trim();
+        const found = existing.sizeEntries.find(e => e.size === s);
+        if (found) {
+          found.quantity += qty;
+        } else {
+          existing.sizeEntries.push({ size: s, quantity: qty });
+        }
       }
-      // Prefer non-empty values for other fields
-      for (const field of ['name', 'price', 'rrp', 'category', 'brand', 'color', 'imageUrl']) {
+      for (const field of ['name', 'price', 'rrp', 'category', 'brand', 'color', 'imageUrl', 'description']) {
         if (!existing[field] && row[field]) existing[field] = row[field];
       }
     }
   }
-
   return Array.from(map.values());
 }
 
