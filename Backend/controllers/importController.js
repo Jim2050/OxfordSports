@@ -1599,12 +1599,13 @@ exports.importProducts = async (req, res) => {
       }
 
       // Track products that need image resolution (for post-import phase)
-      if (productData._pendingImageQuery) {
+      // Including products with no image data at all so we check Cloudinary for them
+      if (productData._pendingImageQuery || !productData.imageUrl) {
         pendingImageProducts.push({
           sku: productData.sku,
           brand: productData.brand,
           name: productData.name,
-          currentUrl: productData._pendingImageQuery,
+          currentUrl: productData._pendingImageQuery || "",
         });
         delete productData._pendingImageQuery;
       }
@@ -1793,7 +1794,7 @@ exports.importProducts = async (req, res) => {
     const totalMs = Date.now() - startTime;
     const elapsed = (totalMs / 1000).toFixed(2);
 
-    // ── Post-import: auto-resolve images from Google search URLs (async, non-blocking) ──
+    // ── Post-import: auto-resolve images (async, non-blocking) ──
     let imageResolved = 0;
     let imageFailed = 0;
     if (pendingImageProducts.length > 0) {
@@ -1801,14 +1802,14 @@ exports.importProducts = async (req, res) => {
       debug(
         `[IMPORT] Starting auto image resolution for ${pendingImageProducts.length} products...`,
       );
-      // Resolve up to 50 images during import (rest handled by /resolve-images endpoint)
-      const batch50 = pendingImageProducts.slice(0, 50);
+      // Resolve up to 100 images during import (rest handled by /resolve-images endpoint)
+      const batch100 = pendingImageProducts.slice(0, 100);
       try {
         const { resolved, failed: imgFailed } = await batchResolveImages(
-          batch50,
+          batch100,
           3,
           (r, f, t) => {
-            if ((r + f) % 10 === 0)
+            if ((r + f) % 20 === 0)
               debug(
                 `[IMAGE-RESOLVE] Progress: ${r} resolved, ${f} failed of ${t}`,
               );
@@ -1834,16 +1835,16 @@ exports.importProducts = async (req, res) => {
             imgFailed.slice(0, 5).map((f) => `${f.sku}: ${f.reason}`),
           );
         }
-        if (pendingImageProducts.length > 50) {
+        if (pendingImageProducts.length > 100) {
           debug(
-            `[IMPORT] ${pendingImageProducts.length - 50} products still need image resolution — use POST /api/admin/resolve-images`,
+            `[IMPORT] ${pendingImageProducts.length - 100} products still need image resolution — use POST /api/admin/resolve-images`,
           );
         }
         phaseMarks.imageResolveComplete = Date.now();
         logInfo(`Image resolution complete in ${phaseMarks.imageResolveComplete - imageResolveStart}ms`, {
           imageResolved,
           imageFailed,
-          remaining: Math.max(0, pendingImageProducts.length - 50),
+          remaining: Math.max(0, pendingImageProducts.length - 100),
         });
       } catch (imgErr) {
         console.error("[IMPORT] Image auto-resolution error:", imgErr.message);
@@ -1955,7 +1956,7 @@ exports.importProducts = async (req, res) => {
         removedCount,
         imageResolved,
         imageFailed,
-        imagePending: Math.max(0, pendingImageProducts.length - 50),
+        imagePending: Math.max(0, pendingImageProducts.length - 100),
       },
       sizeProfile: sizeConsolidationStats,
       checks,
@@ -1999,7 +2000,7 @@ exports.importProducts = async (req, res) => {
       warningDetails,
       imageResolved,
       imageFailed,
-      imagePending: Math.max(0, pendingImageProducts.length - 50),
+      imagePending: Math.max(0, pendingImageProducts.length - 100),
       protectedManualRows,
       protectedManualSamples,
       syncMode,

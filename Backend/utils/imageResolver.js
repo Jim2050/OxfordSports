@@ -215,12 +215,26 @@ function brandCdnCandidates(sku, brand) {
   // 1. Internal Cloudinary Store (SKU-linked)
   const cName = process.env.CLOUDINARY_CLOUD_NAME;
   if (cName) {
-    // Check for standard SKU-named images in the products folder
-    // Use encodeURIComponent to handle SKUs with spaces or special chars
-    const encodedSku = encodeURIComponent(s);
-    candidates.push(`https://res.cloudinary.com/${cName}/image/upload/v1/oxford-sports/products/${encodedSku}.jpg`);
-    candidates.push(`https://res.cloudinary.com/${cName}/image/upload/v1/oxford-sports/products/${encodedSku}.png`);
-    candidates.push(`https://res.cloudinary.com/${cName}/image/upload/v1/oxford-sports/products/${encodedSku}.webp`);
+    // Generate variations of the SKU to try (e.g., "GK5757-001" -> "GK5757")
+    const skuVariations = new Set([s]);
+    if (s.includes("-")) skuVariations.add(s.split("-")[0]);
+    skuVariations.add(s.replace(/[\s_-]/g, ""));
+
+    // Try stripping trailing letters (e.g. "DH2860B" -> "DH2860")
+    const baseStem = s.replace(/[A-Z]+$/i, "");
+    if (baseStem && baseStem !== s) skuVariations.add(baseStem);
+
+    const extensions = ["jpg", "jpeg", "png", "webp"];
+
+    for (const skuVar of skuVariations) {
+      const encodedSku = encodeURIComponent(skuVar);
+      for (const ext of extensions) {
+        // We omit the /v1/ prefix to allow Cloudinary to resolve to the latest version
+        candidates.push(`https://res.cloudinary.com/${cName}/image/upload/oxford-sports/products/${encodedSku}.${ext}`);
+        // Fallback with v1 just in case some legacy URLs require it
+        candidates.push(`https://res.cloudinary.com/${cName}/image/upload/v1/oxford-sports/products/${encodedSku}.${ext}`);
+      }
+    }
   }
 
   // 2. External Brand CDNs
