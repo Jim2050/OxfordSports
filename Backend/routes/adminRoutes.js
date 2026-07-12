@@ -63,7 +63,6 @@ const {
   getImportBatches,
   getImageUploadStatus,
   resolveImages,
-  relinkCloudinaryImages,
   fixPrices,
 } = require("../controllers/importController");
 
@@ -118,7 +117,6 @@ router.post("/fix-prices", fixPrices);
 router.post("/round-prices", roundPrices);
 router.post("/cleanup-categories", cleanupCategories);
 router.post("/resolve-images", resolveImages);
-router.post("/relink-cloudinary", relinkCloudinaryImages);
 
 // Bulk operations
 router.post("/bulk-price-adjust", bulkPriceAdjust); 
