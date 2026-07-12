@@ -3,85 +3,283 @@
  * ───────────────────────────────────────────────────
  * Standalone Excel/CSV parsing utilities for the dry-run pipeline.
  * These functions are pure data transformers — no database writes.
- *
- * Used by:
- *   - importDryRunController.js (preview mode)
- *   - importQueue.js (background processing)
  */
 
 const XLSX = require('xlsx');
 const log = require('./logger');
+const { parseSizeEntries } = require('../utils/taxonomyUtils');
+const { normalizeSizeEntries } = require('../utils/sizeStockUtils');
 
 /**
  * Intelligent column mapping.
  * Maps common header variations → canonical field names.
  */
 const COLUMN_MAP = {
-  // SKU
-  'sku': 'sku', 'code': 'sku', 'product code': 'sku', 'item code': 'sku',
-  'style code': 'sku', 'style': 'sku', 'article': 'sku', 'article number': 'sku',
-  'item number': 'sku', 'product id': 'sku',
-
-  // Name
-  'name': 'name', 'product name': 'name', 'title': 'name', 'description': 'name',
-  'product': 'name', 'item name': 'name', 'item': 'name', 'product description': 'name',
-
-  // Price
-  'price': 'price', 'sale price': 'price', 'cost': 'price', 'unit price': 'price',
-  'wholesale price': 'price', 'trade price': 'price', 'our price': 'price',
-  'net price': 'price', 'selling price': 'price',
-
-  // RRP
-  'rrp': 'rrp', 'retail price': 'rrp', 'retail': 'rrp', 'msrp': 'rrp',
-  'recommended retail price': 'rrp', 'rrp price': 'rrp',
-
-  // Category
-  'category': 'category', 'dept': 'category', 'department': 'category',
-  'product type': 'category', 'type': 'category', 'group': 'category',
-
-  // Subcategory
-  'subcategory': 'subcategory', 'sub category': 'subcategory',
-  'sub-category': 'subcategory', 'sub type': 'subcategory',
-
-  // Brand
-  'brand': 'brand', 'manufacturer': 'brand', 'vendor': 'brand',
-  'supplier': 'brand', 'make': 'brand',
-
-  // Color
-  'color': 'color', 'colour': 'color', 'col': 'color',
-
-  // Barcode
-  'barcode': 'barcode', 'ean': 'barcode', 'upc': 'barcode',
-  'gtin': 'barcode', 'ean13': 'barcode',
-
-  // Sizes
-  'size': 'sizes', 'sizes': 'sizes', 'uk size': 'sizes', 'eu size': 'sizes',
-  'size range': 'sizes',
-
-  // Quantity
-  'quantity': 'quantity', 'qty': 'quantity', 'stock': 'quantity',
-  'stock qty': 'quantity', 'available': 'quantity', 'in stock': 'quantity',
-  'units': 'quantity', 'on hand': 'quantity',
-
-  // Image
-  'image': 'imageUrl', 'image url': 'imageUrl', 'imageurl': 'imageUrl',
-  'picture': 'imageUrl', 'photo': 'imageUrl', 'img': 'imageUrl',
+  sku: [
+    "code",
+    "sku",
+    "product code",
+    "item code",
+    "article",
+    "article number",
+    "article no",
+    "article no.",
+    "art no",
+    "art no.",
+    "artno",
+    "style code",
+    "ref",
+    "reference",
+    "product", // Feb adidas export uses "Product" for SKU codes
+    "material",
+    "material number",
+    "material no",
+    "material no.",
+    "global material number",
+    "item number",
+    "style",
+    "model",
+    "model number",
+    "articleid",
+    "article id",
+    "no",
+    "no.",
+    "id",
+    "productid",
+    "ean",
+    "barcode",
+    "ean/upc",
+    "style number",
+    "style no",
+    "style no.",
+  ],
+  name: [
+    "style",
+    "style desc",
+    "style description",
+    "product name",
+    "name",
+    "title",
+    "description",
+    "article description",
+    "model name",
+    "model description",
+    "product description",
+    "item name",
+    "item description",
+    "material description",
+    "description 1",
+    "description 2",
+  ],
+  description: [
+    "long description",
+    "notes",
+    "product details",
+    "details",
+    "desc",
+    "web description",
+  ],
+  price: [
+    "trade",
+    "trade price",
+    "trade (£)",
+    "trade price (£)",
+    "wholesale price",
+    "wholesale",
+    "our price",
+    "price",
+    "unit price",
+    "cost",
+    "cost price",
+    "sell price",
+    "sale",
+    "sale price",
+    "sale (£)",
+    "price (£)",
+    "price gbp",
+    "gbp",
+    "net",
+    "nett",
+    "net price",
+    "nett price",
+    "landing",
+    "landing price",
+    "offer price",
+    "special price",
+    "special offer",
+    "clearance price",
+    "clearance",
+    "fob",
+    "fob price",
+    "ex vat",
+    "total",
+    "total price",
+    "amount",
+    "value",
+  ],
+  rrp: ["rrp", "retail price", "recommended retail price", "srp", "msrp", "retail"],
+  category: [
+    "gender",
+    "category",
+    "cat",
+    "department",
+    "type",
+    "product type",
+    "group",
+    "division",
+    "consumer",
+    "age group",
+  ],
+  subcategory: [
+    "subcategory",
+    "sub category",
+    "sub-category",
+    "club",
+    "team",
+    "brand line",
+    "collection",
+    "category description",
+  ],
+  brand: [
+    "brand",
+    "manufacturer",
+    "make",
+    "label",
+    "empty", // unnamed first column in adidas Master sheet (__EMPTY → 'empty')
+    "supplier",
+    "vendor",
+  ],
+  color: [
+    "colour desc",
+    "colour description",
+    "color desc",
+    "color description",
+    "colour",
+    "color",
+    "col",
+    "color name",
+    "colour name",
+  ],
+  sizes: [
+    "uk size",
+    "size",
+    "sizes",
+    "size range",
+    "available sizes",
+    "sizes available",
+    "size desc",
+  ],
+  barcode: ["barcode", "ean", "upc", "ean13", "gtin", "bar code", "eanupc"],
+  quantity: [
+    "qty",
+    "quantity",
+    "stock",
+    "stock qty",
+    "stock quantity",
+    "qty available",
+    "available qty",
+    "available",
+    "units",
+    "pcs",
+    "total quantity",
+    "on hand",
+    "stock on hand",
+    "free stock",
+  ],
+  imageUrl: [
+    "image link",
+    "image url",
+    "image",
+    "img",
+    "photo",
+    "picture",
+    "image file",
+    "filename",
+    "empty1", // unnamed second column in adidas Master sheet (__EMPTY_1 → 'empty1')
+  ],
 };
 
-/**
- * Parse an Excel or CSV file into structured rows.
- * Auto-detects column mapping from headers.
- *
- * @param {string} filePath - Path to the uploaded file
- * @returns {{ rows: object[], headers: string[], mapping: Record<string,string>, unmappedHeaders: string[], sheetSummary: Array<{name:string,rows:number}> }}
- */
+function normalizeHeader(h) {
+  return (h || "")
+    .toString()
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9 ()£]/g, "")
+    .replace(/\s+/g, " ");
+}
+
+function detectMapping(headers) {
+  const mapping = {};
+  const unmappedHeaders = [];
+
+  const sortedHeaders = [...headers].sort((a, b) => {
+    const aEmpty = a.startsWith("__EMPTY") ? 1 : 0;
+    const bEmpty = b.startsWith("__EMPTY") ? 1 : 0;
+    return aEmpty - bEmpty;
+  });
+
+  for (const raw of sortedHeaders) {
+    const norm = normalizeHeader(raw);
+    let matched = false;
+    for (const [field, aliases] of Object.entries(COLUMN_MAP)) {
+      if (aliases.includes(norm)) {
+        if (!mapping[field]) {
+          mapping[field] = raw;
+          matched = true;
+          break;
+        }
+      }
+    }
+    if (!matched && !Object.values(mapping).includes(raw)) {
+      unmappedHeaders.push(raw);
+    }
+  }
+
+  // ── Fallback heuristics for critical fields ──
+  if (!mapping.sku) {
+    const skuH = headers.find((h) => /\bcode\b|sku|article|ref\b|material|art\s*no|art\.no|product\s*id|item\s*no/i.test(h));
+    if (skuH) mapping.sku = skuH;
+  }
+  if (!mapping.name) {
+    const nameH = headers.find((h) => /^(style|name|title|product\s+name|description)$/i.test(h) || /^(style|name|title|article|material)\s+(desc|description)$/i.test(h));
+    if (nameH && nameH !== mapping.sku) mapping.name = nameH;
+  }
+  if (!mapping.price) {
+    const priceH = headers.find((h) => /trade|price|cost|sale|£|gbp|net|landing|offer|fob|wholesale|total|amount|value|msrp|rrp|retail/i.test(h));
+    if (priceH) mapping.price = priceH;
+  }
+  if (!mapping.category) {
+    const catH = headers.find((h) => /gender|category|department|division|consumer|age\s*group/i.test(h));
+    if (catH) mapping.category = catH;
+  }
+  if (!mapping.imageUrl) {
+    const imgH = headers.find((h) => /image|img|photo|picture|url|link|file/i.test(h));
+    if (imgH) mapping.imageUrl = imgH;
+  }
+
+  // ── Price precedence fix: prefer SALE over Trade when both exist ──
+  const saleHeader = headers.find((h) => /(^|\s)(sale|sale price)(\s|$)|\bsale\b|\bsale price\b/i.test(h));
+  const tradeHeader = headers.find((h) => /(^|\s)trade(\s|$)|\btrade price\b/i.test(h));
+  if (saleHeader && tradeHeader && mapping.price === tradeHeader) {
+    mapping.price = saleHeader;
+  }
+
+  // ── Post-mapping fixup: if sku+description mapped but no name, use description as name ──
+  if (mapping.sku && mapping.description && !mapping.name) {
+    mapping.name = mapping.description;
+    delete mapping.description;
+  }
+
+  return { mapping, unmappedHeaders };
+}
+
 function parseExcelFile(filePath) {
   const workbook = XLSX.readFile(filePath, { cellDates: true });
   const allRows = [];
   const sheetSummary = [];
-  let detectedMapping = {};
+  let mainMapping = {};
   let allHeaders = [];
-  let unmappedHeaders = [];
+  let allUnmapped = [];
 
   for (const sheetName of workbook.SheetNames) {
     const sheet = workbook.Sheets[sheetName];
@@ -93,155 +291,264 @@ function parseExcelFile(filePath) {
     }
 
     const headers = Object.keys(rawData[0]);
+    const { mapping, unmappedHeaders } = detectMapping(headers);
 
-    // Auto-map columns on the first sheet with data
-    if (Object.keys(detectedMapping).length === 0) {
-      const mapped = {};
-      const unmapped = [];
-
-      for (const header of headers) {
-        const normalized = header.toLowerCase().trim().replace(/[_\-\.]/g, ' ');
-        const canonical = COLUMN_MAP[normalized];
-        if (canonical) {
-          mapped[canonical] = header; // canonical → original header name
-        } else {
-          unmapped.push(header);
-        }
-      }
-      detectedMapping = mapped;
-      unmappedHeaders = unmapped;
+    if (Object.keys(mainMapping).length === 0) {
+      mainMapping = mapping;
       allHeaders = headers;
+      allUnmapped = unmappedHeaders;
     }
 
-    // Transform rows using detected mapping
+    const currentMapping = Object.keys(mapping).length > 0 ? mapping : mainMapping;
+
+    let rowCount = 0;
     for (const raw of rawData) {
-      // Skip completely empty rows
-      const values = Object.values(raw).filter(
-        (v) => v !== '' && v !== null && v !== undefined
-      );
+      const values = Object.values(raw).filter((v) => v !== '' && v !== null && v !== undefined);
       if (values.length === 0) continue;
 
       const row = { _sheetName: sheetName };
-
-      // Map known columns
-      for (const [canonical, originalHeader] of Object.entries(detectedMapping)) {
-        row[canonical] = raw[originalHeader] ?? '';
+      for (const [field, col] of Object.entries(currentMapping)) {
+        row[field] = raw[col] !== undefined ? raw[col] : "";
       }
 
-      // Preserve unmapped columns for debugging
-      for (const header of unmappedHeaders) {
-        if (raw[header] !== '' && raw[header] !== undefined) {
-          row[`_unmapped_${header}`] = raw[header];
+      // Price fallback logic - matches importController.js
+      if (row.price === "" || row.price === undefined || row.price === null) {
+        const _priceRe = /price|trade|cost|sale|£|gbp|net|landing|offer|fob|wholesale|special|total|amount|value/i;
+        if (raw.Price !== undefined && raw.Price !== "") {
+          row._rawPrice = raw.Price;
+        } else {
+          const mappedCols = new Set(Object.values(currentMapping));
+          for (const hdr of headers) {
+            if (mappedCols.has(hdr) && hdr === currentMapping.price) continue;
+            if (_priceRe.test(hdr) && raw[hdr] !== undefined && raw[hdr] !== "" && raw[hdr] !== null) {
+              const testVal = parseFloat(String(raw[hdr]).replace(/[£$€,\s]/g, ""));
+              if (!isNaN(testVal) && testVal > 0) {
+                row._rawPrice = raw[hdr];
+                break;
+              }
+            }
+          }
         }
       }
 
       allRows.push(row);
+      rowCount++;
     }
 
-    sheetSummary.push({ name: sheetName, rows: rawData.length });
+    sheetSummary.push({ name: sheetName, rows: rowCount });
   }
-
-  log.info('import-parser', 'Excel parsed', {
-    sheets: sheetSummary.length,
-    totalRows: allRows.length,
-    mappedColumns: Object.keys(detectedMapping),
-    unmappedHeaders,
-  });
 
   return {
     rows: allRows,
     headers: allHeaders,
-    mapping: detectedMapping,
-    unmappedHeaders,
+    mapping: mainMapping,
+    unmappedHeaders: allUnmapped,
     sheetSummary,
   };
 }
 
-/**
- * Normalize parent-child SKU relationships.
- * Some suppliers list a parent SKU and child size rows separately.
- * This merges them into consolidated rows.
- *
- * @param {Array<object>} rows
- * @param {boolean} hasSizeMapping
- * @returns {Array<object>}
- */
-function normalizeParentChildSkus(rows, hasSizeMapping = false) {
-  if (!hasSizeMapping) return rows;
-
-  const parentMap = new Map();
-  const output = [];
-
-  for (const row of rows) {
-    const sku = String(row.sku || '').trim().toUpperCase();
-    if (!sku) { output.push(row); continue; }
-
-    // Check for parent-child pattern: PARENT-SIZE or PARENT.SIZE
-    const parentMatch = sku.match(/^(.+?)[-.](\d+[.\d]*)$/);
-    if (parentMatch) {
-      const parentSku = parentMatch[1];
-      const sizeValue = parentMatch[2];
-      if (!parentMap.has(parentSku)) {
-        parentMap.set(parentSku, { ...row, sku: parentSku, _childSizes: [] });
-      }
-      const parent = parentMap.get(parentSku);
-      parent._childSizes.push({
-        size: sizeValue,
-        quantity: parseInt(row.quantity) || 0,
-      });
-    } else {
-      output.push(row);
-    }
-  }
-
-  // Merge parent rows with collected child sizes
-  for (const [, parent] of parentMap) {
-    if (parent._childSizes.length > 0) {
-      parent.sizes = parent._childSizes.map((s) => `${s.size}`).join(',');
-      parent.quantity = parent._childSizes.reduce((sum, s) => sum + s.quantity, 0);
-      parent._sizeDetails = parent._childSizes;
-    }
-    delete parent._childSizes;
-    output.push(parent);
-  }
-
-  return output;
+function normalizeSizeToken(value) {
+  return String(value || "").replace(/\s+/g, " ").trim();
 }
 
-/**
- * Consolidate parsed rows by SKU.
- * Merges duplicate SKU entries, summing quantities.
- *
- * @param {Array<object>} rows
- * @returns {Array<object>}
- */
-function consolidateBySku(rows) {
-  const map = new Map();
+function extractSizeFromChildDescription(childDescription, parentDescription = "") {
+  const child = normalizeSizeToken(childDescription);
+  if (!child) return "";
 
-  for (const row of rows) {
-    const sku = String(row.sku || '').trim().toUpperCase();
-    if (!sku) continue;
+  const parent = normalizeSizeToken(parentDescription);
+  let remainder = child;
 
-    if (!map.has(sku)) {
-      map.set(sku, { ...row, sku });
-    } else {
-      const existing = map.get(sku);
-      // Sum quantities
-      existing.quantity = (parseInt(existing.quantity) || 0) + (parseInt(row.quantity) || 0);
-      // Merge sizes if both have size data
-      if (row.sizes && existing.sizes) {
-        existing.sizes = `${existing.sizes},${row.sizes}`;
-      } else if (row.sizes) {
-        existing.sizes = row.sizes;
-      }
-      // Prefer non-empty values for other fields
-      for (const field of ['name', 'price', 'rrp', 'category', 'brand', 'color', 'imageUrl']) {
-        if (!existing[field] && row[field]) existing[field] = row[field];
-      }
+  if (parent) {
+    const escapedParent = parent.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    remainder = remainder.replace(new RegExp(`^${escapedParent}\\s*`, "i"), "").trim();
+  }
+
+  if (!remainder || remainder.length === child.length) {
+    const parts = child.split(/\s+/);
+    if (parts.length > 1) {
+      remainder = parts.slice(1).join(" ");
     }
   }
 
-  return Array.from(map.values());
+  const patterns = [
+    /(UK\s*\d+(?:\.\d+)?)$/i,
+    /(\d+-\d+\s*Y(?:RS?)?)$/i,
+    /((?:2X|3X|4X)?[SMLX]{1,3}L?)$/i,
+    /(\d+(?:\.\d+)?)$/,
+  ];
+
+  for (const pattern of patterns) {
+    const match = remainder.match(pattern);
+    if (!match) continue;
+    const token = normalizeSizeToken(match[1]);
+    if (!token) continue;
+    if (/^UK\s*\d/i.test(token)) {
+      const ukNormalized = token.toUpperCase().replace(/^UK\s*/i, "").trim();
+      return `UK ${ukNormalized}`;
+    }
+    return token.toUpperCase();
+  }
+
+  return "";
+}
+
+function normalizeParentChildSkus(rows, hasSizeMapping = false) {
+  if (rows.length === 0) return rows;
+
+  const skuToRowMap = new Map();
+  for (const r of rows) {
+    const s = String(r.sku || "").trim().toUpperCase();
+    if (s && !skuToRowMap.has(s)) skuToRowMap.set(s, r);
+  }
+
+  const allSkus = Array.from(skuToRowMap.keys()).sort();
+  const parentSkus = new Map();
+
+  for (let i = 0; i < allSkus.length - 1; i++) {
+    const current = allSkus[i];
+    const next = allSkus[i + 1];
+    // In a sorted list, if current is a parent, the very next item MUST start with it
+    if (next.startsWith(current) && next.length > current.length) {
+      const parentRow = skuToRowMap.get(current);
+      parentSkus.set(current, {
+        name: parentRow ? String(parentRow.name || "").trim() : "",
+        description: parentRow ? String(parentRow.description || "").trim() : "",
+      });
+    }
+  }
+
+  if (parentSkus.size === 0) return rows;
+
+  const result = [];
+  for (const row of rows) {
+    const sku = row.sku ? String(row.sku).trim().toUpperCase() : "";
+    if (parentSkus.has(sku)) continue;
+
+    // Fast O(SKU_LEN) lookup for longest parent prefix
+    let matchedParentSku = null;
+    for (let len = sku.length - 1; len >= 1; len--) {
+      const potential = sku.substring(0, len);
+      if (parentSkus.has(potential)) {
+        matchedParentSku = potential;
+        break;
+      }
+    }
+
+    if (matchedParentSku) {
+      const parentInfo = parentSkus.get(matchedParentSku);
+      const childDescription = String(row.description || row.name || "").trim();
+      const parentDescription = String(parentInfo.description || parentInfo.name || "").trim();
+
+      if (!row.sizes && childDescription) {
+        const extractedSize = extractSizeFromChildDescription(childDescription, parentDescription);
+        if (extractedSize) {
+          row.sizes = extractedSize;
+          row._sizeExtractedFromDescription = true;
+        }
+      }
+      row.sku = matchedParentSku;
+      if (parentInfo.name) row.name = parentInfo.name;
+    }
+    result.push(row);
+  }
+
+  return result;
+}
+
+function consolidateBySku(rows) {
+  const skuMap = new Map();
+
+  for (const row of rows) {
+    const sku = row.sku ? String(row.sku).trim().toUpperCase() : "";
+    if (!sku) continue;
+
+    const parsedQty = parseInt(row.quantity);
+    const rowQty = isNaN(parsedQty) ? 0 : Math.max(0, parsedQty);
+    const rawSize = row.sizes ? String(row.sizes).trim() : "";
+    const rawSizeProvided = rawSize.length > 0;
+
+    // Use the robust parser from taxonomyUtils
+    const parsedSizes = parseSizeEntries(rawSize, rowQty);
+    const rowSizes = parsedSizes.entries;
+    const normalizedRowSizes = normalizeSizeEntries(rowSizes, row.category);
+
+    const strictSizeFailure = rawSizeProvided && rowQty > 0 && normalizedRowSizes.length === 0;
+
+    if (skuMap.has(sku)) {
+      const existing = skuMap.get(sku);
+
+      if (normalizedRowSizes.length > 0) {
+        for (const entry of normalizedRowSizes) {
+          const found = existing.sizeEntries.find((e) => e.size === entry.size);
+          if (found) {
+            found.quantity += entry.quantity;
+          } else {
+            existing.sizeEntries.push({ ...entry });
+          }
+        }
+      }
+
+      const newBarcode = row.barcode ? String(row.barcode).trim() : "";
+      if (newBarcode && !existing.barcodes.includes(newBarcode)) {
+        existing.barcodes.push(newBarcode);
+      }
+
+      for (const field of ['name', 'description', 'category', 'subcategory', 'brand', 'color']) {
+        if (!existing[field] && row[field]) existing[field] = row[field];
+      }
+
+      if ((!existing.price || existing.price === 0) && row.price) existing.price = row.price;
+      if ((!existing.rrp || existing.rrp === 0) && row.rrp) existing.rrp = row.rrp;
+      if (!existing._rawPrice && row._rawPrice) existing._rawPrice = row._rawPrice;
+
+      if (parsedSizes.invalidTokens.length > 0) {
+        existing._sizeWarnings = existing._sizeWarnings || [];
+        existing._sizeWarnings.push(`Invalid size token(s): ${parsedSizes.invalidTokens.join(", ")}`);
+      }
+    } else {
+      const barcode = row.barcode ? String(row.barcode).trim() : "";
+      const sizeEntries = [];
+      const sizeErrors = [];
+
+      if (parsedSizes.invalidTokens.length > 0) {
+        sizeErrors.push(`Invalid size token(s): ${parsedSizes.invalidTokens.join(", ")}`);
+      }
+      if (parsedSizes.checksumMismatch) {
+        sizeErrors.push(`Embedded size quantities (${parsedSizes.parsedTotal}) do not match QTY (${rowQty})`);
+      }
+
+      if (normalizedRowSizes.length > 0) {
+        for (const entry of normalizedRowSizes) {
+          const found = sizeEntries.find((e) => e.size === entry.size);
+          if (found) {
+            found.quantity += entry.quantity;
+          } else {
+            sizeEntries.push({ size: entry.size, quantity: entry.quantity });
+          }
+        }
+      } else if (rawSizeProvided && rowQty > 0) {
+        sizeErrors.push("Provided size values could not be parsed");
+      }
+
+      skuMap.set(sku, {
+        ...row,
+        sku,
+        _sizeWarnings: sizeErrors,
+        _rawSizeProvided: rawSizeProvided,
+        _sizeParseFailed: strictSizeFailure || (rawSizeProvided && sizeEntries.length === 0),
+        sizeEntries: normalizeSizeEntries(sizeEntries, row.category),
+        barcodes: barcode ? [barcode] : [],
+      });
+    }
+  }
+
+  // Final quantity summation for summary
+  const result = Array.from(skuMap.values()).map(p => ({
+    ...p,
+    quantity: (p.sizeEntries || []).reduce((sum, s) => sum + (s.quantity || 0), 0)
+  }));
+
+  return result;
 }
 
 module.exports = {

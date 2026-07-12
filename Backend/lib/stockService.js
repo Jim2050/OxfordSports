@@ -130,8 +130,12 @@ function allocateAcrossAllSizes(product, effectiveQty, validLotSizes, sizeEntrie
       updateOne: {
         filter: {
           _id: product._id,
-          'sizes.size': sizeEntry.size,
-          'sizes.quantity': { $gte: takeQty },
+          sizes: {
+            $elemMatch: {
+              size: sizeEntry.size,
+              quantity: { $gte: takeQty },
+            },
+          },
         },
         update: {
           $inc: { 'sizes.$.quantity': -takeQty, totalQuantity: -takeQty },
@@ -207,8 +211,12 @@ function allocateSpecificSize(product, size, effectiveQty, sizeEntries, validLot
     updateOne: {
       filter: {
         _id: product._id,
-        'sizes.size': sizeEntry.size,
-        'sizes.quantity': { $gte: effectiveQty },
+        sizes: {
+          $elemMatch: {
+            size: sizeEntry.size,
+            quantity: { $gte: effectiveQty },
+          },
+        },
       },
       update: {
         $inc: { 'sizes.$.quantity': -effectiveQty, totalQuantity: -effectiveQty },
@@ -282,8 +290,12 @@ function enforceMustBuyAll(skuMap, lotSkus) {
         updateOne: {
           filter: {
             _id: product._id,
-            'sizes.size': sizeEntry.size,
-            'sizes.quantity': { $gte: missingSizeQty },
+            sizes: {
+              $elemMatch: {
+                size: sizeEntry.size,
+                quantity: { $gte: missingSizeQty },
+              },
+            },
           },
           update: {
             $inc: { 'sizes.$.quantity': -missingSizeQty, totalQuantity: -missingSizeQty },

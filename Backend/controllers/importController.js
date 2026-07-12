@@ -193,10 +193,36 @@ const COLUMN_MAP = {
     "item code",
     "article",
     "article number",
+    "article no",
+    "article no.",
+    "art no",
+    "art no.",
+    "artno",
     "style code",
     "ref",
     "reference",
     "product", // Feb adidas export uses "Product" for SKU codes
+    "material",
+    "material number",
+    "material no",
+    "material no.",
+    "global material number",
+    "item number",
+    "style",
+    "model",
+    "model number",
+    "articleid",
+    "article id",
+    "no",
+    "no.",
+    "id",
+    "productid",
+    "ean",
+    "barcode",
+    "ean/upc",
+    "style number",
+    "style no",
+    "style no.",
   ],
   name: [
     "style",
@@ -205,14 +231,24 @@ const COLUMN_MAP = {
     "product name",
     "name",
     "title",
+    "description",
+    "article description",
+    "model name",
+    "model description",
+    "product description",
+    "item name",
+    "item description",
+    "material description",
+    "description 1",
+    "description 2",
   ],
   description: [
-    "description",
-    "desc",
-    "details",
-    "product description",
     "long description",
     "notes",
+    "product details",
+    "details",
+    "desc",
+    "web description",
   ],
   price: [
     "trade",
@@ -252,7 +288,7 @@ const COLUMN_MAP = {
     "amount",
     "value",
   ],
-  rrp: ["rrp", "retail price", "recommended retail price", "srp", "msrp"],
+  rrp: ["rrp", "retail price", "recommended retail price", "srp", "msrp", "retail"],
   category: [
     "gender",
     "category",
@@ -261,6 +297,9 @@ const COLUMN_MAP = {
     "type",
     "product type",
     "group",
+    "division",
+    "consumer",
+    "age group",
   ],
   subcategory: [
     "subcategory",
@@ -270,6 +309,7 @@ const COLUMN_MAP = {
     "team",
     "brand line",
     "collection",
+    "category description",
   ],
   brand: [
     "brand",
@@ -288,6 +328,8 @@ const COLUMN_MAP = {
     "colour",
     "color",
     "col",
+    "color name",
+    "colour name",
   ],
   sizes: [
     "uk size",
@@ -296,8 +338,9 @@ const COLUMN_MAP = {
     "size range",
     "available sizes",
     "sizes available",
+    "size desc",
   ],
-  barcode: ["barcode", "ean", "upc", "ean13", "gtin", "bar code"],
+  barcode: ["barcode", "ean", "upc", "ean13", "gtin", "bar code", "eanupc"],
   quantity: [
     "qty",
     "quantity",
@@ -312,6 +355,7 @@ const COLUMN_MAP = {
     "total quantity",
     "on hand",
     "stock on hand",
+    "free stock",
   ],
   imageUrl: [
     "image link",
@@ -321,7 +365,6 @@ const COLUMN_MAP = {
     "photo",
     "picture",
     "image file",
-    "image url", // Added to match "Image URL" column
     "filename",
     "empty1", // unnamed second column in adidas Master sheet (__EMPTY_1 → 'empty1')
   ],
@@ -422,23 +465,23 @@ function detectMapping(headers) {
 
   // ── Fallback heuristics for critical fields ──
   if (!mapping.sku) {
-    const skuH = headers.find((h) => /\bcode\b|sku|article|ref\b/i.test(h));
+    const skuH = headers.find((h) => /\bcode\b|sku|article|ref\b|material|art\s*no|art\.no|product\s*id|item\s*no/i.test(h));
     if (skuH) mapping.sku = skuH;
   }
   if (!mapping.name) {
-    const nameH = headers.find((h) => /^(style|name|title|product\s+name)$/i.test(h) || /^(style|name|title)\s+(desc|description)$/i.test(h));
+    const nameH = headers.find((h) => /^(style|name|title|product\s+name|description)$/i.test(h) || /^(style|name|title|article|material)\s+(desc|description)$/i.test(h));
     if (nameH && nameH !== mapping.sku) mapping.name = nameH;
   }
   if (!mapping.price) {
-    const priceH = headers.find((h) => /trade|price|cost|sale|£|gbp|net|landing|offer|fob|wholesale|total|amount|value/i.test(h));
+    const priceH = headers.find((h) => /trade|price|cost|sale|£|gbp|net|landing|offer|fob|wholesale|total|amount|value|msrp|rrp|retail/i.test(h));
     if (priceH) mapping.price = priceH;
   }
   if (!mapping.category) {
-    const catH = headers.find((h) => /gender|category|department/i.test(h));
+    const catH = headers.find((h) => /gender|category|department|division|consumer|age\s*group/i.test(h));
     if (catH) mapping.category = catH;
   }
   if (!mapping.imageUrl) {
-    const imgH = headers.find((h) => /image|img|photo|picture/i.test(h));
+    const imgH = headers.find((h) => /image|img|photo|picture|url|link|file/i.test(h));
     if (imgH) mapping.imageUrl = imgH;
   }
 
@@ -469,7 +512,7 @@ function detectMapping(headers) {
  * and does not infer size labels from text.
  */
 function normalizeParentChildSkus(rows, hasSizeMapping) {
-  if (rows.length === 0 || hasSizeMapping) return rows;
+  if (rows.length === 0) return rows;
 
   // Collect all SKUs
   const allSkus = [
@@ -480,13 +523,14 @@ function normalizeParentChildSkus(rows, hasSizeMapping) {
     ),
   ];
 
-  // Find parent SKUs: a SKU that is a prefix of at least 2 other longer SKUs
-  const parentSkus = new Map(); // parentSku -> parent row data (for name/description)
+  // Find parent SKUs: a SKU that is a prefix of at least 1 other longer SKU
+  // (Lowered from 2 to catch products with only one size variant left in stock)
+  const parentSkus = new Map(); // parentSku -> parent row data
   for (const sku of allSkus) {
     const children = allSkus.filter(
       (s) => s !== sku && s.startsWith(sku) && s.length > sku.length,
     );
-    if (children.length >= 2) {
+    if (children.length >= 1) {
       // Find the parent row to get its clean name
       const parentRow = rows.find(
         (r) => String(r.sku || "").trim().toUpperCase() === sku,
@@ -674,13 +718,18 @@ function consolidateBySku(rows) {
     const rowSizes = parsedSizes.entries;
     const normalizedRowSizes = normalizeSizeEntries(rowSizes, row.category);
 
-    const strictSizeFailure = rawSizeProvided && rowQty > 0 && normalizedRowSizes.length === 0;
+    const rowHadUsableSizes = normalizedRowSizes.length > 0;
+    const rowHadSizeParsingError = rawSizeProvided && rowQty > 0 && !rowHadUsableSizes;
 
     if (skuMap.has(sku)) {
       // ── ADDITIVE consolidation: sum quantities for same SKU ──
       const existing = skuMap.get(sku);
 
-      if (normalizedRowSizes.length > 0) {
+      // Sum quantity field (used for preservation logic)
+      const currentQty = parseInt(existing.quantity) || 0;
+      existing.quantity = currentQty + rowQty;
+
+      if (rowHadUsableSizes) {
         for (const entry of normalizedRowSizes) {
           const found = existing.sizeEntries.find((e) => e.size === entry.size);
           if (found) {
@@ -718,6 +767,12 @@ function consolidateBySku(rows) {
       if ((!existing.rrp || existing.rrp === 0) && row.rrp) existing.rrp = row.rrp;
       if (!existing._rawPrice && row._rawPrice) existing._rawPrice = row._rawPrice;
 
+      // Update flags
+      if (rawSizeProvided) existing._rawSizeProvided = true;
+      if (parsedSizes.hadNegativeSizes) existing._hadNegativeSizes = true;
+      if (parsedSizes.hadZeroQtyTokens) existing._hadZeroQtyTokens = true;
+      if (rowHadSizeParsingError) existing._anyRowHadSizeParsingError = true;
+
       // Collect warnings
       if (parsedSizes.invalidTokens.length > 0) {
         existing._sizeWarnings.push(`Invalid size token(s): ${parsedSizes.invalidTokens.join(", ")}`);
@@ -741,36 +796,39 @@ function consolidateBySku(rows) {
         );
       }
 
-      if (normalizedRowSizes.length > 0) {
+      if (rowHadUsableSizes) {
         for (const entry of normalizedRowSizes) {
-          const found = sizeEntries.find((e) => e.size === entry.size);
-          if (found) {
-            found.quantity += entry.quantity;
-          } else {
-            sizeEntries.push({ size: entry.size, quantity: entry.quantity });
-          }
+          sizeEntries.push({ ...entry });
         }
-      } else if (rawSizeProvided && rowQty > 0) {
+      } else if (rowHadSizeParsingError) {
         sizeErrors.push("Provided size values could not be parsed");
       }
 
       skuMap.set(sku, {
         ...row,
         sku,
+        quantity: rowQty,
         _sizeWarnings: sizeErrors,
         _hadNegativeSizes: parsedSizes.hadNegativeSizes,
         _hadZeroQtyTokens: parsedSizes.hadZeroQtyTokens,
         _rawSizeProvided: rawSizeProvided,
-        _sizeParseFailed:
-          strictSizeFailure || (rawSizeProvided && sizeEntries.length === 0),
-        sizeEntries: normalizeSizeEntries(sizeEntries, row.category),
+        _anyRowHadSizeParsingError: rowHadSizeParsingError,
+        sizeEntries: sizeEntries,
         barcodes: barcode ? [barcode] : [],
       });
     }
   }
 
+  // Final pass to set _sizeParseFailed for the consolidated objects
+  for (const product of skuMap.values()) {
+    product._sizeParseFailed = product._anyRowHadSizeParsingError && product.sizeEntries.length === 0;
+    // Re-normalize to ensure consistency
+    product.sizeEntries = normalizeSizeEntries(product.sizeEntries, product.category);
+  }
+
   return Array.from(skuMap.values());
 }
+
 
 /**
  * Create a URL-friendly slug from a string.
@@ -1199,23 +1257,27 @@ exports.importProducts = async (req, res) => {
       const existingHasSizes = Array.isArray(existingProduct?.sizes) && existingProduct.sizes.length > 0;
       const hasUsableIncomingSizes = Array.isArray(row.sizeEntries) && row.sizeEntries.length > 0;
       const incomingQty = Math.max(0, Number.parseInt(row.quantity, 10) || 0);
+
       const shouldPreserveExistingStock =
         !!existingProduct &&
         existingHasSizes &&
-        (!row._rawSizeProvided || (!hasUsableIncomingSizes && incomingQty > 0 && !row._hadZeroQtyTokens));
+        (!row._rawSizeProvided ||
+          row._sizeParseFailed ||
+          (!hasUsableIncomingSizes && incomingQty > 0 && !row._hadZeroQtyTokens));
 
       if (shouldPreserveExistingStock) {
         warnings++;
         pushWarningDetail({
           row: i + 1,
           sku,
-          reason: "Incoming row had no usable size data; preserved existing catalog stock",
+          reason: row._sizeParseFailed
+            ? "Incoming size data could not be parsed; preserved existing catalog stock"
+            : "Incoming row had no usable size data; preserved existing catalog stock",
         });
-        continue;
-      }
-
-      if (row._sizeParseFailed || (row._rawSizeProvided && (!Array.isArray(row.sizeEntries) || row.sizeEntries.length === 0))) {
-        // Best-effort: don't skip SKU if sizes are bad; update metadata and set 0 stock
+        row.sizeEntries = existingProduct.sizes;
+        // totalQuantity will be recalculated below from row.sizeEntries
+      } else if (row._sizeParseFailed || (row._rawSizeProvided && !hasUsableIncomingSizes)) {
+        // Best-effort: update metadata and set 0 stock if no existing product to preserve from
         warnings++;
         pushWarningDetail({
           row: i + 1,
@@ -1548,6 +1610,9 @@ exports.importProducts = async (req, res) => {
       });
       productData.brandCanonical = deriveBrandCanonical(productData.brand);
 
+      // Update hasImage for indexed sorting
+      productData.hasImage = !!(productData.imageUrl && String(productData.imageUrl).trim().length > 0);
+
       // ── Image URL logic: Prioritize Direct URLs; Queue others for background lookup ──
       // This ensures even empty fields trigger a Cloudinary SKU-based check.
       const rawImageUrl = row.imageUrl ? String(row.imageUrl).trim() : "";
@@ -1751,19 +1816,30 @@ exports.importProducts = async (req, res) => {
         if (filteredPendingProducts.length > 0) {
           debug(`[IMPORT-BG] Background image resolution started for ${filteredPendingProducts.length} items.`);
 
-          // Resolve in batches to avoid overwhelming external APIs
-          const batch50 = filteredPendingProducts.slice(0, 50);
-          const { resolved } = await batchResolveImages(batch50, 2);
+          // Resolve in larger batches with higher concurrency
+          const BATCH_SIZE_RESOLVE = 250;
+          for (let i = 0; i < filteredPendingProducts.length; i += BATCH_SIZE_RESOLVE) {
+            const batch = filteredPendingProducts.slice(i, i + BATCH_SIZE_RESOLVE);
+            debug(`[IMPORT-BG] Processing batch ${Math.floor(i / BATCH_SIZE_RESOLVE) + 1} (${batch.length} images)...`);
 
-          if (resolved.length > 0) {
-            const imgOps = resolved.map((r) => ({
-              updateOne: {
-                filter: { sku: r.sku },
-                update: { $set: { imageUrl: r.imageUrl } },
-              },
-            }));
-            await Product.bulkWrite(imgOps, { ordered: false });
-            debug(`[IMPORT-BG] Background resolution complete: ${resolved.length} images linked.`);
+            // Higher concurrency (15) + parallelized candidate checks inside resolver
+            const { resolved } = await batchResolveImages(batch, 15);
+
+            if (resolved.length > 0) {
+              const imgOps = resolved.map((r) => ({
+                updateOne: {
+                  filter: { sku: r.sku },
+                  update: {
+                    $set: {
+                      imageUrl: r.imageUrl,
+                      hasImage: !!(r.imageUrl && String(r.imageUrl).trim().length > 0)
+                    }
+                  },
+                },
+              }));
+              await Product.bulkWrite(imgOps, { ordered: false });
+              debug(`[IMPORT-BG] Batch complete: ${resolved.length} images linked.`);
+            }
           }
         }
       })().catch(err => console.error("[IMPORT-BG-IMAGE] Error in background resolution:", err));
@@ -2100,7 +2176,7 @@ async function processImageBatch(imagesToProcess, filePath, tempExtractDir, job 
 
   const cName = process.env.CLOUDINARY_CLOUD_NAME || "";
   const cloudinaryEnabled = !!cName && cName !== "your_cloud_name";
-  const BATCH_SIZE = 10;
+  const BATCH_SIZE = 30;
   const bulkOps = [];
 
   for (let i = 0; i < imagesToProcess.length; i += BATCH_SIZE) {
@@ -2160,7 +2236,10 @@ async function processImageBatch(imagesToProcess, filePath, tempExtractDir, job 
         const val = r.value;
         if (val.status === "matched") {
           matched++;
-          const updateFields = { imageUrl: val.imageUrl };
+          const updateFields = {
+            imageUrl: val.imageUrl,
+            hasImage: !!(val.imageUrl && String(val.imageUrl).trim().length > 0)
+          };
           if (val.imagePublicId) updateFields.imagePublicId = val.imagePublicId;
           bulkOps.push({
             updateOne: {
@@ -2307,7 +2386,12 @@ exports.resolveImages = async (req, res) => {
       const ops = resolved.map((r) => ({
         updateOne: {
           filter: { sku: r.sku },
-          update: { $set: { imageUrl: r.imageUrl } },
+          update: {
+            $set: {
+              imageUrl: r.imageUrl,
+              hasImage: !!(r.imageUrl && String(r.imageUrl).trim().length > 0)
+            }
+          },
         },
       }));
       await Product.bulkWrite(ops, { ordered: false });

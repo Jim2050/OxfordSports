@@ -66,7 +66,7 @@ exports.getProducts = async (req, res) => {
       sort,
     } = req.query;
 
-    const conditions = [{ isActive: true }];
+    const conditions = [{ isActive: true, hasImage: true }];
 
     // Category filter with keyword matching
     if (category) {
@@ -199,32 +199,18 @@ exports.getProducts = async (req, res) => {
     else if (sort === "name_asc") sortObj = { name: 1 };
 
     const pageNum = Math.max(1, parseInt(page));
-    const limitNum = Math.min(2000, Math.max(1, parseInt(limit)));
+    const limitNum = Math.min(100, Math.max(1, parseInt(limit))); // Reduced default limit for "fast load"
 
-    // Aggregate: products WITH images first, then by chosen sort
-    const pipeline = [
-      { $match: filter },
-      { $addFields: {
-        _hasImage: {
-          $cond: [
-            { $and: [
-              { $ne: ["$imageUrl", ""] },
-              { $ne: ["$imageUrl", null] },
-              { $ifNull: ["$imageUrl", false] },
-            ]},
-            0,  // 0 = has image (sort first)
-            1,  // 1 = no image (sort last)
-          ]
-        }
-      }},
-      { $sort: { _hasImage: 1, ...sortObj } },
-      { $skip: (pageNum - 1) * limitNum },
-      { $limit: limitNum },
-      { $unset: "_hasImage" },
-    ];
+    // Use indexed hasImage field for sorting instead of computed _hasImage
+    // This allows the query to stay fully indexed.
+    const query = Product.find(filter)
+      .sort({ hasImage: -1, ...sortObj })
+      .skip((pageNum - 1) * limitNum)
+      .limit(limitNum)
+      .lean();
 
     const [products, total] = await Promise.all([
-      Product.aggregate(pipeline),
+      query,
       Product.countDocuments(filter),
     ]);
 

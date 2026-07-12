@@ -262,25 +262,37 @@ async function resolveProductImage({ sku, brand, name, currentUrl }) {
   }
   if (!query) return null;
 
-  // 3. Try brand CDN patterns first (fastest)
+  // 3. Try brand CDN patterns first (fastest) - Parallelize checks
   const cdnUrls = brandCdnCandidates(sku, brand);
-  for (const url of cdnUrls) {
-    const valid = await verifyImageUrl(url);
-    if (valid) return url;
+  if (cdnUrls.length > 0) {
+    const results = await Promise.all(cdnUrls.map(async url => {
+      const valid = await verifyImageUrl(url);
+      return valid ? url : null;
+    }));
+    const firstValid = results.find(url => url !== null);
+    if (firstValid) return firstValid;
   }
 
-  // 4. Search Bing for product images
+  // 4. Search Bing for product images - Parallelize verification
   let candidates = await searchBing(query);
-  for (const url of candidates.slice(0, 5)) {
-    const valid = await verifyImageUrl(url);
-    if (valid) return url;
+  if (candidates.length > 0) {
+    const results = await Promise.all(candidates.slice(0, 8).map(async url => {
+      const valid = await verifyImageUrl(url);
+      return valid ? url : null;
+    }));
+    const firstValid = results.find(url => url !== null);
+    if (firstValid) return firstValid;
   }
 
-  // 5. Fallback: DuckDuckGo
+  // 5. Fallback: DuckDuckGo - Parallelize verification
   candidates = await searchDuckDuckGo(query);
-  for (const url of candidates.slice(0, 5)) {
-    const valid = await verifyImageUrl(url);
-    if (valid) return url;
+  if (candidates.length > 0) {
+    const results = await Promise.all(candidates.slice(0, 8).map(async url => {
+      const valid = await verifyImageUrl(url);
+      return valid ? url : null;
+    }));
+    const firstValid = results.find(url => url !== null);
+    if (firstValid) return firstValid;
   }
 
   return null;

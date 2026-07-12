@@ -55,6 +55,7 @@ const productSchema = new mongoose.Schema(
     /* ── Images ── */
     imageUrl: { type: String, default: "" },
     imagePublicId: { type: String, default: "" },
+    hasImage: { type: Boolean, default: false, index: true },
 
     /* ── Metadata ── */
     sheetName: { type: String, default: "" },
@@ -123,6 +124,9 @@ productSchema.pre("save", function () {
     );
   }
 
+  // Update hasImage helper for fast indexed sorting
+  this.hasImage = !!(this.imageUrl && String(this.imageUrl).trim().length > 0);
+
   this.categoryCanonical = deriveCategoryCanonical(this.category);
   this.subcategoryCanonical = deriveSubcategoryCanonical(
     this.categoryCanonical || this.category,
@@ -167,7 +171,7 @@ productSchema.index({ isActive: 1, genderCanonical: 1 });
 productSchema.index({ isActive: 1, brandCanonical: 1 });
 
 // ── Compound index for active products with images-first sort ──
-productSchema.index({ isActive: 1, imageUrl: 1, createdAt: -1 });
+productSchema.index({ isActive: 1, hasImage: -1, createdAt: -1 });
 
 // ── Index for sorting by createdAt ──
 productSchema.index({ createdAt: -1 });

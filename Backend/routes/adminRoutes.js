@@ -123,4 +123,25 @@ router.post("/relink-cloudinary", relinkCloudinaryImages);
 // Bulk operations
 router.post("/bulk-price-adjust", bulkPriceAdjust);
 
+router.post("/run-migration", protect, adminOnly, async (req, res) => {
+  try {
+    const Product = require("../models/Product");
+    const resultTrue = await Product.updateMany(
+      { imageUrl: { $exists: true, $ne: "" }, hasImage: { $ne: true } },
+      { $set: { hasImage: true } }
+    );
+    const resultFalse = await Product.updateMany(
+      { $or: [{ imageUrl: { $exists: false } }, { imageUrl: "" }], hasImage: { $ne: false } },
+      { $set: { hasImage: false } }
+    );
+    res.json({
+      message: "Migration completed",
+      updatedToTrue: resultTrue.modifiedCount,
+      updatedToFalse: resultFalse.modifiedCount,
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 module.exports = router;
