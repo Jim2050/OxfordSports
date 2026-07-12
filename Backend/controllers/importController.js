@@ -252,7 +252,7 @@ const COLUMN_MAP = {
     "amount",
     "value",
   ],
-  rrp: ["rrp", "retail price", "recommended retail price", "srp", "msrp"],
+  rrp: ["rrp", "retail price", "recommended retail price", "srp", "msrp", "retail"],
   category: [
     "gender",
     "category",
@@ -296,6 +296,7 @@ const COLUMN_MAP = {
     "size range",
     "available sizes",
     "sizes available",
+    "size/sizes",
   ],
   barcode: ["barcode", "ean", "upc", "ean13", "gtin", "bar code"],
   quantity: [

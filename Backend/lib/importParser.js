@@ -168,6 +168,7 @@ const COLUMN_MAP = {
     "available sizes",
     "sizes available",
     "size desc",
+    "size/sizes",
   ],
   barcode: ["barcode", "ean", "upc", "ean13", "gtin", "bar code", "eanupc"],
   quantity: [
