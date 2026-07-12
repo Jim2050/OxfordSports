@@ -121,7 +121,7 @@ router.post("/resolve-images", resolveImages);
 router.post("/relink-cloudinary", relinkCloudinaryImages);
 
 // Bulk operations
-router.post("/bulk-price-adjust", bulkPriceAdjust);
+router.post("/bulk-price-adjust", bulkPriceAdjust); 
 
 router.post("/run-migration", protect, adminOnly, async (req, res) => {
   try {

@@ -193,36 +193,10 @@ const COLUMN_MAP = {
     "item code",
     "article",
     "article number",
-    "article no",
-    "article no.",
-    "art no",
-    "art no.",
-    "artno",
     "style code",
     "ref",
     "reference",
     "product", // Feb adidas export uses "Product" for SKU codes
-    "material",
-    "material number",
-    "material no",
-    "material no.",
-    "global material number",
-    "item number",
-    "style",
-    "model",
-    "model number",
-    "articleid",
-    "article id",
-    "no",
-    "no.",
-    "id",
-    "productid",
-    "ean",
-    "barcode",
-    "ean/upc",
-    "style number",
-    "style no",
-    "style no.",
   ],
   name: [
     "style",
@@ -231,24 +205,14 @@ const COLUMN_MAP = {
     "product name",
     "name",
     "title",
-    "description",
-    "article description",
-    "model name",
-    "model description",
-    "product description",
-    "item name",
-    "item description",
-    "material description",
-    "description 1",
-    "description 2",
   ],
   description: [
+    "description",
+    "desc",
+    "details",
+    "product description",
     "long description",
     "notes",
-    "product details",
-    "details",
-    "desc",
-    "web description",
   ],
   price: [
     "trade",
@@ -288,7 +252,7 @@ const COLUMN_MAP = {
     "amount",
     "value",
   ],
-  rrp: ["rrp", "retail price", "recommended retail price", "srp", "msrp", "retail"],
+  rrp: ["rrp", "retail price", "recommended retail price", "srp", "msrp"],
   category: [
     "gender",
     "category",
@@ -297,9 +261,6 @@ const COLUMN_MAP = {
     "type",
     "product type",
     "group",
-    "division",
-    "consumer",
-    "age group",
   ],
   subcategory: [
     "subcategory",
@@ -309,7 +270,6 @@ const COLUMN_MAP = {
     "team",
     "brand line",
     "collection",
-    "category description",
   ],
   brand: [
     "brand",
@@ -328,8 +288,6 @@ const COLUMN_MAP = {
     "colour",
     "color",
     "col",
-    "color name",
-    "colour name",
   ],
   sizes: [
     "uk size",
@@ -338,9 +296,8 @@ const COLUMN_MAP = {
     "size range",
     "available sizes",
     "sizes available",
-    "size desc",
   ],
-  barcode: ["barcode", "ean", "upc", "ean13", "gtin", "bar code", "eanupc"],
+  barcode: ["barcode", "ean", "upc", "ean13", "gtin", "bar code"],
   quantity: [
     "qty",
     "quantity",
@@ -355,7 +312,6 @@ const COLUMN_MAP = {
     "total quantity",
     "on hand",
     "stock on hand",
-    "free stock",
   ],
   imageUrl: [
     "image link",
@@ -365,6 +321,7 @@ const COLUMN_MAP = {
     "photo",
     "picture",
     "image file",
+    "image url", // Added to match "Image URL" column
     "filename",
     "empty1", // unnamed second column in adidas Master sheet (__EMPTY_1 → 'empty1')
   ],
@@ -465,23 +422,23 @@ function detectMapping(headers) {
 
   // ── Fallback heuristics for critical fields ──
   if (!mapping.sku) {
-    const skuH = headers.find((h) => /\bcode\b|sku|article|ref\b|material|art\s*no|art\.no|product\s*id|item\s*no/i.test(h));
+    const skuH = headers.find((h) => /\bcode\b|sku|article|ref\b/i.test(h));
     if (skuH) mapping.sku = skuH;
   }
   if (!mapping.name) {
-    const nameH = headers.find((h) => /^(style|name|title|product\s+name|description)$/i.test(h) || /^(style|name|title|article|material)\s+(desc|description)$/i.test(h));
+    const nameH = headers.find((h) => /^(style|name|title|product\s+name)$/i.test(h) || /^(style|name|title)\s+(desc|description)$/i.test(h));
     if (nameH && nameH !== mapping.sku) mapping.name = nameH;
   }
   if (!mapping.price) {
-    const priceH = headers.find((h) => /trade|price|cost|sale|£|gbp|net|landing|offer|fob|wholesale|total|amount|value|msrp|rrp|retail/i.test(h));
+    const priceH = headers.find((h) => /trade|price|cost|sale|£|gbp|net|landing|offer|fob|wholesale|total|amount|value/i.test(h));
     if (priceH) mapping.price = priceH;
   }
   if (!mapping.category) {
-    const catH = headers.find((h) => /gender|category|department|division|consumer|age\s*group/i.test(h));
+    const catH = headers.find((h) => /gender|category|department/i.test(h));
     if (catH) mapping.category = catH;
   }
   if (!mapping.imageUrl) {
-    const imgH = headers.find((h) => /image|img|photo|picture|url|link|file/i.test(h));
+    const imgH = headers.find((h) => /image|img|photo|picture/i.test(h));
     if (imgH) mapping.imageUrl = imgH;
   }
 
@@ -512,7 +469,7 @@ function detectMapping(headers) {
  * and does not infer size labels from text.
  */
 function normalizeParentChildSkus(rows, hasSizeMapping) {
-  if (rows.length === 0) return rows;
+  if (rows.length === 0 || hasSizeMapping) return rows;
 
   // Collect all SKUs
   const allSkus = [
@@ -523,14 +480,13 @@ function normalizeParentChildSkus(rows, hasSizeMapping) {
     ),
   ];
 
-  // Find parent SKUs: a SKU that is a prefix of at least 1 other longer SKU
-  // (Lowered from 2 to catch products with only one size variant left in stock)
-  const parentSkus = new Map(); // parentSku -> parent row data
+  // Find parent SKUs: a SKU that is a prefix of at least 2 other longer SKUs
+  const parentSkus = new Map(); // parentSku -> parent row data (for name/description)
   for (const sku of allSkus) {
     const children = allSkus.filter(
       (s) => s !== sku && s.startsWith(sku) && s.length > sku.length,
     );
-    if (children.length >= 1) {
+    if (children.length >= 2) {
       // Find the parent row to get its clean name
       const parentRow = rows.find(
         (r) => String(r.sku || "").trim().toUpperCase() === sku,
@@ -718,65 +674,65 @@ function consolidateBySku(rows) {
     const rowSizes = parsedSizes.entries;
     const normalizedRowSizes = normalizeSizeEntries(rowSizes, row.category);
 
-    const rowHadUsableSizes = normalizedRowSizes.length > 0;
-    const rowHadSizeParsingError = rawSizeProvided && rowQty > 0 && !rowHadUsableSizes;
+    const strictSizeFailure = rawSizeProvided && rowQty > 0 && normalizedRowSizes.length === 0;
 
     if (skuMap.has(sku)) {
-      // ── ADDITIVE consolidation: sum quantities for same SKU ──
+      // ── OVERWRITE duplicate SKU: last row wins ──
+      // When the same SKU appears again, fully replace sizes/prices/metadata
+      // instead of additively merging quantities (which caused doubling).
       const existing = skuMap.get(sku);
 
-      // Sum quantity field (used for preservation logic)
-      const currentQty = parseInt(existing.quantity) || 0;
-      existing.quantity = currentQty + rowQty;
-
-      if (rowHadUsableSizes) {
-        for (const entry of normalizedRowSizes) {
-          const found = existing.sizeEntries.find((e) => e.size === entry.size);
-          if (found) {
-            found.quantity += entry.quantity;
-          } else {
-            existing.sizeEntries.push({ ...entry });
-          }
-        }
+      const sizeErrors = [];
+      if (parsedSizes.invalidTokens.length > 0) {
+        sizeErrors.push(
+          `Invalid size token(s): ${parsedSizes.invalidTokens.join(", ")}`,
+        );
+      }
+      if (parsedSizes.checksumMismatch) {
+        sizeErrors.push(
+          `Embedded size quantities (${parsedSizes.parsedTotal}) do not match QTY (${rowQty})`,
+        );
+      }
+      if (parsedSizes.hadNegativeSizes) {
+        sizeErrors.push(
+          "Negative size sign detected and normalized to a positive value",
+        );
+      }
+      if (rawSizeProvided && rowQty > 0 && normalizedRowSizes.length === 0) {
+        sizeErrors.push("Provided size values could not be parsed");
       }
 
-      // Merge barcode (barcodes are additive)
+      // Overwrite sizes completely — do NOT add to existing
+      if (normalizedRowSizes.length > 0) {
+        existing.sizeEntries = normalizeSizeEntries(normalizedRowSizes, row.category);
+      }
+
+      // Overwrite metadata from new row
+      existing._sizeWarnings = sizeErrors;
+      existing._hadNegativeSizes = parsedSizes.hadNegativeSizes;
+      existing._hadZeroQtyTokens = parsedSizes.hadZeroQtyTokens;
+      existing._rawSizeProvided = rawSizeProvided;
+      existing._sizeParseFailed = strictSizeFailure;
+
+      // Merge barcode (barcodes are additive — different rows may have different barcodes)
       const newBarcode = row.barcode ? String(row.barcode).trim() : "";
       if (newBarcode && !existing.barcodes.includes(newBarcode)) {
         existing.barcodes.push(newBarcode);
       }
 
-      // Update metadata only if current is empty (preserve first row's data)
-      if (!existing.name && row.name) existing.name = row.name;
-      if (!existing.description && row.description) existing.description = row.description;
-      if (!existing.category && row.category) existing.category = row.category;
-      if (!existing.subcategory && row.subcategory) existing.subcategory = row.subcategory;
-      if (!existing.brand && row.brand) existing.brand = row.brand;
-      if (!existing.color && row.color) existing.color = row.color;
+      // Overwrite price/rrp from new row if present
+      if (row.price) existing.price = row.price;
+      if (row.rrp) existing.rrp = row.rrp;
+      if (row._rawPrice) existing._rawPrice = row._rawPrice;
 
-      // ── Image Prioritization: Prefer Cloudinary URLs over search engine URLs ──
-      const isCloudinary = (url) => String(url || "").toLowerCase().includes("cloudinary.com");
-      if (row.imageUrl) {
-        if (!existing.imageUrl || (!isCloudinary(existing.imageUrl) && isCloudinary(row.imageUrl))) {
-          existing.imageUrl = row.imageUrl;
-        }
-      }
-
-      // Update price if existing is zero/empty
-      if ((!existing.price || existing.price === 0) && row.price) existing.price = row.price;
-      if ((!existing.rrp || existing.rrp === 0) && row.rrp) existing.rrp = row.rrp;
-      if (!existing._rawPrice && row._rawPrice) existing._rawPrice = row._rawPrice;
-
-      // Update flags
-      if (rawSizeProvided) existing._rawSizeProvided = true;
-      if (parsedSizes.hadNegativeSizes) existing._hadNegativeSizes = true;
-      if (parsedSizes.hadZeroQtyTokens) existing._hadZeroQtyTokens = true;
-      if (rowHadSizeParsingError) existing._anyRowHadSizeParsingError = true;
-
-      // Collect warnings
-      if (parsedSizes.invalidTokens.length > 0) {
-        existing._sizeWarnings.push(`Invalid size token(s): ${parsedSizes.invalidTokens.join(", ")}`);
-      }
+      // Overwrite other fields from new row if present
+      if (row.name) existing.name = row.name;
+      if (row.description) existing.description = row.description;
+      if (row.category) existing.category = row.category;
+      if (row.subcategory) existing.subcategory = row.subcategory;
+      if (row.brand) existing.brand = row.brand;
+      if (row.color) existing.color = row.color;
+      if (row.imageUrl) existing.imageUrl = row.imageUrl;
     } else {
       const barcode = row.barcode ? String(row.barcode).trim() : "";
       const sizeEntries = [];
@@ -796,39 +752,36 @@ function consolidateBySku(rows) {
         );
       }
 
-      if (rowHadUsableSizes) {
+      if (normalizedRowSizes.length > 0) {
         for (const entry of normalizedRowSizes) {
-          sizeEntries.push({ ...entry });
+          const found = sizeEntries.find((e) => e.size === entry.size);
+          if (found) {
+            found.quantity += entry.quantity;
+          } else {
+            sizeEntries.push({ size: entry.size, quantity: entry.quantity });
+          }
         }
-      } else if (rowHadSizeParsingError) {
+      } else if (rawSizeProvided && rowQty > 0) {
         sizeErrors.push("Provided size values could not be parsed");
       }
 
       skuMap.set(sku, {
         ...row,
         sku,
-        quantity: rowQty,
         _sizeWarnings: sizeErrors,
         _hadNegativeSizes: parsedSizes.hadNegativeSizes,
         _hadZeroQtyTokens: parsedSizes.hadZeroQtyTokens,
         _rawSizeProvided: rawSizeProvided,
-        _anyRowHadSizeParsingError: rowHadSizeParsingError,
-        sizeEntries: sizeEntries,
+        _sizeParseFailed:
+          strictSizeFailure || (rawSizeProvided && sizeEntries.length === 0),
+        sizeEntries: normalizeSizeEntries(sizeEntries, row.category),
         barcodes: barcode ? [barcode] : [],
       });
     }
   }
 
-  // Final pass to set _sizeParseFailed for the consolidated objects
-  for (const product of skuMap.values()) {
-    product._sizeParseFailed = product._anyRowHadSizeParsingError && product.sizeEntries.length === 0;
-    // Re-normalize to ensure consistency
-    product.sizeEntries = normalizeSizeEntries(product.sizeEntries, product.category);
-  }
-
   return Array.from(skuMap.values());
 }
-
 
 /**
  * Create a URL-friendly slug from a string.
@@ -1257,27 +1210,23 @@ exports.importProducts = async (req, res) => {
       const existingHasSizes = Array.isArray(existingProduct?.sizes) && existingProduct.sizes.length > 0;
       const hasUsableIncomingSizes = Array.isArray(row.sizeEntries) && row.sizeEntries.length > 0;
       const incomingQty = Math.max(0, Number.parseInt(row.quantity, 10) || 0);
-
       const shouldPreserveExistingStock =
         !!existingProduct &&
         existingHasSizes &&
-        (!row._rawSizeProvided ||
-          row._sizeParseFailed ||
-          (!hasUsableIncomingSizes && incomingQty > 0 && !row._hadZeroQtyTokens));
+        (!row._rawSizeProvided || (!hasUsableIncomingSizes && incomingQty > 0 && !row._hadZeroQtyTokens));
 
       if (shouldPreserveExistingStock) {
         warnings++;
         pushWarningDetail({
           row: i + 1,
           sku,
-          reason: row._sizeParseFailed
-            ? "Incoming size data could not be parsed; preserved existing catalog stock"
-            : "Incoming row had no usable size data; preserved existing catalog stock",
+          reason: "Incoming row had no usable size data; preserved existing catalog stock",
         });
-        row.sizeEntries = existingProduct.sizes;
-        // totalQuantity will be recalculated below from row.sizeEntries
-      } else if (row._sizeParseFailed || (row._rawSizeProvided && !hasUsableIncomingSizes)) {
-        // Best-effort: update metadata and set 0 stock if no existing product to preserve from
+        continue;
+      }
+
+      if (row._sizeParseFailed || (row._rawSizeProvided && (!Array.isArray(row.sizeEntries) || row.sizeEntries.length === 0))) {
+        // Best-effort: don't skip SKU if sizes are bad; update metadata and set 0 stock
         warnings++;
         pushWarningDetail({
           row: i + 1,
@@ -1610,22 +1559,25 @@ exports.importProducts = async (req, res) => {
       });
       productData.brandCanonical = deriveBrandCanonical(productData.brand);
 
-      // Update hasImage for indexed sorting
-      productData.hasImage = !!(productData.imageUrl && String(productData.imageUrl).trim().length > 0);
-
-      // ── Image URL logic: Prioritize Direct URLs; Queue others for background lookup ──
-      // This ensures even empty fields trigger a Cloudinary SKU-based check.
+      // ── Image URL: store only direct image URLs ──
       const rawImageUrl = row.imageUrl ? String(row.imageUrl).trim() : "";
-
       if (isDirectImageUrl(rawImageUrl)) {
         productData.imageUrl = rawImageUrl;
-      } else {
-        // Queue for background resolution (Google Search OR Cloudinary SKU match)
+      } else if (isValidImageUrl(rawImageUrl)) {
+        // HTTP URL but not a direct image (Google search link) — queue for resolution
         productData._pendingImageQuery = rawImageUrl;
+        if (i < 5) {
+          debug(`[IMPORT] Row ${i + 1} imageUrl queued for resolution: "${rawImageUrl.substring(0, 80)}"`);
+        }
+      } else {
+        // No valid image in Excel
+        if (rawImageUrl && i < 5) {
+          debug(`[IMPORT] Row ${i + 1} imageUrl is not a valid URL: "${rawImageUrl}"`);
+        }
       }
 
       // Track products that need image resolution (for post-import phase)
-      if (productData._pendingImageQuery !== undefined) {
+      if (productData._pendingImageQuery) {
         pendingImageProducts.push({
           sku: productData.sku,
           brand: productData.brand,
@@ -1635,7 +1587,23 @@ exports.importProducts = async (req, res) => {
         delete productData._pendingImageQuery;
       }
 
+      // Separate image fields — only $set them when Excel provides a valid URL
+      // Otherwise use $setOnInsert so existing images survive re-imports
+      const hasExcelImage = !!productData.imageUrl;
+      const imageFields = {};
+      if (hasExcelImage) {
+        imageFields.imageUrl = productData.imageUrl;
+      }
+      delete productData.imageUrl; // remove from main $set
+
       const updateOp = { $set: productData };
+      if (!hasExcelImage) {
+        // Only set imageUrl on brand-new products (upsert insert)
+        updateOp.$setOnInsert = { imageUrl: "", imagePublicId: "" };
+      } else {
+        // Excel provided a valid direct image URL — overwrite
+        updateOp.$set.imageUrl = imageFields.imageUrl;
+      }
 
       operations.push({
         updateOne: {
@@ -1762,23 +1730,31 @@ exports.importProducts = async (req, res) => {
       if (syncMode === "additive") {
         debug("[IMPORT] Additive mode: skipped removal of SKUs not in upload");
       } else {
-        // OLD METHOD: Mark missing products as sold out (isActive=false, quantity=0)
-        // Jim prefers this over hard-deletion to preserve SEO and order history links.
-        const result = await Product.updateMany(
-          {
+        // Step 1: Find non-manual products whose SKU is absent from the uploaded sheet
+        const productsToRemove = await Product.find({
+          sku: { $nin: uploadedSkus },
+          isManuallyEdited: { $ne: true },
+        }).lean();
+
+        if (productsToRemove.length > 0) {
+          // Step 2: Backup before deletion (safety net — restorable via admin UI)
+          await DeletedProductBatch.create({
+            deletedBy: req.user?._id,
+            reason: `Sheet re-upload sync — removed ${productsToRemove.length} product(s) not in "${req.file.originalname}"`,
+            count: productsToRemove.length,
+            products: productsToRemove,
+          });
+
+          // Step 3: Hard-delete from catalog
+          const deleteResult = await Product.deleteMany({
             sku: { $nin: uploadedSkus },
-            isManuallyEdited: { $ne: true }
-          },
-          {
-            $set: {
-              isActive: false,
-              totalQuantity: 0,
-              sizes: [] // Clear sizes to show as sold out
-            }
-          }
-        );
-        removedCount = result.modifiedCount || 0;
-        debug(`[IMPORT] Sync complete: ${removedCount} products not in sheet marked as SOLD OUT`);
+            isManuallyEdited: { $ne: true },
+          });
+          removedCount = deleteResult.deletedCount || 0;
+          debug(`[IMPORT] Sync complete: ${removedCount} products not in sheet REMOVED (backup saved)`);
+        } else {
+          debug(`[IMPORT] Sync complete: no products to remove (all SKUs present in sheet or manually added)`);
+        }
       }
 
       phaseMarks.syncComplete = Date.now();
@@ -1795,58 +1771,63 @@ exports.importProducts = async (req, res) => {
     const totalMs = Date.now() - startTime;
     const elapsed = (totalMs / 1000).toFixed(2);
 
-    // ── Post-import: auto-resolve images (non-blocking background process) ──
-    // This prevents Gateway Timeouts for large imports.
-    const imageResolutionStatus = pendingImageProducts.length > 0 ? "processing_in_background" : "not_needed";
+    // ── Post-import: auto-resolve images from Google search URLs (async, non-blocking) ──
+    let imageResolved = 0;
+    let imageFailed = 0;
     if (pendingImageProducts.length > 0) {
-      // Start background process (IIFE)
-      (async () => {
-        const skusToResolve = pendingImageProducts.map(p => p.sku);
-        const currentProducts = await Product.find({
-          sku: { $in: skusToResolve },
-          $or: [
-            { imageUrl: { $regex: /cloudinary\.com/i } },
-            { imagePublicId: { $ne: "" } }
-          ]
-        }).select("sku").lean();
+      const imageResolveStart = Date.now();
+      debug(
+        `[IMPORT] Starting auto image resolution for ${pendingImageProducts.length} products...`,
+      );
+      // Resolve up to 50 images during import (rest handled by /resolve-images endpoint)
+      const batch50 = pendingImageProducts.slice(0, 50);
+      try {
+        const { resolved, failed: imgFailed } = await batchResolveImages(
+          batch50,
+          3,
+          (r, f, t) => {
+            if ((r + f) % 10 === 0)
+              debug(
+                `[IMAGE-RESOLVE] Progress: ${r} resolved, ${f} failed of ${t}`,
+              );
+          },
+        );
+        imageResolved = resolved.length;
+        imageFailed = imgFailed.length;
 
-        const skusWithCloudinary = new Set(currentProducts.map(p => p.sku));
-        const filteredPendingProducts = pendingImageProducts.filter(p => !skusWithCloudinary.has(p.sku));
-
-        if (filteredPendingProducts.length > 0) {
-          debug(`[IMPORT-BG] Background image resolution started for ${filteredPendingProducts.length} items.`);
-
-          // Resolve in larger batches with higher concurrency
-          const BATCH_SIZE_RESOLVE = 250;
-          for (let i = 0; i < filteredPendingProducts.length; i += BATCH_SIZE_RESOLVE) {
-            const batch = filteredPendingProducts.slice(i, i + BATCH_SIZE_RESOLVE);
-            debug(`[IMPORT-BG] Processing batch ${Math.floor(i / BATCH_SIZE_RESOLVE) + 1} (${batch.length} images)...`);
-
-            // Higher concurrency (15) + parallelized candidate checks inside resolver
-            const { resolved } = await batchResolveImages(batch, 15);
-
-            if (resolved.length > 0) {
-              const imgOps = resolved.map((r) => ({
-                updateOne: {
-                  filter: { sku: r.sku },
-                  update: {
-                    $set: {
-                      imageUrl: r.imageUrl,
-                      hasImage: !!(r.imageUrl && String(r.imageUrl).trim().length > 0)
-                    }
-                  },
-                },
-              }));
-              await Product.bulkWrite(imgOps, { ordered: false });
-              debug(`[IMPORT-BG] Batch complete: ${resolved.length} images linked.`);
-            }
-          }
+        // Update resolved products in DB
+        if (resolved.length > 0) {
+          const imgOps = resolved.map((r) => ({
+            updateOne: {
+              filter: { sku: r.sku },
+              update: { $set: { imageUrl: r.imageUrl } },
+            },
+          }));
+          await Product.bulkWrite(imgOps, { ordered: false });
+          debug(`[IMPORT] Auto-resolved ${resolved.length} product images`);
         }
-      })().catch(err => console.error("[IMPORT-BG-IMAGE] Error in background resolution:", err));
+        if (imgFailed.length > 0) {
+          debug(
+            `[IMPORT] Image resolution failed for ${imgFailed.length} products (first 5):`,
+            imgFailed.slice(0, 5).map((f) => `${f.sku}: ${f.reason}`),
+          );
+        }
+        if (pendingImageProducts.length > 50) {
+          debug(
+            `[IMPORT] ${pendingImageProducts.length - 50} products still need image resolution — use POST /api/admin/resolve-images`,
+          );
+        }
+        phaseMarks.imageResolveComplete = Date.now();
+        logInfo(`Image resolution complete in ${phaseMarks.imageResolveComplete - imageResolveStart}ms`, {
+          imageResolved,
+          imageFailed,
+          remaining: Math.max(0, pendingImageProducts.length - 50),
+        });
+      } catch (imgErr) {
+        console.error("[IMPORT] Image auto-resolution error:", imgErr.message);
+        logWarn(`Image auto-resolution warning: ${imgErr.message}`);
+      }
     }
-
-    const imageResolved = 0; // Handled in background
-    const imageFailed = 0;   // Handled in background
 
     // Log import summary
     debug(
@@ -1950,8 +1931,9 @@ exports.importProducts = async (req, res) => {
         extractedSizeFromDescription: extractedSizeFromDescriptionCount,
         syncMode,
         removedCount,
-        imageResolutionStatus,
-        imagePending: pendingImageProducts.length,
+        imageResolved,
+        imageFailed,
+        imagePending: Math.max(0, pendingImageProducts.length - 50),
       },
       sizeProfile: sizeConsolidationStats,
       checks,
@@ -1993,8 +1975,9 @@ exports.importProducts = async (req, res) => {
       failed,
       warnings,
       warningDetails,
-      imageResolutionStatus,
-      imagePending: pendingImageProducts.length,
+      imageResolved,
+      imageFailed,
+      imagePending: Math.max(0, pendingImageProducts.length - 50),
       protectedManualRows,
       protectedManualSamples,
       syncMode,
@@ -2176,7 +2159,7 @@ async function processImageBatch(imagesToProcess, filePath, tempExtractDir, job 
 
   const cName = process.env.CLOUDINARY_CLOUD_NAME || "";
   const cloudinaryEnabled = !!cName && cName !== "your_cloud_name";
-  const BATCH_SIZE = 30;
+  const BATCH_SIZE = 10;
   const bulkOps = [];
 
   for (let i = 0; i < imagesToProcess.length; i += BATCH_SIZE) {
@@ -2236,10 +2219,7 @@ async function processImageBatch(imagesToProcess, filePath, tempExtractDir, job 
         const val = r.value;
         if (val.status === "matched") {
           matched++;
-          const updateFields = {
-            imageUrl: val.imageUrl,
-            hasImage: !!(val.imageUrl && String(val.imageUrl).trim().length > 0)
-          };
+          const updateFields = { imageUrl: val.imageUrl };
           if (val.imagePublicId) updateFields.imagePublicId = val.imagePublicId;
           bulkOps.push({
             updateOne: {
@@ -2386,12 +2366,7 @@ exports.resolveImages = async (req, res) => {
       const ops = resolved.map((r) => ({
         updateOne: {
           filter: { sku: r.sku },
-          update: {
-            $set: {
-              imageUrl: r.imageUrl,
-              hasImage: !!(r.imageUrl && String(r.imageUrl).trim().length > 0)
-            }
-          },
+          update: { $set: { imageUrl: r.imageUrl } },
         },
       }));
       await Product.bulkWrite(ops, { ordered: false });
@@ -2484,100 +2459,3 @@ function cleanup(filePath) {
     } catch { }
   }
 }
-
-/**
- * POST /api/admin/relink-cloudinary
- * Scans Cloudinary for existing images and maps them back to products.
- * Use this to recover from accidental data loss.
- */
-exports.relinkCloudinaryImages = async (req, res) => {
-  try {
-    const folders = ["oxford-sports", "oxford-sports/products"];
-    let totalMatched = 0;
-    const log = [];
-
-    console.log("[RELINK] Starting Cloudinary scan...");
-
-    for (const folder of folders) {
-      let nextCursor = null;
-      do {
-        const response = await cloudinary.api.resources({
-          type: "upload",
-          prefix: folder + "/",
-          max_results: 500,
-          next_cursor: nextCursor,
-        });
-
-        const resources = response.resources;
-        nextCursor = response.next_cursor;
-
-        if (!resources || resources.length === 0) break;
-
-        // Fetch all products that are currently missing images to optimize matching
-        const productsWithoutImages = await Product.find({
-          $or: [{ imageUrl: "" }, { imageUrl: null }, { imageUrl: { $exists: false } }],
-        }).select("sku").lean();
-
-        const missingSkuMap = new Map();
-        productsWithoutImages.forEach(p => {
-          missingSkuMap.set(p.sku, true);
-          // Also map sanitized version for matching admin-uploaded images
-          missingSkuMap.set(p.sku.replace(/[^a-zA-Z0-9_-]/g, "_"), p.sku);
-        });
-
-        const bulkOps = [];
-
-        for (const resource of resources) {
-          const publicId = resource.public_id;
-          const fileName = publicId.split("/").pop(); // Get the SKU part
-
-          let targetSku = null;
-          if (missingSkuMap.has(fileName)) {
-            const val = missingSkuMap.get(fileName);
-            targetSku = val === true ? fileName : val;
-          }
-
-          if (targetSku) {
-            bulkOps.push({
-              updateOne: {
-                filter: { sku: targetSku },
-                update: {
-                  $set: {
-                    imageUrl: resource.secure_url,
-                    imagePublicId: publicId
-                  }
-                }
-              }
-            });
-            totalMatched++;
-            if (log.length < 50) log.push(`Linked ${targetSku}`);
-          }
-        }
-
-        if (bulkOps.length > 0) {
-          await Product.bulkWrite(bulkOps, { ordered: false });
-        }
-
-        console.log(`[RELINK] Processed batch in ${folder}, matched ${totalMatched} so far...`);
-      } while (nextCursor);
-    }
-
-    // Bust cache so images show up immediately
-    try { await cache.invalidateProducts(); } catch (e) {}
-
-    res.json({
-      success: true,
-      message: `Successfully relinked ${totalMatched} images from Cloudinary.`,
-      count: totalMatched,
-      samples: log
-    });
-
-  } catch (err) {
-    console.error("[RELINK ERROR]", err);
-    res.status(500).json({
-      error: "Cloudinary Scan Failed",
-      details: err.message,
-      hint: "Ensure CLOUDINARY_API_KEY and SECRET are correctly set in Railway."
-    });
-  }
-};
