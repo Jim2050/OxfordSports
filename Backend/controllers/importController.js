@@ -1,3 +1,15 @@
+/**
+ * Product Import Controller
+ * ════════════════════════
+ * Handles complex product imports from Excel/XLSX workbooks.
+ * Features:
+ *  - Multi-sheet parsing and data consolidation.
+ *  - Taxonomy normalization (Brands, Categories, Subcategories, Genders).
+ *  - Stock/Size aggregation for variant-based products.
+ *  - Batch processing for high-volume data (5000+ rows).
+ *  - Image resolution and Cloudinary integration.
+ */
+
 const fs = require("fs");
 const path = require("path");
 const XLSX = require("xlsx");
@@ -82,6 +94,13 @@ const CANONICAL_SUBCATEGORIES = new Map([
  * Apply canonical title-case format to any subcategory.
  * This is the SINGLE POINT OF NORMALIZATION — ensures consistency across all imports.
  */
+/**
+ * Normalizes a subcategory string to a canonical title-case format.
+ * This ensures UI consistency regardless of the source Excel formatting (e.g., "TRAINERS" -> "Trainers").
+ *
+ * @param {string} value - The raw subcategory string from the import source.
+ * @returns {string} The normalized canonical subcategory or the original trimmed string if no mapping exists.
+ */
 function toCanonicalSubcategory(value) {
   const upper = String(value || "").trim().toUpperCase();
   if (!upper) return "";
@@ -89,6 +108,16 @@ function toCanonicalSubcategory(value) {
   return canonical || value; // fallback to original if not in map
 }
 
+/**
+ * Determines the correct canonical subcategory based on category, raw subcategory, and keyword detection.
+ * Handles OCR errors and provides fallback logic for inconsistent source data.
+ *
+ * @param {string} category - The top-level category (e.g., "CLOTHING").
+ * @param {string} subcategory - The raw subcategory value from the sheet.
+ * @param {string} name - Product name for keyword-based inference.
+ * @param {string} [description=""] - Product description for additional context.
+ * @returns {string} The resolved canonical subcategory.
+ */
 function normalizeImportedSubcategory(category, subcategory, name, description = "") {
   const cat = String(category || "").trim().toUpperCase();
   const raw = String(subcategory || "").trim();
@@ -158,6 +187,15 @@ function normalizeImportedSubcategory(category, subcategory, name, description =
   return toCanonicalSubcategory(raw);
 }
 
+/**
+ * Cleans and normalizes product names, correcting common contradictions found in source files.
+ * Example: Removes "FOOTBALL BOOTS" from name if the category is actually "SHORTS".
+ *
+ * @param {string} name - Raw product name.
+ * @param {string} category - Normalized category.
+ * @param {string} subcategory - Normalized subcategory.
+ * @returns {string} The cleaned product name.
+ */
 function normalizeImportedName(name, category, subcategory) {
   const raw = String(name || "").trim();
   if (!raw) return "";
@@ -354,6 +392,12 @@ const COLUMN_MAP = {
 /**
  * Normalize a header string for matching.
  */
+/**
+ * Normalizes Excel headers by removing special characters and converting to lowercase.
+ *
+ * @param {string|any} h - The raw header value.
+ * @returns {string} Normalized header string.
+ */
 function normalizeHeader(h) {
   return (h || "")
     .toString()
@@ -363,6 +407,12 @@ function normalizeHeader(h) {
     .replace(/\s+/g, " ");
 }
 
+/**
+ * Normalizes individual size strings to standard formats.
+ *
+ * @param {string|number} value - The raw size value.
+ * @returns {string} Trimmed and normalized size string.
+ */
 function normalizeSizeToken(value) {
   return String(value || "").replace(/\s+/g, " ").trim();
 }

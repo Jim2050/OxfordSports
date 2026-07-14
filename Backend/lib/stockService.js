@@ -62,23 +62,25 @@ function validateAndAllocateItem(item, product) {
       const ops = allocateAcrossAllSizes(product, effectiveQty, validLotSizes, sizeEntries, totalAvailable);
       stockOps.push(...ops);
     } else {
-      // If the customer is taking every available unit, zero the entire product in one write.
-      if (effectiveQty >= totalAvailable) {
-        stockOps.push(createDepleteAllSizeStockOp(product, totalAvailable));
-      } else {
       // Regular item: allocate specific size
-        const result = allocateSpecificSize(product, size, effectiveQty, sizeEntries, validLotSizes, totalAvailable);
-        size = result.size;
-        stockOps.push(...result.ops);
-      }
+      const result = allocateSpecificSize(product, size, effectiveQty, sizeEntries, validLotSizes, totalAvailable);
+      size = result.size;
+      stockOps.push(...result.ops);
     }
   } else if (totalAvailable > 0) {
     if (effectiveQty > totalAvailable) {
       throw createError(400, `Only ${totalAvailable} available for ${product.name}.`);
     }
+
+    // Update local state to prevent over-allocation in subsequent items
+    product.totalQuantity -= effectiveQty;
+
     stockOps.push({
       updateOne: {
-        filter: { _id: product._id },
+        filter: {
+          _id: product._id,
+          totalQuantity: { $gte: effectiveQty }
+        },
         update: { $inc: { totalQuantity: -effectiveQty } },
       },
     });
@@ -126,6 +128,10 @@ function allocateAcrossAllSizes(product, effectiveQty, validLotSizes, sizeEntrie
     const takeQty = Math.min(sizeEntry.quantity, remaining);
     if (takeQty <= 0) continue;
 
+    // Update local state to prevent over-allocation in subsequent items
+    sizeEntry.quantity -= takeQty;
+    product.totalQuantity -= takeQty;
+
     ops.push({
       updateOne: {
         filter: {
@@ -150,26 +156,6 @@ function allocateAcrossAllSizes(product, effectiveQty, validLotSizes, sizeEntrie
   }
 
   return ops;
-}
-
-/**
- * Zero out all size quantities for a product that is being sold out completely.
- */
-function createDepleteAllSizeStockOp(product, totalAvailable) {
-  return {
-    updateOne: {
-      filter: {
-        _id: product._id,
-        totalQuantity: { $gte: totalAvailable },
-      },
-      update: {
-        $set: {
-          'sizes.$[].quantity': 0,
-          totalQuantity: 0,
-        },
-      },
-    },
-  };
 }
 
 /**
@@ -224,6 +210,10 @@ function allocateSpecificSize(product, size, effectiveQty, sizeEntries, validLot
     },
   }];
 
+  // Update local state to prevent over-allocation in subsequent items
+  sizeEntry.quantity -= effectiveQty;
+  product.totalQuantity -= effectiveQty;
+
   return { size: sizeEntry.size, ops };
 }
 
@@ -250,15 +240,21 @@ function enforceMustBuyAll(skuMap, lotSkus) {
     const isFootwear = cat === 'FOOTWEAR';
     const threshold = isFootwear ? FOOTWEAR_THRESHOLD : DEFAULT_THRESHOLD;
     const sizeEntries = Array.isArray(product.sizes) ? product.sizes : [];
-    const totalFromSizes = sizeEntries.reduce((sum, s) => sum + (Number(s.quantity) || 0), 0);
-    const totalQty = sizeEntries.length > 0 ? totalFromSizes : (product.totalQuantity || 0);
 
-    if (totalQty <= 0 || totalQty >= threshold) continue;
+    // The "Must Buy All" rule applies based on the stock level BEFORE this order started.
+    // Since we've already deducted the main cart items from the local product object,
+    // we calculate the initial total by adding ordered quantity back to current remaining stock.
+    const orderedQty = entry.items.reduce((sum, i) => sum + (Number(i.quantity) || 0), 0);
+    const currentStock = sizeEntries.length > 0
+      ? sizeEntries.reduce((sum, s) => sum + (Number(s.quantity) || 0), 0)
+      : (Number(product.totalQuantity) || 0);
 
-    // Fix: If the user already bought the entire product stock (e.g. clicked "Buy all items"),
-    // skip adding missing sizes to avoid duplicate allocations and stock conflicts.
-    const orderedQty = entry.items.reduce((sum, i) => sum + i.quantity, 0);
-    if (orderedQty >= totalQty) continue;
+    const initialTotalQty = orderedQty + currentStock;
+
+    if (initialTotalQty <= 0 || initialTotalQty >= threshold) continue;
+
+    // If the user already bought the entire product stock, nothing more to add.
+    if (currentStock <= 0) continue;
 
     const availableSizes = sizeEntries
       .filter((s) => s.quantity > 0 && String(s.size || '').trim() !== '');
@@ -303,6 +299,10 @@ function enforceMustBuyAll(skuMap, lotSkus) {
         },
       });
 
+      // Update local state to prevent over-allocation if items appear multiple times
+      sizeEntry.quantity -= missingSizeQty;
+      product.totalQuantity -= missingSizeQty;
+
       entry.items.push({ sku: product.sku, size: trimmedSize, quantity: missingSizeQty });
     }
   }
@@ -327,13 +327,11 @@ async function executeStockDeductions(stockUpdates, context = {}, session = null
 
     const result = await Product.bulkWrite(stockUpdates, options);
     const matchedCount = result.matchedCount || 0;
-    const modifiedCount = result.modifiedCount || 0;
 
-    if (matchedCount !== stockUpdates.length || modifiedCount !== stockUpdates.length) {
+    if (matchedCount !== stockUpdates.length) {
       log.warn('stock', 'Stock deduction partial match', {
         expectedOps: stockUpdates.length,
         matchedCount,
-        modifiedCount,
         items: checkoutItems,
       });
       // Throw so the order transaction is aborted — prevents overselling
@@ -348,7 +346,7 @@ async function executeStockDeductions(stockUpdates, context = {}, session = null
     log.info('stock', 'Stock deductions applied', {
       ops: stockUpdates.length,
       matched: matchedCount,
-      modified: modifiedCount,
+      modified: result.modifiedCount || 0,
     });
   } catch (err) {
     log.error('stock', 'Stock deduction failed', {

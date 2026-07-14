@@ -95,12 +95,30 @@ exports.placeOrder = async (req, res) => {
       foundProducts: productsList.length,
     });
 
+    // ── Consolidate Items by SKU & Size ──
+    const consolidatedItems = [];
+    const itemMap = new Map();
+
+    for (const item of items) {
+      const sku = String(item.sku || '').trim().toUpperCase();
+      const size = String(item.size || '').trim();
+      const key = `${sku}|${size}|${!!item.lotItem}`;
+
+      if (itemMap.has(key)) {
+        itemMap.get(key).quantity += Number(item.quantity) || 0;
+      } else {
+        const newItem = { ...item, sku, size, quantity: Number(item.quantity) || 0 };
+        itemMap.set(key, newItem);
+        consolidatedItems.push(newItem);
+      }
+    }
+
     // ── Validate & allocate each item ──
     const orderItems = [];
     const stockUpdates = [];
     const lotSkus = new Set();
 
-    for (const item of items) {
+    for (const item of consolidatedItems) {
       if (!item.sku || !item.quantity || item.quantity < 1) {
         throw createError(400, `Invalid item: ${JSON.stringify(item)}`);
       }

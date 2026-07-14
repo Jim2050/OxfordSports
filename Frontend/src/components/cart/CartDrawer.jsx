@@ -176,11 +176,17 @@ export default function CartDrawer() {
     }
   };
 
-  const handleCloseConfirmation = () => {
-    setConfirmedOrder(null);
-    setReviewConfirmed(false);
+  const handleCloseConfirmation = (e) => {
+    // If it's the success screen, close everything
+    if (confirmedOrder) {
+      setConfirmedOrder(null);
+      setReviewConfirmed(false);
+      setReviewingLocal(false);
+      closeDrawer();
+      return;
+    }
+    // If it's just the review screen, just close the modal, keep drawer open
     setReviewingLocal(false);
-    closeDrawer();
   };
 
   const handleContinueBrowsing = () => {
@@ -244,10 +250,13 @@ export default function CartDrawer() {
       </div>
 
       {(reviewingLocal || confirmedOrder) && (
-        <div className="modal-overlay">
-          <div className="modal-content">
+        <div className="modal-overlay" onClick={handleCloseConfirmation}>
+          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
             {confirmedOrder ? (
               <div style={{ textAlign: "center" }}>
+                <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: "-1rem" }}>
+                  <button className="cart-drawer-close" onClick={handleCloseConfirmation} style={{ position: "static" }}>✕</button>
+                </div>
                 <div style={{ fontSize: "3.5rem" }}>🎉</div>
                 <h2>Order Received!</h2>
                 <p>Order ID: <strong>{confirmedOrder.orderNumber}</strong></p>
@@ -256,7 +265,10 @@ export default function CartDrawer() {
               </div>
             ) : (
               <>
-                <h2>Review Your Order</h2>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem" }}>
+                  <h2 style={{ margin: 0 }}>Review Your Order</h2>
+                  <button className="cart-drawer-close" onClick={() => setReviewingLocal(false)} style={{ position: "static" }}>✕</button>
+                </div>
                 <div className="summary-list">
                   <p><strong>Total Items:</strong> {itemCount}</p>
                   <p><strong>Total Amount:</strong> £{totalAmount.toFixed(2)}</p>
@@ -274,7 +286,7 @@ export default function CartDrawer() {
                 </div>
                 <div className="modal-actions">
                   <button className="btn btn-accent" disabled={!reviewConfirmed || submitting} onClick={handleConfirmOrder}>Confirm Order</button>
-                  <button className="btn btn-outline" onClick={() => setReviewingLocal(false)}>Edit</button>
+                  <button className="btn btn-outline" onClick={() => setReviewingLocal(false)}>Cancel</button>
                 </div>
               </>
             )}
