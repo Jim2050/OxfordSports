@@ -1818,14 +1818,15 @@ exports.importProducts = async (req, res) => {
       debug(
         `[IMPORT] Starting auto image resolution for ${pendingImageProducts.length} products...`,
       );
-      // Resolve up to 100 images during import (rest handled by /resolve-images endpoint)
-      const batch100 = pendingImageProducts.slice(0, 100);
+      // Resolve up to 1000 images during import (rest handled by /resolve-images endpoint)
+      const batchLimit = 1000;
+      const batchToResolve = pendingImageProducts.slice(0, batchLimit);
       try {
         const { resolved, failed: imgFailed } = await batchResolveImages(
-          batch100,
-          3,
+          batchToResolve,
+          5,
           (r, f, t) => {
-            if ((r + f) % 20 === 0)
+            if ((r + f) % 50 === 0)
               debug(
                 `[IMAGE-RESOLVE] Progress: ${r} resolved, ${f} failed of ${t}`,
               );
@@ -1839,7 +1840,7 @@ exports.importProducts = async (req, res) => {
           const imgOps = resolved.map((r) => ({
             updateOne: {
               filter: { sku: r.sku },
-              update: { $set: { imageUrl: r.imageUrl } },
+              update: { $set: { imageUrl: r.imageUrl, hasImage: true } },
             },
           }));
           await Product.bulkWrite(imgOps, { ordered: false });
@@ -1851,9 +1852,9 @@ exports.importProducts = async (req, res) => {
             imgFailed.slice(0, 5).map((f) => `${f.sku}: ${f.reason}`),
           );
         }
-        if (pendingImageProducts.length > 100) {
+        if (pendingImageProducts.length > batchLimit) {
           debug(
-            `[IMPORT] ${pendingImageProducts.length - 100} products still need image resolution — use POST /api/admin/resolve-images`,
+            `[IMPORT] ${pendingImageProducts.length - batchLimit} products still need image resolution — use POST /api/admin/resolve-images`,
           );
         }
         phaseMarks.imageResolveComplete = Date.now();
@@ -2408,7 +2409,7 @@ exports.resolveImages = async (req, res) => {
       const ops = resolved.map((r) => ({
         updateOne: {
           filter: { sku: r.sku },
-          update: { $set: { imageUrl: r.imageUrl } },
+          update: { $set: { imageUrl: r.imageUrl, hasImage: true } },
         },
       }));
       await Product.bulkWrite(ops, { ordered: false });

@@ -309,7 +309,8 @@ async function resolveProductImage({ sku, brand, name, currentUrl }) {
           folder: "oxford-sports/products",
           public_id: sku,
           overwrite: true,
-          resource_type: "image"
+          resource_type: "image",
+          flags: "attachment" // Try to bypass some basic hotlink protections
         });
 
         if (result && result.secure_url) {
