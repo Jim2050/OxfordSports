@@ -358,6 +358,7 @@ const COLUMN_MAP = {
     "sizes available",
     "size sizes",
     "sizesizes",
+    "src size", // Added for Adidas exports
   ],
   barcode: ["barcode", "ean", "upc", "ean13", "gtin", "bar code"],
   quantity: [
@@ -440,7 +441,7 @@ function extractSizeFromChildDescription(childDescription, parentDescription = "
     /(UK\s*\d+(?:\.\d+)?)$/i,
     /(\d+-\d+\s*Y(?:RS?)?)$/i,
     /((?:2X|3X|4X)?[SMLX]{1,3}L?)$/i,
-    /(\d+(?:\.\d+)?)$/,
+    /(\d+(?:\.\d+)?(?:\s*[A-Z]+)?)$/, // Added support for "9.5 UK" or similar trailing tokens
   ];
 
   for (const pattern of patterns) {
@@ -455,6 +456,15 @@ function extractSizeFromChildDescription(childDescription, parentDescription = "
         .trim();
       return `UK ${ukNormalized}`;
     }
+
+    if (/\d+(?:\.\d+)?\s*UK/i.test(token)) {
+      const ukNormalized = token
+        .toUpperCase()
+        .replace(/\s*UK/i, "")
+        .trim();
+      return `UK ${ukNormalized}`;
+    }
+
     return token.toUpperCase();
   }
 
@@ -498,6 +508,10 @@ function detectMapping(headers) {
   if (!mapping.sku) {
     const skuH = headers.find((h) => /\bcode\b|sku|article|ref\b/i.test(h));
     if (skuH) mapping.sku = skuH;
+  }
+  if (!mapping.sizes) {
+    const sizesH = headers.find((h) => /\bsize\b|\bsizes\b/i.test(h));
+    if (sizesH) mapping.sizes = sizesH;
   }
   if (!mapping.name) {
     const nameH = headers.find((h) => /^(style|name|title|product\s+name)$/i.test(h) || /^(style|name|title)\s+(desc|description)$/i.test(h));
