@@ -62,15 +62,10 @@ function validateAndAllocateItem(item, product) {
       const ops = allocateAcrossAllSizes(product, effectiveQty, validLotSizes, sizeEntries, totalAvailable);
       stockOps.push(...ops);
     } else {
-      // If the customer is taking every available unit, zero the entire product in one write.
-      if (effectiveQty >= totalAvailable) {
-        stockOps.push(createDepleteAllSizeStockOp(product, totalAvailable));
-      } else {
       // Regular item: allocate specific size
-        const result = allocateSpecificSize(product, size, effectiveQty, sizeEntries, validLotSizes, totalAvailable);
-        size = result.size;
-        stockOps.push(...result.ops);
-      }
+      const result = allocateSpecificSize(product, size, effectiveQty, sizeEntries, validLotSizes, totalAvailable);
+      size = result.size;
+      stockOps.push(...result.ops);
     }
   } else if (totalAvailable > 0) {
     if (effectiveQty > totalAvailable) {
@@ -78,7 +73,10 @@ function validateAndAllocateItem(item, product) {
     }
     stockOps.push({
       updateOne: {
-        filter: { _id: product._id },
+        filter: {
+          _id: product._id,
+          totalQuantity: { $gte: effectiveQty }
+        },
         update: { $inc: { totalQuantity: -effectiveQty } },
       },
     });
@@ -150,26 +148,6 @@ function allocateAcrossAllSizes(product, effectiveQty, validLotSizes, sizeEntrie
   }
 
   return ops;
-}
-
-/**
- * Zero out all size quantities for a product that is being sold out completely.
- */
-function createDepleteAllSizeStockOp(product, totalAvailable) {
-  return {
-    updateOne: {
-      filter: {
-        _id: product._id,
-        totalQuantity: { $gte: totalAvailable },
-      },
-      update: {
-        $set: {
-          'sizes.$[].quantity': 0,
-          totalQuantity: 0,
-        },
-      },
-    },
-  };
 }
 
 /**
@@ -327,13 +305,11 @@ async function executeStockDeductions(stockUpdates, context = {}, session = null
 
     const result = await Product.bulkWrite(stockUpdates, options);
     const matchedCount = result.matchedCount || 0;
-    const modifiedCount = result.modifiedCount || 0;
 
-    if (matchedCount !== stockUpdates.length || modifiedCount !== stockUpdates.length) {
+    if (matchedCount !== stockUpdates.length) {
       log.warn('stock', 'Stock deduction partial match', {
         expectedOps: stockUpdates.length,
         matchedCount,
-        modifiedCount,
         items: checkoutItems,
       });
       // Throw so the order transaction is aborted — prevents overselling
