@@ -227,9 +227,9 @@ function brandCdnCandidates(sku, brand) {
 
   // 2. External Brand CDNs
   if (b.includes("adidas")) {
-    candidates.push(
-      `https://assets.adidas.com/images/w_600,f_auto,q_auto/assets/${s}_1.jpg`,
-    );
+    candidates.push(`https://assets.adidas.com/images/w_600,f_auto,q_auto/assets/${s}_1.jpg`);
+    candidates.push(`https://assets.adidas.com/images/w_600,f_auto,q_auto/v1/assets/${s}_1.jpg`);
+    candidates.push(`https://assets.adidas.com/images/w_600,f_auto,q_auto/${s}.jpg`);
   }
   if (b.includes("nike")) {
     candidates.push(`https://static.nike.com/a/images/t_PDP_1280_v1/${s}.jpg`);
@@ -273,14 +273,14 @@ async function resolveProductImage({ sku, brand, name, currentUrl }) {
 
   // 4. Search Bing for product images
   let candidates = await searchBing(query);
-  for (const url of candidates.slice(0, 5)) {
+  for (const url of candidates.slice(0, 10)) {
     const valid = await verifyImageUrl(url);
     if (valid) return url;
   }
 
   // 5. Fallback: DuckDuckGo
   candidates = await searchDuckDuckGo(query);
-  for (const url of candidates.slice(0, 5)) {
+  for (const url of candidates.slice(0, 10)) {
     const valid = await verifyImageUrl(url);
     if (valid) return url;
   }

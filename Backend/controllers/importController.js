@@ -1765,8 +1765,8 @@ exports.importProducts = async (req, res) => {
       debug(
         `[IMPORT] Starting auto image resolution for ${pendingImageProducts.length} products...`,
       );
-      // Resolve up to 1000 images during import (rest handled by /resolve-images endpoint)
-      const batchLimit = 1000;
+      // Resolve all images during import (increased limit for large catalogs)
+      const batchLimit = 10000;
       const batchToResolve = pendingImageProducts.slice(0, batchLimit);
       try {
         const { resolved, failed: imgFailed } = await batchResolveImages(
@@ -2307,8 +2307,8 @@ exports.getImportBatches = async (_req, res) => {
  */
 exports.resolveImages = async (req, res) => {
   try {
-    const limit = Math.min(parseInt(req.query?.limit) || 100, 10000);
-    const concurrency = Math.min(parseInt(req.query?.concurrency) || 3, 5);
+    const limit = Math.min(parseInt(req.query?.limit) || 5000, 50000);
+    const concurrency = Math.min(parseInt(req.query?.concurrency) || 5, 10);
 
     // Find products without images
     const products = await Product.find({
