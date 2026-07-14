@@ -18,8 +18,8 @@ const http = require("http");
 const { URL } = require("url");
 
 // ── Timeouts ──
-const FETCH_TIMEOUT = 8000;
-const HEAD_TIMEOUT = 5000;
+const FETCH_TIMEOUT = 5000; // Reduced from 8s to 5s to avoid blocking for too long
+const HEAD_TIMEOUT = 3000;  // Reduced from 5s to 3s
 
 // ── Known image extensions ──
 const IMG_EXT_RE = /\.(jpe?g|png|webp|gif|avif|svg|bmp)(\?.*)?$/i;

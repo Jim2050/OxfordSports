@@ -30,15 +30,27 @@ function getRedisConnection() {
     _connection = new Redis(redisUrl, {
       maxRetriesPerRequest: null,   // Required by BullMQ
       enableReadyCheck: false,      // Faster startup
+      connectTimeout: 10000,        // 10s timeout for initial connection
+      lazyConnect: true,
       retryStrategy(times) {
-        if (times > 5) {
-          log.error('redis', 'Max reconnection attempts reached', { attempts: times });
-          return null; // Stop retrying
+        // BullMQ/ioredis reconnection strategy for Railway/Cloud environments
+        // We want to keep retrying for a long time during heavy imports
+        const delay = Math.min(times * 500, 5000); // Max 5s between retries
+        if (times % 10 === 0) {
+          log.warn('redis', `Still attempting to reconnect to Redis...`, { attempt: times });
         }
-        const delay = Math.min(times * 500, 3000);
-        log.warn('redis', `Reconnecting in ${delay}ms`, { attempt: times });
         return delay;
       },
+      reconnectOnError(err) {
+        const targetError = 'READONLY';
+        if (err.message.includes(targetError)) {
+          // Only reconnect if the error is READONLY (happens during some Redis failovers)
+          return true;
+        }
+        return false;
+      },
+      // Keep-alive settings to prevent connection drops during long-running tasks
+      keepAlive: 10000, // 10s
     });
 
     _connection.on('connect', () => {

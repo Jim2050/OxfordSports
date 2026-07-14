@@ -1829,8 +1829,8 @@ exports.importProducts = async (req, res) => {
       debug(`[IMPORT] Starting auto image resolution for ${pendingImageProducts.length} products (chunked)...`);
 
       const totalToProcess = Math.min(pendingImageProducts.length, 10000);
-      const CHUNK_SIZE = 500;
-      const CONCURRENCY = 15;
+      const CHUNK_SIZE = 200; // Reduced from 500 for better memory management
+      const CONCURRENCY = 10; // Reduced from 15 to lower stress on Redis/Network
 
       for (let i = 0; i < totalToProcess; i += CHUNK_SIZE) {
         const chunk = pendingImageProducts.slice(i, i + CHUNK_SIZE);
