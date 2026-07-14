@@ -26,22 +26,36 @@ const HEAD_TIMEOUT = 5000;
 // ── Known image extensions ──
 const IMG_EXT_RE = /\.(jpe?g|png|webp|gif|avif)(\?.*)?$/i;
 
+const USER_AGENTS = [
+  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36",
+  "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/118.0.0.0 Safari/537.36",
+  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36",
+  "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:122.0) Gecko/20100101 Firefox/122.0"
+];
+
+function getRandomUserAgent() {
+  return USER_AGENTS[Math.floor(Math.random() * USER_AGENTS.length)];
+}
+
 /**
  * Simple HTTP(S) GET returning { statusCode, headers, body }.
  */
-function httpGet(url, { timeout = FETCH_TIMEOUT, maxRedirects = 3 } = {}) {
+function httpGet(url, { timeout = FETCH_TIMEOUT, maxRedirects = 3, headers = {} } = {}) {
   return new Promise((resolve, reject) => {
     const lib = url.startsWith("https") ? https : http;
+    const mergedHeaders = {
+      "User-Agent": getRandomUserAgent(),
+      Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+      "Accept-Language": "en-GB,en;q=0.9",
+      ...headers
+    };
+
     const req = lib.get(
       url,
       {
         timeout,
-        headers: {
-          "User-Agent":
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-          Accept: "text/html,application/xhtml+xml,*/*",
-          "Accept-Language": "en-GB,en;q=0.9",
-        },
+        headers: mergedHeaders,
       },
       (res) => {
         // Follow redirects
@@ -88,8 +102,7 @@ function verifyImageUrl(url) {
           method: "HEAD",
           timeout: HEAD_TIMEOUT,
           headers: {
-            "User-Agent":
-              "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+            "User-Agent": getRandomUserAgent(),
           },
         },
         (res) => {
@@ -170,9 +183,13 @@ async function searchDuckDuckGo(query) {
   try {
     const searchUrl = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(query + " product image")}&iax=images&ia=images`;
     const res = await httpGet(searchUrl, { timeout: FETCH_TIMEOUT });
-    if (res.statusCode !== 200) return [];
+    if (res.statusCode !== 200) {
+      log.warn('image-resolver', `DuckDuckGo returned ${res.statusCode} for query: ${query}`);
+      return [];
+    }
     return extractImageUrlsFromHtml(res.body);
-  } catch {
+  } catch (err) {
+    log.error('image-resolver', `DuckDuckGo search error: ${err.message}`);
     return [];
   }
 }
