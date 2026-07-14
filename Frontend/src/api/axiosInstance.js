@@ -5,6 +5,12 @@ const API = axios.create({
   baseURL: import.meta.env.VITE_API_BASE_URL || "/api",
 });
 
+// For Railway/Production connectivity:
+// Ensure we don't try to hit localhost if the environment variable is set
+if (import.meta.env.VITE_API_BASE_URL) {
+  API.defaults.baseURL = import.meta.env.VITE_API_BASE_URL;
+}
+
 /**
  * Decode a JWT payload (no signature verification — client-side only).
  * Returns the payload object or null.

@@ -103,6 +103,11 @@ function deriveCategoryCanonical(value) {
   const upper = normalizeUpper(value);
   if (!upper) return "";
   const aliased = CATEGORY_ALIASES.get(upper) || upper;
+
+  // Special case: Ensure UNDER £5 and JOB LOTS are recognized even if Excel uses slightly different variations
+  if (aliased.includes("UNDER") && aliased.includes("5")) return "UNDER £5";
+  if (aliased.includes("JOB") && aliased.includes("LOT")) return "JOB LOTS";
+
   return TOP_LEVEL_CATEGORIES.has(aliased) ? aliased : "";
 }
 
@@ -117,8 +122,37 @@ function deriveSubcategoryCanonical(category, subcategory) {
   return rawSubcategory;
 }
 
-function deriveBrandCanonical(brand) {
-  return normalizeUpper(brand);
+const BRANDS = [
+  "ADIDAS",
+  "NIKE",
+  "PUMA",
+  "REEBOK",
+  "UNDER ARMOUR",
+  "CASTORE",
+  "NEW BALANCE",
+  "UHLSPORT",
+  "MOLTEN",
+  "GUNN & MOORE",
+  "UNICORN",
+];
+
+function deriveBrandCanonical(brand, name = "", description = "") {
+  let upperBrand = normalizeUpper(brand);
+  const combined = normalizeUpper(`${name} ${description}`);
+
+  // If brand is missing or generic "ADIDAS", try to detect other brands from text
+  if (!upperBrand || upperBrand === "ADIDAS") {
+    for (const knownBrand of BRANDS) {
+      if (knownBrand === "ADIDAS") continue;
+      // Use word boundaries to avoid partial matches (e.g., "Puma" in "Spumal")
+      const regex = new RegExp(`\\b${knownBrand}\\b`, "i");
+      if (regex.test(combined)) {
+        return knownBrand;
+      }
+    }
+  }
+
+  return upperBrand || "ADIDAS";
 }
 
 function deriveGenderCanonical({

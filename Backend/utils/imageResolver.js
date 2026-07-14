@@ -16,6 +16,8 @@
 const https = require("https");
 const http = require("http");
 const { URL } = require("url");
+const cloudinary = require("../config/cloudinary");
+const log = require("../lib/logger");
 
 // ── Timeouts ──
 const FETCH_TIMEOUT = 8000;
@@ -262,8 +264,8 @@ function brandCdnCandidates(sku, brand) {
  * @returns {Promise<string|null>}
  */
 async function resolveProductImage({ sku, brand, name, currentUrl }) {
-  // 1. If it's already a direct image, verify it
-  if (currentUrl && IMG_EXT_RE.test(currentUrl)) {
+  // 1. If it's already a Cloudinary image, verify it
+  if (currentUrl && currentUrl.includes("cloudinary.com")) {
     const valid = await verifyImageUrl(currentUrl);
     if (valid) return currentUrl;
   }
@@ -287,26 +289,38 @@ async function resolveProductImage({ sku, brand, name, currentUrl }) {
     if (firstValid) return firstValid;
   }
 
-  // 4. Search Bing for product images - Parallelize verification
+  // 4. Search Bing for product images
   let candidates = await searchBing(query);
-  if (candidates.length > 0) {
-    const results = await Promise.all(candidates.slice(0, 8).map(async url => {
-      const valid = await verifyImageUrl(url);
-      return valid ? url : null;
-    }));
-    const firstValid = results.find(url => url !== null);
-    if (firstValid) return firstValid;
+
+  // 5. Fallback: DuckDuckGo
+  if (candidates.length === 0) {
+    candidates = await searchDuckDuckGo(query);
   }
 
-  // 5. Fallback: DuckDuckGo - Parallelize verification
-  candidates = await searchDuckDuckGo(query);
   if (candidates.length > 0) {
-    const results = await Promise.all(candidates.slice(0, 8).map(async url => {
-      const valid = await verifyImageUrl(url);
-      return valid ? url : null;
-    }));
-    const firstValid = results.find(url => url !== null);
-    if (firstValid) return firstValid;
+    // Try the first few candidates until one can be successfully uploaded to Cloudinary
+    for (const url of candidates.slice(0, 5)) {
+      try {
+        // Log attempt
+        log.info('image-resolver', `Attempting to proxy/upload external image for SKU: ${sku}`);
+
+        // Upload to Cloudinary to bypass hotlinking / same-origin policies
+        const result = await cloudinary.uploader.upload(url, {
+          folder: "oxford-sports/products",
+          public_id: sku,
+          overwrite: true,
+          resource_type: "image"
+        });
+
+        if (result && result.secure_url) {
+          log.info('image-resolver', `Successfully proxied image to Cloudinary: ${result.secure_url}`);
+          return result.secure_url;
+        }
+      } catch (err) {
+        log.error('image-resolver', `Cloudinary upload failed for external candidate`, { error: err.message });
+        // Continue to next candidate
+      }
+    }
   }
 
   return null;

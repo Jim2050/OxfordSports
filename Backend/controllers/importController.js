@@ -1175,6 +1175,9 @@ exports.importProducts = async (req, res) => {
     let updated = 0;
     let failed = 0;
     let warnings = 0;
+    let underFiveCount = 0;
+    let jobLotCount = 0;
+    let withImagesCount = 0;
     const MAX_IMPORT_DETAIL_SAMPLES = 30;
     const errors = [];
     const warningDetails = [];
@@ -1434,6 +1437,15 @@ exports.importProducts = async (req, res) => {
         productData.brand = productData.brand.replace(/\s*B[\s-]*grade\s*/i, "").trim() || productData.brand;
       }
 
+      // ── Step 0c: UNDER £5 and JOB LOTS detection (Jim's Logic) ──
+      const isJobLot = /\b(JOB LOT|LOT OF|BUNDLE|PACK OF \d+|BULK)\b/i.test(combined);
+
+      if (isJobLot) {
+        productData.category = "JOB LOTS";
+      } else if (price > 0 && price <= 5) {
+        productData.category = "UNDER £5";
+      }
+
       // ── Step 1: Auto-assign category if missing or only gender ──
       const isGenderOnly = /^(MENS?|WOMENS?|WOMEN|FEMALE|LADIES|JUNIOR|JUNIORS|KIDS|YOUTH|BOYS?|GIRLS?|UNISEX|INFANT|BABY|TODDLER)$/i.test(catUpper);
       if (!isLicensedTeam && (!catUpper || isGenderOnly)) {
@@ -1579,7 +1591,7 @@ exports.importProducts = async (req, res) => {
         sizes: productData.sizes,
         hadNegativeSizes: !!row._hadNegativeSizes,
       });
-      productData.brandCanonical = deriveBrandCanonical(productData.brand);
+      productData.brandCanonical = deriveBrandCanonical(productData.brand, productData.name, productData.description);
 
       // ── Image URL: store only direct image URLs ──
       const rawImageUrl = row.imageUrl ? String(row.imageUrl).trim() : "";
@@ -1627,6 +1639,10 @@ exports.importProducts = async (req, res) => {
         // Excel provided a valid direct image URL — overwrite
         updateOp.$set.imageUrl = imageFields.imageUrl;
       }
+
+      if (productData.category === "UNDER £5") underFiveCount++;
+      if (productData.category === "JOB LOTS") jobLotCount++;
+      if (hasExcelImage) withImagesCount++;
 
       operations.push({
         updateOne: {
@@ -1993,6 +2009,9 @@ exports.importProducts = async (req, res) => {
       consolidatedProducts: consolidated.length,
       duplicateSkuGroupsInUpload,
       duplicateRowsMerged,
+      underFiveCount,
+      jobLotCount,
+      withImagesCount,
       imported,
       updated,
       failed,

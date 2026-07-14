@@ -173,6 +173,13 @@ productSchema.index({ isActive: 1, brandCanonical: 1 });
 // ── Compound index for active products with images-first sort ──
 productSchema.index({ isActive: 1, hasImage: -1, createdAt: -1 });
 
+// ── Index for price filtering and sorting ──
+productSchema.index({ isActive: 1, salePrice: 1 });
+productSchema.index({ isActive: 1, salePrice: -1 });
+
+// ── Index for name sorting ──
+productSchema.index({ isActive: 1, name: 1 });
+
 // ── Index for sorting by createdAt ──
 productSchema.index({ createdAt: -1 });
 

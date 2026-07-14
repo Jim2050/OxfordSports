@@ -66,7 +66,7 @@ exports.getProducts = async (req, res) => {
       sort,
     } = req.query;
 
-    const conditions = [{ isActive: true, hasImage: true }];
+    const conditions = [{ isActive: true }];
 
     // Category filter with keyword matching
     if (category) {
