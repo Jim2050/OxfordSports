@@ -353,7 +353,7 @@ async function resolveProductImage({ sku, brand, name, currentUrl }) {
  * @param {function} onProgress - Callback (resolved, failed, total)
  * @returns {Promise<{ resolved: Array, failed: Array }>}
  */
-async function batchResolveImages(products, concurrency = 3, onProgress) {
+async function batchResolveImages(products, concurrency = 5, onProgress) {
   const resolved = [];
   const failed = [];
   let idx = 0;
