@@ -1762,58 +1762,59 @@ exports.importProducts = async (req, res) => {
     let imageFailed = 0;
     if (pendingImageProducts.length > 0) {
       const imageResolveStart = Date.now();
-      debug(
-        `[IMPORT] Starting auto image resolution for ${pendingImageProducts.length} products...`,
-      );
-      // Resolve all images during import (increased limit for large catalogs)
-      const batchLimit = 10000;
-      const batchToResolve = pendingImageProducts.slice(0, batchLimit);
-      try {
-        const { resolved, failed: imgFailed } = await batchResolveImages(
-          batchToResolve,
-          5,
-          (r, f, t) => {
-            if ((r + f) % 50 === 0)
-              debug(
-                `[IMAGE-RESOLVE] Progress: ${r} resolved, ${f} failed of ${t}`,
-              );
-          },
-        );
-        imageResolved = resolved.length;
-        imageFailed = imgFailed.length;
+      debug(`[IMPORT] Starting auto image resolution for ${pendingImageProducts.length} products (chunked)...`);
 
-        // Update resolved products in DB
-        if (resolved.length > 0) {
-          const imgOps = resolved.map((r) => ({
-            updateOne: {
-              filter: { sku: r.sku },
-              update: { $set: { imageUrl: r.imageUrl, hasImage: true } },
-            },
-          }));
-          await Product.bulkWrite(imgOps, { ordered: false });
-          debug(`[IMPORT] Auto-resolved ${resolved.length} product images`);
-        }
-        if (imgFailed.length > 0) {
-          debug(
-            `[IMPORT] Image resolution failed for ${imgFailed.length} products (first 5):`,
-            imgFailed.slice(0, 5).map((f) => `${f.sku}: ${f.reason}`),
+      const totalToProcess = Math.min(pendingImageProducts.length, 10000);
+      const CHUNK_SIZE = 500;
+      const CONCURRENCY = 15;
+
+      for (let i = 0; i < totalToProcess; i += CHUNK_SIZE) {
+        const chunk = pendingImageProducts.slice(i, i + CHUNK_SIZE);
+        const chunkNum = Math.floor(i / CHUNK_SIZE) + 1;
+        const totalChunks = Math.ceil(totalToProcess / CHUNK_SIZE);
+
+        try {
+          debug(`[IMPORT] Resolving chunk ${chunkNum}/${totalChunks} (${chunk.length} items)...`);
+
+          const { resolved, failed: imgFailed } = await batchResolveImages(
+            chunk,
+            CONCURRENCY,
+            (r, f, t) => {
+              if ((r + f) % 100 === 0) {
+                debug(`[IMAGE-RESOLVE] Chunk ${chunkNum} progress: ${r} resolved, ${f} failed of ${t}`);
+              }
+            }
           );
+
+          imageResolved += resolved.length;
+          imageFailed += imgFailed.length;
+
+          // Commit chunk results immediately to free memory
+          if (resolved.length > 0) {
+            const imgOps = resolved.map((r) => ({
+              updateOne: {
+                filter: { sku: r.sku },
+                update: { $set: { imageUrl: r.imageUrl, hasImage: true } },
+              },
+            }));
+            await Product.bulkWrite(imgOps, { ordered: false });
+          }
+
+          // Clear local arrays for GC
+          resolved.length = 0;
+          imgFailed.length = 0;
+
+        } catch (chunkErr) {
+          console.error(`[IMPORT] Image chunk ${chunkNum} failed:`, chunkErr.message);
         }
-        if (pendingImageProducts.length > batchLimit) {
-          debug(
-            `[IMPORT] ${pendingImageProducts.length - batchLimit} products still need image resolution — use POST /api/admin/resolve-images`,
-          );
-        }
-        phaseMarks.imageResolveComplete = Date.now();
-        logInfo(`Image resolution complete in ${phaseMarks.imageResolveComplete - imageResolveStart}ms`, {
-          imageResolved,
-          imageFailed,
-          remaining: Math.max(0, pendingImageProducts.length - 100),
-        });
-      } catch (imgErr) {
-        console.error("[IMPORT] Image auto-resolution error:", imgErr.message);
-        logWarn(`Image auto-resolution warning: ${imgErr.message}`);
       }
+
+      phaseMarks.imageResolveComplete = Date.now();
+      logInfo(`Image resolution complete in ${phaseMarks.imageResolveComplete - imageResolveStart}ms`, {
+        imageResolved,
+        imageFailed,
+        remaining: Math.max(0, pendingImageProducts.length - totalToProcess),
+      });
     }
 
     // Log import summary
@@ -2340,26 +2341,42 @@ exports.resolveImages = async (req, res) => {
       currentUrl: "",
     }));
 
-    const { resolved, failed } = await batchResolveImages(
-      toResolve,
-      concurrency,
-      (r, f, t) => {
-        if ((r + f) % 10 === 0)
-          debug(
-            `[RESOLVE-IMAGES] Progress: ${r} resolved, ${f} failed of ${t}`,
-          );
-      },
-    );
+    const CHUNK_SIZE = 500;
+    let totalResolvedCount = 0;
+    let totalFailedCount = 0;
 
-    // Update resolved products in DB
-    if (resolved.length > 0) {
-      const ops = resolved.map((r) => ({
-        updateOne: {
-          filter: { sku: r.sku },
-          update: { $set: { imageUrl: r.imageUrl, hasImage: true } },
-        },
-      }));
-      await Product.bulkWrite(ops, { ordered: false });
+    for (let i = 0; i < toResolve.length; i += CHUNK_SIZE) {
+      const chunk = toResolve.slice(i, i + CHUNK_SIZE);
+      const chunkNum = Math.floor(i / CHUNK_SIZE) + 1;
+      const totalChunks = Math.ceil(toResolve.length / CHUNK_SIZE);
+
+      debug(`[RESOLVE-IMAGES] Processing chunk ${chunkNum}/${totalChunks}...`);
+
+      const { resolved, failed } = await batchResolveImages(
+        chunk,
+        concurrency,
+        (r, f, t) => {
+          if ((r + f) % 50 === 0)
+            debug(`[RESOLVE-IMAGES] Chunk Progress: ${r}/${t}`);
+        }
+      );
+
+      if (resolved.length > 0) {
+        const ops = resolved.map((r) => ({
+          updateOne: {
+            filter: { sku: r.sku },
+            update: { $set: { imageUrl: r.imageUrl, hasImage: true } },
+          },
+        }));
+        await Product.bulkWrite(ops, { ordered: false });
+        totalResolvedCount += resolved.length;
+      }
+
+      totalFailedCount += failed.length;
+
+      // Memory cleanup
+      resolved.length = 0;
+      failed.length = 0;
     }
 
     // Count remaining products without images
@@ -2369,19 +2386,14 @@ exports.resolveImages = async (req, res) => {
     });
 
     debug(
-      `[RESOLVE-IMAGES] Done: ${resolved.length} resolved, ${failed.length} failed, ${remaining} remaining`,
+      `[RESOLVE-IMAGES] Done: ${totalResolvedCount} resolved, ${totalFailedCount} failed, ${remaining} remaining`,
     );
 
     res.json({
       success: true,
-      resolved: resolved.length,
-      failed: failed.length,
-      failedSkus: failed.slice(0, 20),
+      resolved: totalResolvedCount,
+      failed: totalFailedCount,
       remaining,
-      resolvedSkus: resolved.slice(0, 20).map((r) => ({
-        sku: r.sku,
-        imageUrl: r.imageUrl.substring(0, 100),
-      })),
     });
   } catch (err) {
     console.error("[RESOLVE-IMAGES] Error:", err);
