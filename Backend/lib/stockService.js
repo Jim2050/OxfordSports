@@ -314,14 +314,18 @@ function enforceMustBuyAll(skuMap, lotSkus) {
  * Execute stock deductions as a single bulk write.
  * @param {object[]} stockUpdates - Array of bulkWrite operations
  * @param {object} [context] - Optional order summary for diagnostics
+ * @param {object} [session] - Optional MongoDB session for transaction
  * @returns {Promise<void>}
  */
-async function executeStockDeductions(stockUpdates, context = {}) {
+async function executeStockDeductions(stockUpdates, context = {}, session = null) {
   if (!Array.isArray(stockUpdates) || stockUpdates.length === 0) return;
 
   const checkoutItems = Array.isArray(context.items) ? context.items : [];
   try {
-    const result = await Product.bulkWrite(stockUpdates, { ordered: true });
+    const options = { ordered: true };
+    if (session) options.session = session;
+
+    const result = await Product.bulkWrite(stockUpdates, options);
     const matchedCount = result.matchedCount || 0;
     const modifiedCount = result.modifiedCount || 0;
 

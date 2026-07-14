@@ -42,8 +42,13 @@ const SPORT_SLUGS = new Set([
   "rugby-category",
   "rugby",
   "football",
-  "footwear",
 ]);
+
+const SPORT_CANONICAL_MAP = {
+  "rugby": "RUGBY",
+  "rugby-category": "RUGBY",
+  "football": "FOOTBALL",
+};
 
 /**
  * GET /api/products
@@ -73,7 +78,7 @@ exports.getProducts = async (req, res) => {
       const cat = category.toLowerCase();
       const keywords = CATEGORY_KEYWORDS[cat] || [cat.replace(/-/g, " ")];
       const canonicalCategory = deriveCategoryCanonical(category);
-      const sportFilter = subcategory ? deriveSubcategoryCanonical("SPORTS", subcategory) : "";
+      const sportCanonical = SPORT_CANONICAL_MAP[cat];
 
       if (cat === "mens" || cat === "womens" || cat === "junior") {
         conditions.push({
@@ -86,29 +91,21 @@ exports.getProducts = async (req, res) => {
         });
       } else if (cat === "sports") {
         const sportOr = [];
-        if (sportFilter) {
-          sportOr.push({ sportCanonical: sportFilter });
+        if (subcategory) {
+          const sportSub = deriveSubcategoryCanonical("SPORTS", subcategory);
+          sportOr.push({ sportCanonical: sportSub });
           sportOr.push({ subcategory: { $regex: escapeRegex(subcategory.replace(/-/g, " ")), $options: "i" } });
-          sportOr.push({ name: { $regex: escapeRegex(subcategory.replace(/-/g, " ")), $options: "i" } });
-          sportOr.push({ description: { $regex: escapeRegex(subcategory.replace(/-/g, " ")), $options: "i" } });
         } else {
           sportOr.push({ sportCanonical: { $nin: ["", null] } });
           sportOr.push({ categoryCanonical: "SPORTS" });
         }
         conditions.push({ $or: sportOr });
-        // Ensure clearance lots don't leak into the general sports category
         conditions.push({ categoryCanonical: { $nin: ["JOB LOTS", "UNDER £5", "B GRADE"] } });
-      } else if (SPORT_SLUGS.has(cat)) {
-        // Sport pages: search across category, name AND subcategory fields
-        // so products with "Mens" category but "Argentina Rugby Jersey" name are found
-        conditions.push({
-          $or: keywords.flatMap((kw) => [
-            { category: { $regex: kw, $options: "i" } },
-            { name: { $regex: kw, $options: "i" } },
-            { subcategory: { $regex: kw, $options: "i" } },
-            { description: { $regex: kw, $options: "i" } },
-          ]),
-        });
+      } else if (sportCanonical) {
+        // Strict sport category mapping
+        conditions.push({ sportCanonical });
+      } else if (cat === "footwear") {
+        conditions.push({ categoryCanonical: "FOOTWEAR" });
       } else {
         const categoryOr = keywords.map((kw) => ({
           category: { $regex: kw, $options: "i" },

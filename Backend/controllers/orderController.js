@@ -53,6 +53,8 @@ function buildFingerprint(userId, items, notes) {
 exports.placeOrder = async (req, res) => {
   let fingerprint = '';
   const t = log.timer('order', 'placeOrder');
+  const mongoose = require('mongoose');
+  const session = await mongoose.startSession();
 
   try {
     const MIN_ORDER_TOTAL = 300;
@@ -79,9 +81,11 @@ exports.placeOrder = async (req, res) => {
     }
     inFlightFingerprints.add(fingerprint);
 
+    session.startTransaction();
+
     // ── Batch-fetch all products ──
     const uniqueSkus = [...new Set(items.map((i) => i.sku?.toUpperCase()).filter(Boolean))];
-    const productsList = await Product.find({ sku: { $in: uniqueSkus }, isActive: true });
+    const productsList = await Product.find({ sku: { $in: uniqueSkus }, isActive: true }).session(session);
     const productMap = new Map();
     productsList.forEach((p) => productMap.set(p.sku, p));
 
@@ -98,15 +102,12 @@ exports.placeOrder = async (req, res) => {
 
     for (const item of items) {
       if (!item.sku || !item.quantity || item.quantity < 1) {
-        return res.status(400).json({ error: `Invalid item: ${JSON.stringify(item)}` });
+        throw createError(400, `Invalid item: ${JSON.stringify(item)}`);
       }
 
       const product = productMap.get(item.sku.toUpperCase());
       if (!product) {
-        return res.status(404).json({
-          error: `Product ${item.sku} not found.`,
-          details: 'Product not found in database. Check SKU spelling or if product is active.',
-        });
+        throw createError(404, `Product ${item.sku} not found.`);
       }
 
       const { orderItem, stockOps } = validateAndAllocateItem(item, product);
@@ -137,39 +138,16 @@ exports.placeOrder = async (req, res) => {
 
     if (totalAmount < MIN_ORDER_TOTAL) {
       if (enforceMinOrderTotal) {
-        return res.status(400).json({
-          error: `Minimum order total is £${MIN_ORDER_TOTAL}. Your cart is £${totalAmount.toFixed(2)}.`,
-        });
+        throw createError(400, `Minimum order total is £${MIN_ORDER_TOTAL}. Your cart is £${totalAmount.toFixed(2)}.`);
       }
       minimumOrderWarning = `Order total (£${totalAmount.toFixed(2)}) is below recommended minimum £${MIN_ORDER_TOTAL}.`;
     }
 
-    // ── Execute stock deductions (with automatic rollback on conflict) ──
-    try {
-      await executeStockDeductions(stockUpdates, {
-        items: orderItems.map((item) => ({
-          sku: item.sku,
-          size: item.size || '',
-          quantity: item.quantity,
-          lotItem: Boolean(item.lotItem),
-        })),
-      });
-    } catch (stockErr) {
-      if (stockErr.code === 'STOCK_CONFLICT' || stockErr.statusCode === 409) {
-        log.warn('order', 'Stock conflict during checkout', {
-          userId: req.user?._id?.toString(),
-          error: stockErr.message,
-        });
-        return res.status(409).json({
-          error: stockErr.message || 'Stock changed during checkout. Please review your cart and try again.',
-        });
-      }
-      log.error('order', 'Stock deduction failed', { error: stockErr.message });
-      return res.status(500).json({ error: 'Stock deduction failed. Please try again.' });
-    }
+    // ── Execute stock deductions within transaction ──
+    await executeStockDeductions(stockUpdates, { items: orderItems }, session);
 
-    // ── Create the order (status: pending) ──
-    const order = await Order.create({
+    // ── Create the order within transaction ──
+    const [order] = await Order.create([{
       customer: req.user._id,
       customerName: req.user.name,
       customerEmail: req.user.email,
@@ -179,67 +157,46 @@ exports.placeOrder = async (req, res) => {
       items: orderItems,
       totalAmount,
       notes: notes || '',
-    });
+    }], { session });
 
-    log.info('order', 'Order created successfully', {
+    await session.commitTransaction();
+
+    log.info('order', 'Order created successfully (atomic)', {
       orderId: order._id.toString(),
       orderNumber: order.orderNumber,
       userId: req.user._id?.toString(),
-      totalAmount,
-      itemCount: orderItems.length,
     });
 
-    // ── Enqueue email — fire-and-forget via BullMQ ──
-    // This NEVER blocks the response. If Redis is down, falls back to inline.
+    // ── Enqueue email ──
     enqueueOrderEmail(order._id, order.orderNumber).catch((err) => {
-      log.error('order', 'Failed to enqueue email', {
-        orderId: order._id.toString(),
-        error: err.message,
-      });
-    });
-
-    // ── Build lot allocation summary for the response ──
-    const lotAllocationSummary = orderItems
-      .filter((entry) => Boolean(entry.lotItem))
-      .map((entry) => ({
-        sku: entry.sku,
-        quantity: entry.quantity,
-        lotSizeBreakdown: entry.lotSizeBreakdown || `Unspecified(${entry.quantity || 0})`,
-      }));
-
-    t.end({
-      orderId: order._id.toString(),
-      orderNumber: order.orderNumber,
-      totalAmount,
+      log.error('order', 'Failed to enqueue email', { orderId: order._id.toString(), error: err.message });
     });
 
     res.status(201).json({
       success: true,
       order,
-      minimumOrder: {
-        threshold: MIN_ORDER_TOTAL,
-        enforced: enforceMinOrderTotal,
-        warning: minimumOrderWarning,
-      },
-      lotAllocationSummary,
-      message:
-        lotAllocationSummary.length > 0
-          ? 'Lot items were allocated as complete lots across all available sizes.'
-          : 'Order placed successfully.',
+      minimumOrder: { threshold: MIN_ORDER_TOTAL, enforced: enforceMinOrderTotal, warning: minimumOrderWarning },
+      message: 'Order placed successfully.',
     });
 
   } catch (err) {
+    if (session.inTransaction()) {
+      await session.abortTransaction();
+    }
     const statusCode = err.statusCode || 500;
-    log.error('order', 'placeOrder failed', {
-      userId: req.user?._id?.toString(),
-      error: err.message,
-      statusCode,
-    });
+    log.error('order', 'placeOrder failed', { userId: req.user?._id?.toString(), error: err.message });
     res.status(statusCode).json({ error: err.message });
   } finally {
+    session.endSession();
     if (fingerprint) inFlightFingerprints.delete(fingerprint);
   }
 };
+
+function createError(statusCode, message) {
+  const err = new Error(message);
+  err.statusCode = statusCode;
+  return err;
+}
 
 // ══════════════════════════════════════════
 //  GET /api/orders/mine — Member's order history
