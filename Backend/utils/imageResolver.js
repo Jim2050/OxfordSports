@@ -16,46 +16,30 @@
 const https = require("https");
 const http = require("http");
 const { URL } = require("url");
-const cloudinary = require("../config/cloudinary");
-const log = require("../lib/logger");
 
 // ── Timeouts ──
 const FETCH_TIMEOUT = 8000;
 const HEAD_TIMEOUT = 5000;
 
 // ── Known image extensions ──
-const IMG_EXT_RE = /\.(jpe?g|png|webp|gif|avif)(\?.*)?$/i;
-
-const USER_AGENTS = [
-  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36",
-  "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/118.0.0.0 Safari/537.36",
-  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36",
-  "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:122.0) Gecko/20100101 Firefox/122.0"
-];
-
-function getRandomUserAgent() {
-  return USER_AGENTS[Math.floor(Math.random() * USER_AGENTS.length)];
-}
+const IMG_EXT_RE = /\.(jpe?g|png|webp|gif|avif|svg|bmp)(\?.*)?$/i;
 
 /**
  * Simple HTTP(S) GET returning { statusCode, headers, body }.
  */
-function httpGet(url, { timeout = FETCH_TIMEOUT, maxRedirects = 3, headers = {} } = {}) {
+function httpGet(url, { timeout = FETCH_TIMEOUT, maxRedirects = 3 } = {}) {
   return new Promise((resolve, reject) => {
     const lib = url.startsWith("https") ? https : http;
-    const mergedHeaders = {
-      "User-Agent": getRandomUserAgent(),
-      Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
-      "Accept-Language": "en-GB,en;q=0.9",
-      ...headers
-    };
-
     const req = lib.get(
       url,
       {
         timeout,
-        headers: mergedHeaders,
+        headers: {
+          "User-Agent":
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+          Accept: "text/html,application/xhtml+xml,*/*",
+          "Accept-Language": "en-GB,en;q=0.9",
+        },
       },
       (res) => {
         // Follow redirects
@@ -102,7 +86,8 @@ function verifyImageUrl(url) {
           method: "HEAD",
           timeout: HEAD_TIMEOUT,
           headers: {
-            "User-Agent": getRandomUserAgent(),
+            "User-Agent":
+              "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
           },
         },
         (res) => {
@@ -183,13 +168,9 @@ async function searchDuckDuckGo(query) {
   try {
     const searchUrl = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(query + " product image")}&iax=images&ia=images`;
     const res = await httpGet(searchUrl, { timeout: FETCH_TIMEOUT });
-    if (res.statusCode !== 200) {
-      log.warn('image-resolver', `DuckDuckGo returned ${res.statusCode} for query: ${query}`);
-      return [];
-    }
+    if (res.statusCode !== 200) return [];
     return extractImageUrlsFromHtml(res.body);
-  } catch (err) {
-    log.error('image-resolver', `DuckDuckGo search error: ${err.message}`);
+  } catch {
     return [];
   }
 }
@@ -223,36 +204,24 @@ async function searchBing(query) {
 }
 
 /**
- * Strategy 3: Brand-specific and Internal CDN URL patterns.
- * Constructs known URL patterns based on SKU and Brand.
+ * Strategy 3: Brand-specific CDN URL patterns.
+ * For adidas, construct known CDN URL patterns.
  */
 function brandCdnCandidates(sku, brand) {
   const candidates = [];
   const b = (brand || "").toLowerCase();
   const s = (sku || "").toUpperCase();
 
-  // 1. Internal Cloudinary Store (SKU-linked)
+  // 1. Internal Cloudinary Store check (optimized lookup)
   const cName = process.env.CLOUDINARY_CLOUD_NAME;
   if (cName) {
-    // Generate variations of the SKU to try (e.g., "GK5757-001" -> "GK5757")
-    const skuVariations = new Set([s]);
-    if (s.includes("-")) skuVariations.add(s.split("-")[0]);
-    skuVariations.add(s.replace(/[\s_-]/g, ""));
-
-    // Try stripping trailing letters (e.g. "DH2860B" -> "DH2860")
-    const baseStem = s.replace(/[A-Z]+$/i, "");
-    if (baseStem && baseStem !== s) skuVariations.add(baseStem);
-
-    const extensions = ["jpg", "jpeg", "png", "webp"];
+    const skuVariations = [s, s.replace(/[\s_-]/g, "")];
+    if (s.includes("-")) skuVariations.push(s.split("-")[0]);
 
     for (const skuVar of skuVariations) {
       const encodedSku = encodeURIComponent(skuVar);
-      for (const ext of extensions) {
-        // We omit the /v1/ prefix to allow Cloudinary to resolve to the latest version
-        candidates.push(`https://res.cloudinary.com/${cName}/image/upload/oxford-sports/products/${encodedSku}.${ext}`);
-        // Fallback with v1 just in case some legacy URLs require it
-        candidates.push(`https://res.cloudinary.com/${cName}/image/upload/v1/oxford-sports/products/${encodedSku}.${ext}`);
-      }
+      candidates.push(`https://res.cloudinary.com/${cName}/image/upload/oxford-sports/products/${encodedSku}.jpg`);
+      candidates.push(`https://res.cloudinary.com/${cName}/image/upload/v1/oxford-sports/products/${encodedSku}.jpg`);
     }
   }
 
@@ -281,8 +250,8 @@ function brandCdnCandidates(sku, brand) {
  * @returns {Promise<string|null>}
  */
 async function resolveProductImage({ sku, brand, name, currentUrl }) {
-  // 1. If it's already a Cloudinary image, verify it
-  if (currentUrl && currentUrl.includes("cloudinary.com")) {
+  // 1. If it's already a direct image (including Cloudinary), verify it
+  if (currentUrl && (IMG_EXT_RE.test(currentUrl) || currentUrl.includes("cloudinary.com"))) {
     const valid = await verifyImageUrl(currentUrl);
     if (valid) return currentUrl;
   }
@@ -295,50 +264,25 @@ async function resolveProductImage({ sku, brand, name, currentUrl }) {
   }
   if (!query) return null;
 
-  // 3. Try brand CDN patterns first (fastest) - Parallelize checks
+  // 3. Try brand CDN patterns first (fastest)
   const cdnUrls = brandCdnCandidates(sku, brand);
-  if (cdnUrls.length > 0) {
-    const results = await Promise.all(cdnUrls.map(async url => {
-      const valid = await verifyImageUrl(url);
-      return valid ? url : null;
-    }));
-    const firstValid = results.find(url => url !== null);
-    if (firstValid) return firstValid;
+  for (const url of cdnUrls) {
+    const valid = await verifyImageUrl(url);
+    if (valid) return url;
   }
 
   // 4. Search Bing for product images
   let candidates = await searchBing(query);
-
-  // 5. Fallback: DuckDuckGo
-  if (candidates.length === 0) {
-    candidates = await searchDuckDuckGo(query);
+  for (const url of candidates.slice(0, 5)) {
+    const valid = await verifyImageUrl(url);
+    if (valid) return url;
   }
 
-  if (candidates.length > 0) {
-    // Try the first few candidates until one can be successfully uploaded to Cloudinary
-    for (const url of candidates.slice(0, 5)) {
-      try {
-        // Log attempt
-        log.info('image-resolver', `Attempting to proxy/upload external image for SKU: ${sku}`);
-
-        // Upload to Cloudinary to bypass hotlinking / same-origin policies
-        const result = await cloudinary.uploader.upload(url, {
-          folder: "oxford-sports/products",
-          public_id: sku,
-          overwrite: true,
-          resource_type: "image",
-          flags: "attachment" // Try to bypass some basic hotlink protections
-        });
-
-        if (result && result.secure_url) {
-          log.info('image-resolver', `Successfully proxied image to Cloudinary: ${result.secure_url}`);
-          return result.secure_url;
-        }
-      } catch (err) {
-        log.error('image-resolver', `Cloudinary upload failed for external candidate`, { error: err.message });
-        // Continue to next candidate
-      }
-    }
+  // 5. Fallback: DuckDuckGo
+  candidates = await searchDuckDuckGo(query);
+  for (const url of candidates.slice(0, 5)) {
+    const valid = await verifyImageUrl(url);
+    if (valid) return url;
   }
 
   return null;
@@ -353,7 +297,7 @@ async function resolveProductImage({ sku, brand, name, currentUrl }) {
  * @param {function} onProgress - Callback (resolved, failed, total)
  * @returns {Promise<{ resolved: Array, failed: Array }>}
  */
-async function batchResolveImages(products, concurrency = 5, onProgress) {
+async function batchResolveImages(products, concurrency = 3, onProgress) {
   const resolved = [];
   const failed = [];
   let idx = 0;
@@ -395,7 +339,13 @@ module.exports = {
     if (!url) return false;
     const s = String(url).trim().toLowerCase();
     if (s.length < 10) return false;
-    if (s.includes("google.com/search") || s.includes("tbm=isch")) return false;
+    if (s === "google images" || s === "google image") return false;
+    if (
+      s.includes("google.com/search") ||
+      s.includes("bing.com/images") ||
+      s.includes("tbm=isch")
+    )
+      return false;
     if (!s.startsWith("http://") && !s.startsWith("https://")) return false;
     if (IMG_EXT_RE.test(s)) return true;
     if (
@@ -406,5 +356,18 @@ module.exports = {
     )
       return true;
     return false;
+  },
+  isValidImageUrl: (url) => {
+    if (!url) return false;
+    const s = String(url).trim().toLowerCase();
+    if (s.length < 10) return false;
+    if (s === "google images" || s === "google image") return false;
+    if (
+      s.includes("google.com/search") ||
+      s.includes("bing.com/images") ||
+      s.includes("tbm=isch")
+    )
+      return false;
+    return s.startsWith("http://") || s.startsWith("https://");
   },
 };

@@ -11,6 +11,8 @@ const cloudinary = require("../config/cloudinary");
 const {
   resolveProductImage,
   batchResolveImages,
+  isDirectImageUrl,
+  isValidImageUrl,
 } = require("../utils/imageResolver");
 const {
   TOP_LEVEL_CATEGORIES,
@@ -864,61 +866,6 @@ function parsePrice(raw) {
   if (isNaN(num)) return { value: null, error: `NaN after parse: "${raw}"` };
   if (num < 0) return { value: null, error: `negative: ${num}` };
   return { value: num, error: null };
-}
-
-/** Known image file extensions */
-const IMG_EXTENSIONS = /\.(jpe?g|png|webp|gif|svg|bmp|avif)(\?.*)?$/i;
-
-/**
- * Validate a URL string — must be a direct image URL.
- * Rejects Google/Bing search pages, bare text, and non-image landing pages.
- */
-function isDirectImageUrl(url) {
-  if (!url) return false;
-  const s = String(url).trim();
-  if (s.length < 10) return false;
-  const lower = s.toLowerCase();
-  if (lower === "google images" || lower === "google image") return false;
-  // Reject known search-engine image pages
-  if (
-    lower.includes("google.com/search") ||
-    lower.includes("bing.com/images") ||
-    lower.includes("tbm=isch")
-  )
-    return false;
-  if (!lower.startsWith("http://") && !lower.startsWith("https://"))
-    return false;
-  // Accept direct image file extensions
-  if (IMG_EXTENSIONS.test(lower)) return true;
-  // Accept known CDNs that serve images without file extension
-  if (
-    lower.includes("cloudinary.com") ||
-    lower.includes("imgur.com") ||
-    lower.includes("images.unsplash.com") ||
-    lower.includes("cdn.shopify.com")
-  )
-    return true;
-  // Reject everything else (landing pages, search results)
-  return false;
-}
-
-/**
- * Legacy compat — accepts any HTTP(S) URL that isn't obviously a search page.
- * Used for "at least it's a URL" validation (non-strict).
- */
-function isValidImageUrl(url) {
-  if (!url) return false;
-  const s = String(url).trim();
-  if (s.length < 10) return false;
-  const lower = s.toLowerCase();
-  if (lower === "google images" || lower === "google image") return false;
-  if (
-    lower.includes("google.com/search") ||
-    lower.includes("bing.com/images") ||
-    lower.includes("tbm=isch")
-  )
-    return false;
-  return lower.startsWith("http://") || lower.startsWith("https://");
 }
 
 /**
