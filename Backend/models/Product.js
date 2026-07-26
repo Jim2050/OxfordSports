@@ -125,7 +125,9 @@ productSchema.pre("save", function () {
   }
 
   // Update hasImage helper for fast indexed sorting
-  this.hasImage = !!(this.imageUrl && String(this.imageUrl).trim().length > 0);
+  // STRICT: Only consider Cloudinary URLs as valid images
+  const url = String(this.imageUrl || "").trim().toLowerCase();
+  this.hasImage = !!(url && url.includes("cloudinary.com") && url.startsWith("https://"));
 
   this.categoryCanonical = deriveCategoryCanonical(this.category);
   this.subcategoryCanonical = deriveSubcategoryCanonical(

@@ -1,82 +1,25 @@
 /**
  * ═══════════════════════════════════════════════════════════════
- *  Image Resolver Service
+ *  Image Resolver Service (STRICT CLOUDINARY ONLY)
  * ═══════════════════════════════════════════════════════════════
  *
- *  Resolves product image URLs automatically:
- *   1. Parses Google search URLs to extract search query
- *   2. Uses DuckDuckGo "vqd" + image search to find real images
- *   3. Falls back to brand-specific CDN patterns
- *   4. Validates Content-Type is image/*
- *   5. Stores resolved direct image URL in MongoDB
- *
- *  Zero external dependencies — uses Node built-in https.
+ *  Resolves product image URLs:
+ *   1. Checks Cloudinary for images named EXACTLY after the SKU.
+ *   2. Validates Content-Type is image/*
+ *   3. NO external web scraping or brand guessing.
  */
 
 const https = require("https");
 const http = require("http");
-const { URL } = require("url");
 
 // ── Timeouts ──
-const FETCH_TIMEOUT = 5000; // Reduced from 8s to 5s to avoid blocking for too long
-const HEAD_TIMEOUT = 3000;  // Reduced from 5s to 3s
-
-// ── Known image extensions ──
-const IMG_EXT_RE = /\.(jpe?g|png|webp|gif|avif|svg|bmp)(\?.*)?$/i;
-
-/**
- * Simple HTTP(S) GET returning { statusCode, headers, body }.
- */
-function httpGet(url, { timeout = FETCH_TIMEOUT, maxRedirects = 3 } = {}) {
-  return new Promise((resolve, reject) => {
-    const lib = url.startsWith("https") ? https : http;
-    const req = lib.get(
-      url,
-      {
-        timeout,
-        headers: {
-          "User-Agent":
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-          Accept: "text/html,application/xhtml+xml,*/*",
-          "Accept-Language": "en-GB,en;q=0.9",
-        },
-      },
-      (res) => {
-        // Follow redirects
-        if (
-          [301, 302, 303, 307, 308].includes(res.statusCode) &&
-          res.headers.location &&
-          maxRedirects > 0
-        ) {
-          const next = new URL(res.headers.location, url).href;
-          return httpGet(next, { timeout, maxRedirects: maxRedirects - 1 })
-            .then(resolve)
-            .catch(reject);
-        }
-        const chunks = [];
-        res.on("data", (c) => chunks.push(c));
-        res.on("end", () =>
-          resolve({
-            statusCode: res.statusCode,
-            headers: res.headers,
-            body: Buffer.concat(chunks).toString("utf-8"),
-          }),
-        );
-        res.on("error", reject);
-      },
-    );
-    req.on("timeout", () => {
-      req.destroy();
-      reject(new Error("timeout"));
-    });
-    req.on("error", reject);
-  });
-}
+const HEAD_TIMEOUT = 3000;
 
 /**
  * HTTP HEAD to verify a URL serves an image (Content-Type: image/*).
  */
 function verifyImageUrl(url) {
+  if (!url) return Promise.resolve(false);
   return new Promise((resolve) => {
     try {
       const lib = url.startsWith("https") ? https : http;
@@ -86,8 +29,7 @@ function verifyImageUrl(url) {
           method: "HEAD",
           timeout: HEAD_TIMEOUT,
           headers: {
-            "User-Agent":
-              "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) OxfordSports/1.0",
           },
         },
         (res) => {
@@ -112,175 +54,37 @@ function verifyImageUrl(url) {
 }
 
 /**
- * Extract the search query from a Google image search URL.
- * e.g. "https://www.google.com/search?tbm=isch&q=adidas+S80602" → "adidas S80602"
+ * Strategy: Internal Cloudinary Store check only.
  */
-function extractGoogleQuery(url) {
-  try {
-    const u = new URL(url);
-    // Try ?q= parameter first
-    const q = u.searchParams.get("q");
-    if (q) return q.replace(/\+/g, " ").trim();
-    // No query found
-    return null;
-  } catch {
-    return null;
-  }
-}
-
-/**
- * Extract image URLs from raw HTML using regex.
- * Looks for patterns commonly found in search result pages.
- */
-function extractImageUrlsFromHtml(html) {
-  const urls = new Set();
-
-  // Pattern: URLs ending in image extensions
-  const urlRe =
-    /https?:\/\/[^\s"'<>()]+?\.(jpe?g|png|webp)(?:\?[^\s"'<>()]*)?/gi;
-  let m;
-  while ((m = urlRe.exec(html)) !== null) {
-    const url = m[0];
-    // Skip tiny thumbnails and icons
-    if (
-      url.includes("favicon") ||
-      url.includes("logo") ||
-      url.includes("icon") ||
-      url.includes("1x1") ||
-      url.includes("pixel") ||
-      url.includes("tracking") ||
-      url.includes("google.com") ||
-      url.includes("gstatic.com") ||
-      url.includes("duckduckgo.com")
-    )
-      continue;
-    urls.add(url);
-  }
-
-  return [...urls];
-}
-
-/**
- * Strategy 1: DuckDuckGo image search (no API key needed).
- * Fetches the HTML page and extracts image URLs from the response.
- */
-async function searchDuckDuckGo(query) {
-  try {
-    const searchUrl = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(query + " product image")}&iax=images&ia=images`;
-    const res = await httpGet(searchUrl, { timeout: FETCH_TIMEOUT });
-    if (res.statusCode !== 200) return [];
-    return extractImageUrlsFromHtml(res.body);
-  } catch {
-    return [];
-  }
-}
-
-/**
- * Strategy 2: Bing image search (scrape HTML, no API key).
- */
-async function searchBing(query) {
-  try {
-    const searchUrl = `https://www.bing.com/images/search?q=${encodeURIComponent(query)}&form=HDRSC2&first=1`;
-    const res = await httpGet(searchUrl, { timeout: FETCH_TIMEOUT });
-    if (res.statusCode !== 200) return [];
-
-    // Bing embeds image URLs in data attributes like murl="..."
-    const murlRe = /murl&quot;:&quot;(https?:\/\/[^&]+?)&quot;/gi;
-    const urls = [];
-    let m;
-    while ((m = murlRe.exec(res.body)) !== null) {
-      const url = m[1]
-        .replace(/&amp;/g, "&")
-        .replace(/\\u002f/gi, "/")
-        .replace(/\\u003a/gi, ":");
-      if (IMG_EXT_RE.test(url)) urls.push(url);
-    }
-    // Also try generic extraction
-    urls.push(...extractImageUrlsFromHtml(res.body));
-    return [...new Set(urls)];
-  } catch {
-    return [];
-  }
-}
-
-/**
- * Strategy 3: Brand-specific CDN URL patterns.
- * For adidas, construct known CDN URL patterns.
- */
-function brandCdnCandidates(sku, brand) {
+function getCloudinaryCandidates(sku) {
   const candidates = [];
-  const b = (brand || "").toLowerCase();
-  const s = (sku || "").toUpperCase();
+  const s = (sku || "").toUpperCase().trim();
+  if (!s) return candidates;
 
-  // 1. Internal Cloudinary Store check (optimized lookup)
   const cName = process.env.CLOUDINARY_CLOUD_NAME;
-  if (cName) {
-    const skuVariations = [s, s.replace(/[\s_-]/g, "")];
-    if (s.includes("-")) skuVariations.push(s.split("-")[0]);
-
-    for (const skuVar of skuVariations) {
-      const encodedSku = encodeURIComponent(skuVar);
-      candidates.push(`https://res.cloudinary.com/${cName}/image/upload/oxford-sports/products/${encodedSku}.jpg`);
-      candidates.push(`https://res.cloudinary.com/${cName}/image/upload/v1/oxford-sports/products/${encodedSku}.jpg`);
-    }
-  }
-
-  // 2. External Brand CDNs
-  if (b.includes("adidas")) {
-    candidates.push(`https://assets.adidas.com/images/w_600,f_auto,q_auto/assets/${s}_1.jpg`);
-    candidates.push(`https://assets.adidas.com/images/w_600,f_auto,q_auto/v1/assets/${s}_1.jpg`);
-    candidates.push(`https://assets.adidas.com/images/w_600,f_auto,q_auto/${s}.jpg`);
-  }
-  if (b.includes("nike")) {
-    candidates.push(`https://static.nike.com/a/images/t_PDP_1280_v1/${s}.jpg`);
+  if (cName && cName !== "your_cloud_name") {
+    const encodedSku = encodeURIComponent(s);
+    // Standard path for uploaded product images
+    candidates.push(`https://res.cloudinary.com/${cName}/image/upload/oxford-sports/products/${encodedSku}.jpg`);
+    candidates.push(`https://res.cloudinary.com/${cName}/image/upload/v1/oxford-sports/products/${encodedSku}.jpg`);
   }
 
   return candidates;
 }
 
 /**
- * Resolve a single product's image. Returns the resolved direct image URL
- * or null if resolution fails.
+ * Resolve a product's image using ONLY Cloudinary.
  *
  * @param {Object} opts
  * @param {string} opts.sku - Product SKU
- * @param {string} opts.brand - Product brand name
- * @param {string} opts.name - Product name
- * @param {string} opts.currentUrl - Current imageUrl (may be Google search link)
  * @returns {Promise<string|null>}
  */
-async function resolveProductImage({ sku, brand, name, currentUrl }) {
-  // 1. If it's already a direct image (including Cloudinary), verify it
-  if (currentUrl && (IMG_EXT_RE.test(currentUrl) || currentUrl.includes("cloudinary.com"))) {
-    const valid = await verifyImageUrl(currentUrl);
-    if (valid) return currentUrl;
-  }
+async function resolveProductImage({ sku }) {
+  if (!sku) return null;
 
-  // 2. Extract query from Google search URL
-  let query = extractGoogleQuery(currentUrl || "");
-  if (!query) {
-    // Build query from product metadata
-    query = [brand, sku, name].filter(Boolean).join(" ");
-  }
-  if (!query) return null;
-
-  // 3. Try brand CDN patterns first (fastest)
-  const cdnUrls = brandCdnCandidates(sku, brand);
+  // Try Cloudinary candidates
+  const cdnUrls = getCloudinaryCandidates(sku);
   for (const url of cdnUrls) {
-    const valid = await verifyImageUrl(url);
-    if (valid) return url;
-  }
-
-  // 4. Search Bing for product images
-  let candidates = await searchBing(query);
-  for (const url of candidates.slice(0, 10)) {
-    const valid = await verifyImageUrl(url);
-    if (valid) return url;
-  }
-
-  // 5. Fallback: DuckDuckGo
-  candidates = await searchDuckDuckGo(query);
-  for (const url of candidates.slice(0, 10)) {
     const valid = await verifyImageUrl(url);
     if (valid) return url;
   }
@@ -289,15 +93,9 @@ async function resolveProductImage({ sku, brand, name, currentUrl }) {
 }
 
 /**
- * Batch-resolve images for multiple products.
- * Processes concurrently with a concurrency limit.
- *
- * @param {Array<Object>} products - Array of { sku, brand, name, currentUrl }
- * @param {number} concurrency - Max parallel resolutions
- * @param {function} onProgress - Callback (resolved, failed, total)
- * @returns {Promise<{ resolved: Array, failed: Array }>}
+ * Batch-resolve images using only Cloudinary.
  */
-async function batchResolveImages(products, concurrency = 3, onProgress) {
+async function batchResolveImages(products, concurrency = 5, onProgress) {
   const resolved = [];
   const failed = [];
   let idx = 0;
@@ -311,7 +109,7 @@ async function batchResolveImages(products, concurrency = 3, onProgress) {
         if (url) {
           resolved.push({ sku: p.sku, imageUrl: url });
         } else {
-          failed.push({ sku: p.sku, reason: "No image found" });
+          failed.push({ sku: p.sku, reason: "Not found in Cloudinary" });
         }
       } catch (err) {
         failed.push({ sku: p.sku, reason: err.message });
@@ -334,40 +132,18 @@ module.exports = {
   resolveProductImage,
   batchResolveImages,
   verifyImageUrl,
-  extractGoogleQuery,
   isDirectImageUrl: (url) => {
     if (!url) return false;
     const s = String(url).trim().toLowerCase();
-    if (s.length < 10) return false;
-    if (s === "google images" || s === "google image") return false;
-    if (
-      s.includes("google.com/search") ||
-      s.includes("bing.com/images") ||
-      s.includes("tbm=isch")
-    )
-      return false;
-    if (!s.startsWith("http://") && !s.startsWith("https://")) return false;
-    if (IMG_EXT_RE.test(s)) return true;
-    if (
-      s.includes("cloudinary.com") ||
-      s.includes("imgur.com") ||
-      s.includes("images.unsplash.com") ||
-      s.includes("cdn.shopify.com")
-    )
-      return true;
+    // Only allow Cloudinary URLs as "direct" valid URLs
+    if (s.includes("cloudinary.com") && s.startsWith("https://")) return true;
     return false;
   },
   isValidImageUrl: (url) => {
     if (!url) return false;
     const s = String(url).trim().toLowerCase();
-    if (s.length < 10) return false;
-    if (s === "google images" || s === "google image") return false;
-    if (
-      s.includes("google.com/search") ||
-      s.includes("bing.com/images") ||
-      s.includes("tbm=isch")
-    )
-      return false;
-    return s.startsWith("http://") || s.startsWith("https://");
+    // Don't treat search engine links as valid anymore
+    if (s.includes("google.com") || s.includes("bing.com") || s.includes("duckduckgo.com")) return false;
+    return s.startsWith("https://res.cloudinary.com");
   },
 };

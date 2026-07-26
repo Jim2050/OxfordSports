@@ -71,7 +71,7 @@ exports.getProducts = async (req, res) => {
       sort,
     } = req.query;
 
-    const conditions = [{ isActive: true }];
+    const conditions = [{ isActive: true, hasImage: true }];
 
     // Category filter with keyword matching
     if (category) {
@@ -285,17 +285,18 @@ exports.getCategories = async (_req, res) => {
           },
         ]),
         Product.aggregate([
-          { $match: { isActive: true, categoryCanonical: { $nin: ["", null] } } },
+          { $match: { isActive: true, hasImage: true, categoryCanonical: { $nin: ["", null] } } },
           { $group: { _id: "$categoryCanonical", count: { $sum: 1 } } },
         ]),
         Product.aggregate([
-          { $match: { isActive: true, category: { $nin: ["", null] } } },
+          { $match: { isActive: true, hasImage: true, category: { $nin: ["", null] } } },
           { $group: { _id: { $toUpper: "$category" }, count: { $sum: 1 } } },
         ]),
         Product.aggregate([
           {
             $match: {
               isActive: true,
+              hasImage: true,
               categoryCanonical: { $nin: ["", null] },
               subcategoryCanonical: { $nin: ["", null] },
             },
@@ -314,6 +315,7 @@ exports.getCategories = async (_req, res) => {
           {
             $match: {
               isActive: true,
+              hasImage: true,
               category: { $nin: ["", null] },
               subcategory: { $nin: ["", null] },
             },
@@ -329,22 +331,23 @@ exports.getCategories = async (_req, res) => {
           },
         ]),
         Product.aggregate([
-          { $match: { isActive: true, brandCanonical: { $nin: ["", null] } } },
+          { $match: { isActive: true, hasImage: true, brandCanonical: { $nin: ["", null] } } },
           { $group: { _id: "$brandCanonical", count: { $sum: 1 } } },
         ]),
         Product.aggregate([
-          { $match: { isActive: true, sportCanonical: { $nin: ["", null] } } },
+          { $match: { isActive: true, hasImage: true, sportCanonical: { $nin: ["", null] } } },
           { $group: { _id: "$sportCanonical", count: { $sum: 1 } } },
         ]),
-        Product.countDocuments({ isActive: true, salePrice: { $lte: 5 } }),
+        Product.countDocuments({ isActive: true, hasImage: true, salePrice: { $lte: 5 } }),
         Product.countDocuments({
           isActive: true,
+          hasImage: true,
           $or: [
             { brandCanonical: { $nin: ["", null] } },
             { brand: { $nin: ["", null] } },
           ],
         }),
-        Product.countDocuments({ isActive: true, sportCanonical: { $nin: ["", null] } }),
+        Product.countDocuments({ isActive: true, hasImage: true, sportCanonical: { $nin: ["", null] } }),
       ]);
 
     const categoryCountMap = new Map(

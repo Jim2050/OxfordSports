@@ -1604,51 +1604,34 @@ exports.importProducts = async (req, res) => {
       });
       productData.brandCanonical = deriveBrandCanonical(productData.brand, productData.name, productData.description);
 
-      // ── Image URL: store only direct image URLs ──
+      // ── Image URL: store only Cloudinary URLs ──
       const rawImageUrl = row.imageUrl ? String(row.imageUrl).trim() : "";
       if (isDirectImageUrl(rawImageUrl)) {
         productData.imageUrl = rawImageUrl;
-      } else if (isValidImageUrl(rawImageUrl)) {
-        // HTTP URL but not a direct image (Google search link) — queue for resolution
-        productData._pendingImageQuery = rawImageUrl;
-        if (i < 5) {
-          debug(`[IMPORT] Row ${i + 1} imageUrl queued for resolution: "${rawImageUrl.substring(0, 80)}"`);
-        }
+        productData.hasImage = true;
       } else {
-        // No valid image in Excel
-        if (rawImageUrl && i < 5) {
-          debug(`[IMPORT] Row ${i + 1} imageUrl is not a valid URL: "${rawImageUrl}"`);
-        }
-      }
+        // Not a direct Cloudinary URL - reset and queue for SKU-based Cloudinary check
+        productData.imageUrl = "";
+        productData.hasImage = false;
 
-      // Track products that need image resolution (for post-import phase)
-      // Including products with no image data at all so we check Cloudinary for them
-      if (productData._pendingImageQuery || !productData.imageUrl) {
         pendingImageProducts.push({
           sku: productData.sku,
           brand: productData.brand,
           name: productData.name,
-          currentUrl: productData._pendingImageQuery || "",
+          currentUrl: "", // Clear any external search queries
         });
-        delete productData._pendingImageQuery;
       }
 
-      // Separate image fields — only $set them when Excel provides a valid URL
-      // Otherwise use $setOnInsert so existing images survive re-imports
-      const hasExcelImage = !!productData.imageUrl;
-      const imageFields = {};
-      if (hasExcelImage) {
-        imageFields.imageUrl = productData.imageUrl;
-      }
-      delete productData.imageUrl; // remove from main $set
-
+      // Separate image fields
+      const hasValidImage = !!productData.imageUrl;
       const updateOp = { $set: productData };
-      if (!hasExcelImage) {
-        // Only set imageUrl on brand-new products (upsert insert)
-        updateOp.$setOnInsert = { imageUrl: "", imagePublicId: "" };
+
+      if (!hasValidImage) {
+        // Only set default empty on insert to avoid overwriting existing valid Cloudinary images
+        updateOp.$setOnInsert = { imageUrl: "", imagePublicId: "", hasImage: false };
       } else {
-        // Excel provided a valid direct image URL — overwrite
-        updateOp.$set.imageUrl = imageFields.imageUrl;
+        updateOp.$set.imageUrl = productData.imageUrl;
+        updateOp.$set.hasImage = true;
       }
 
       if (productData.category === "UNDER £5") underFiveCount++;
