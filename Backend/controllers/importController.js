@@ -1636,7 +1636,7 @@ exports.importProducts = async (req, res) => {
 
       if (productData.category === "UNDER £5") underFiveCount++;
       if (productData.category === "JOB LOTS") jobLotCount++;
-      if (hasExcelImage) withImagesCount++;
+      if (hasValidImage) withImagesCount++;
 
       operations.push({
         updateOne: {
