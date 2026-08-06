@@ -1629,6 +1629,9 @@ exports.importProducts = async (req, res) => {
       if (!hasValidImage) {
         // Only set default empty on insert to avoid overwriting existing valid Cloudinary images
         updateOp.$setOnInsert = { imageUrl: "", imagePublicId: "", hasImage: false };
+        // Delete imageUrl/hasImage from $set to avoid MongoBulkWriteError conflict
+        delete updateOp.$set.imageUrl;
+        delete updateOp.$set.hasImage;
       } else {
         updateOp.$set.imageUrl = productData.imageUrl;
         updateOp.$set.hasImage = true;
